@@ -1,0 +1,151 @@
+#!/bin/sh
+set -eu
+
+. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+draft=false
+case $# in
+  0) ;;
+  1)
+    [ "$1" = --draft ] || {
+      printf '%s\n' 'usage: dev-pr [--draft]' >&2
+      exit 2
+    }
+    draft=true
+    ;;
+  *)
+    printf '%s\n' 'usage: dev-pr [--draft]' >&2
+    exit 2
+    ;;
+esac
+
+require_repository
+command -v gh >/dev/null 2>&1 || {
+  printf '%s\n' 'error: gh is required' >&2
+  exit 2
+}
+
+remote=origin
+default_branch=$(default_branch_for_remote "$remote") || {
+  printf '%s\n' 'error: could not determine the origin default branch' >&2
+  exit 2
+}
+branch=$(git branch --show-current) || {
+  printf '%s\n' 'error: could not determine the current branch' >&2
+  exit 2
+}
+
+if ! is_valid_branch_name "$branch" || [ "$branch" = "$default_branch" ]; then
+  printf '%s\n' 'error: switch to a task branch before creating a pull request' >&2
+  exit 2
+fi
+
+require_clean_worktree
+git fetch --prune "$remote" \
+  "+refs/heads/$default_branch:refs/remotes/$remote/$default_branch"
+git rev-parse --verify "$remote/$default_branch" >/dev/null 2>&1 || {
+  printf '%s\n' 'error: the remote default branch reference is unavailable' >&2
+  exit 2
+}
+if ! git merge-base --is-ancestor "$remote/$default_branch" HEAD; then
+  printf '%s\n' 'error: update the task branch with the current remote default branch before creating a PR' >&2
+  exit 2
+fi
+
+set +e
+git diff --quiet "$remote/$default_branch...HEAD"
+diff_status=$?
+set -e
+case $diff_status in
+  0)
+    printf '%s\n' 'error: the task branch has no changes relative to the default branch' >&2
+    exit 2
+    ;;
+  1) ;;
+  *)
+    printf '%s\n' 'error: could not compare the task branch with the remote default branch' >&2
+    exit 2
+    ;;
+esac
+
+base_url=$(git remote get-url "$remote")
+push_urls=$(git remote get-url --push --all "$remote") || {
+  printf '%s\n' 'error: could not inspect the origin push targets' >&2
+  exit 2
+}
+push_url_count=$(printf '%s\n' "$push_urls" |
+  awk 'NF { count++ } END { print count + 0 }')
+[ "$push_url_count" -eq 1 ] || {
+  printf '%s\n' 'error: origin must have exactly one push target for dev-pr' >&2
+  exit 2
+}
+push_url=$push_urls
+base_qualified=$(gh repo view "$base_url" --json nameWithOwner,url \
+  --jq '(.url | capture("^https?://(?<host>[^/]+)").host) + "/" + .nameWithOwner') || {
+  printf '%s\n' 'error: origin fetch target must be a GitHub repository for dev-pr' >&2
+  exit 2
+}
+head_qualified=$(gh repo view "$push_url" --json nameWithOwner,url \
+  --jq '(.url | capture("^https?://(?<host>[^/]+)").host) + "/" + .nameWithOwner') || {
+  printf '%s\n' 'error: origin push target must be a GitHub repository for dev-pr' >&2
+  exit 2
+}
+case $base_qualified in
+  */*/*) ;;
+  *)
+    printf '%s\n' 'error: origin fetch target must be a GitHub repository for dev-pr' >&2
+    exit 2
+    ;;
+esac
+case $head_qualified in
+  */*/*) ;;
+  *)
+    printf '%s\n' 'error: origin push target must be a GitHub repository for dev-pr' >&2
+    exit 2
+    ;;
+esac
+base_host=${base_qualified%%/*}
+base_repo=${base_qualified#*/}
+head_host=${head_qualified%%/*}
+head_repo=${head_qualified#*/}
+[ "$base_host" = "$head_host" ] || {
+  printf '%s\n' 'error: origin fetch and push targets must use the same GitHub host' >&2
+  exit 2
+}
+base_repo_arg=$base_host/$base_repo
+if [ "$head_repo" = "$base_repo" ]; then
+  head_ref=$branch
+else
+  base_source=$(gh api --hostname "$base_host" "repos/$base_repo" \
+    --jq '.source.full_name // .full_name') || {
+    printf '%s\n' 'error: could not validate the origin fetch target fork network' >&2
+    exit 2
+  }
+  head_source=$(gh api --hostname "$head_host" "repos/$head_repo" \
+    --jq '.source.full_name // .full_name') || {
+    printf '%s\n' 'error: could not validate the origin push target as a GitHub fork' >&2
+    exit 2
+  }
+  [ "$head_source" = "$base_source" ] || {
+    printf '%s\n' 'error: origin push target is not in the fetch repository fork network' >&2
+    exit 2
+  }
+  head_owner=${head_repo%%/*}
+  head_ref=$head_owner:$branch
+fi
+
+push_refspec="refs/heads/$branch:refs/heads/$branch"
+if [ "$head_repo" = "$base_repo" ]; then
+  git push -u -- "$remote" "$push_refspec"
+else
+  git push -- "$remote" "$push_refspec"
+fi
+pr_number=$(gh pr list --repo "$base_repo_arg" --base "$default_branch" \
+  --head "$head_ref" --state open --json number --jq '.[0].number // empty')
+if [ -n "$pr_number" ]; then
+  gh pr view --repo "$base_repo_arg" "$pr_number" --json url --jq .url
+elif $draft; then
+  gh pr create --repo "$base_repo_arg" --base "$default_branch" --head "$head_ref" --fill --draft
+else
+  gh pr create --repo "$base_repo_arg" --base "$default_branch" --head "$head_ref" --fill
+fi

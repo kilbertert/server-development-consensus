@@ -1,0 +1,14 @@
+[Unit]
+Description=Audit server development workflow policy
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dev-policy-audit %h/Projects
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true

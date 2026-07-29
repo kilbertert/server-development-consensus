@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+hook_name=${0##*/}
+if chained_hook=$(chained_hook_for "$hook_name"); then
+  if paths_identify_same_file "$0" "$chained_hook"; then
+    printf 'error: chained hook resolves to the managed hook forwarder: %s\n' "$chained_hook" >&2
+    exit 1
+  else
+    same_status=$?
+    [ "$same_status" -eq 1 ] || {
+      printf 'error: cannot validate chained hook target: %s\n' "$chained_hook" >&2
+      exit 1
+    }
+  fi
+  exec "$chained_hook" "$@"
+else
+  chained_status=$?
+  if [ "$chained_status" -ne 1 ]; then
+    printf 'error: cannot resolve chained hook: %s\n' "$hook_name" >&2
+    exit 1
+  fi
+fi
+
+exit 0

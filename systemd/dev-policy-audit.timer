@@ -1,0 +1,11 @@
+[Unit]
+Description=Run server development workflow policy audit daily
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1d
+Persistent=true
+Unit=dev-policy-audit.service
+
+[Install]
+WantedBy=timers.target

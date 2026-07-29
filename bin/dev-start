@@ -1,0 +1,130 @@
+#!/bin/sh
+set -eu
+
+. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+usage() {
+  printf '%s\n' 'usage: dev-start TYPE DESCRIPTION' >&2
+  printf '%s\n' 'types: feat fix refactor docs test chore hotfix' >&2
+  exit 2
+}
+
+[ "$#" -eq 2 ] || usage
+type=$1
+description=$2
+
+case $type in
+  feat|fix|refactor|docs|test|chore|hotfix) ;;
+  *) usage ;;
+esac
+
+case $description in
+  *[!a-z0-9-]*|''|-*|*-|*--*)
+    printf '%s\n' 'error: DESCRIPTION must be lowercase kebab-case' >&2
+    exit 2
+    ;;
+esac
+
+require_repository
+remote=origin
+default_branch=$(default_branch_for_remote "$remote") || {
+  printf '%s\n' 'error: could not determine the origin default branch' >&2
+  exit 2
+}
+task_branch="$type/$description"
+current_branch=$(git branch --show-current) || {
+  printf '%s\n' 'error: could not determine the current branch' >&2
+  exit 2
+}
+[ -n "$current_branch" ] || {
+  printf '%s\n' 'error: detached HEAD cannot start a task branch safely' >&2
+  exit 2
+}
+
+if git show-ref --verify --quiet "refs/heads/$task_branch"; then
+  printf 'error: branch already exists: %s\n' "$task_branch" >&2
+  exit 2
+fi
+
+if ! remote_branch=$(git ls-remote --heads "$remote" "refs/heads/$task_branch"); then
+  printf 'error: could not query remote branch: %s/%s\n' "$remote" "$task_branch" >&2
+  exit 2
+fi
+if [ -n "$remote_branch" ]; then
+  printf 'error: branch already exists: %s\n' "$task_branch" >&2
+  exit 2
+fi
+
+restore_start_context() {
+  status=$?
+  trap - EXIT
+  active_branch=$(git branch --show-current 2>/dev/null || true)
+  created_task_branch=false
+  [ "$active_branch" = "$task_branch" ] && created_task_branch=true
+  if [ "$active_branch" != "$current_branch" ]; then
+    git switch "$current_branch" >/dev/null 2>&1 ||
+      printf 'warning: could not restore branch %s after failed task start\n' \
+        "$current_branch" >&2
+  fi
+  if $created_task_branch &&
+     [ "$(git branch --show-current 2>/dev/null || true)" != "$task_branch" ]; then
+    git branch -D "$task_branch" >/dev/null 2>&1 || true
+  fi
+  exit "$status"
+}
+
+git fetch --prune "$remote" \
+  "+refs/heads/$default_branch:refs/remotes/$remote/$default_branch"
+remote_default=$(git rev-parse --verify "refs/remotes/$remote/$default_branch") || {
+  printf 'error: remote default branch is unavailable: %s/%s\n' \
+    "$remote" "$default_branch" >&2
+  exit 2
+}
+
+worktree_status=$(git status --porcelain) || {
+  printf '%s\n' 'error: could not inspect the worktree state' >&2
+  exit 2
+}
+if [ -n "$worktree_status" ]; then
+  if [ "$current_branch" = "$default_branch" ]; then
+    local_default=$(git rev-parse --verify "refs/heads/$default_branch") || {
+      printf 'error: local default branch is unavailable: %s\n' "$default_branch" >&2
+      exit 2
+    }
+    if ! git merge-base --is-ancestor "$local_default" "$remote_default"; then
+      printf 'error: local %s contains commits not present in %s/%s\n' \
+        "$default_branch" "$remote" "$default_branch" >&2
+      exit 2
+    fi
+    trap restore_start_context EXIT
+    git switch -c "$task_branch"
+    trap - EXIT
+    printf 'preserved existing work on new branch %s; sync with %s/%s after committing or stashing it\n' \
+      "$task_branch" "$remote" "$default_branch"
+    exit 0
+  fi
+  require_clean_worktree
+fi
+
+if ! local_default=$(git rev-parse --verify "refs/heads/$default_branch" 2>/dev/null); then
+  git branch "$default_branch" "$remote_default"
+  local_default=$remote_default
+fi
+if ! git merge-base --is-ancestor "$local_default" "$remote_default"; then
+  printf 'error: local %s contains commits not present in %s/%s\n' \
+    "$default_branch" "$remote" "$default_branch" >&2
+  exit 2
+fi
+trap restore_start_context EXIT
+git switch "$default_branch"
+git merge --ff-only "$remote/$default_branch"
+local_default=$(git rev-parse "$default_branch")
+remote_default=$(git rev-parse "$remote/$default_branch")
+if [ "$local_default" != "$remote_default" ]; then
+  printf 'error: local %s contains commits not present in %s/%s\n' \
+    "$default_branch" "$remote" "$default_branch" >&2
+  exit 2
+fi
+git switch -c "$task_branch"
+trap - EXIT
+printf 'started %s from %s/%s\n' "$task_branch" "$remote" "$default_branch"

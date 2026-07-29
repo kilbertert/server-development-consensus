@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+set -u
+
+repair=false
+if [[ ${1:-} == --repair ]]; then
+  repair=true
+  shift
+fi
+
+policy_home=${SERVER_POLICY_HOME:-/home/claude}
+projects_root=${1:-$policy_home/Projects}
+expected_hooks=$policy_home/.config/git/hooks
+common=$policy_home/.local/lib/server-development-consensus/dev-git-common.sh
+policy_dir=$policy_home/.config/server-development-consensus
+policy_file=$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md
+codex_policy_file=$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md
+managed_hooks_manifest=$policy_dir/managed-hooks.sha256
+codex_updater=$policy_home/.local/bin/update-codex-config
+failures=0
+repaired=0
+scan_file=
+sorted_scan_file=
+trap 'rm -f "${scan_file:-}" "${sorted_scan_file:-}"' EXIT
+
+if [[ ${HOME:-} != "$policy_home" ]]; then
+  printf 'FAIL policy home does not match HOME: policy=%s home=%s\n' \
+    "$policy_home" "${HOME:-unset}"
+  exit 1
+fi
+if [[ -n ${GIT_CONFIG_GLOBAL:-} || -n ${GIT_CONFIG_SYSTEM:-} ||
+      -n ${GIT_CONFIG_COUNT:-} ]]; then
+  printf 'FAIL redirected Git configuration is not allowed during policy audit\n'
+  exit 1
+fi
+if [[ -n ${XDG_CONFIG_HOME:-} && $XDG_CONFIG_HOME != "$policy_home/.config" ]]; then
+  printf 'FAIL XDG_CONFIG_HOME is outside the policy account\n'
+  exit 1
+fi
+if [[ $(id -u) -eq 0 ]]; then
+  printf 'FAIL policy audit must run as the non-root development account\n'
+  exit 1
+fi
+if [[ ! -d $policy_home ]] ||
+   [[ $(stat -c '%u' "$policy_home" 2>/dev/null) != "$(id -u)" ]]; then
+  printf 'FAIL policy audit must run as the owner of %s\n' "$policy_home"
+  exit 1
+fi
+
+if $repair && [[ ${SERVER_POLICY_CONFIG_LOCK_HELD:-0} != 1 ]]; then
+  state_dir=$policy_home/.local/state/server-development-consensus
+  if ! install -d -m 700 "$state_dir"; then
+    printf 'FAIL cannot create policy state directory: %s\n' "$state_dir"
+    exit 1
+  fi
+  if ! exec 9>"$state_dir/config.lock"; then
+    printf 'FAIL cannot open policy configuration lock\n'
+    exit 1
+  fi
+  if ! flock -x 9; then
+    printf 'FAIL cannot acquire policy configuration lock\n'
+    exit 1
+  fi
+fi
+
+restore_config() {
+  local scope=$1
+  local repo=$2
+  local key=$3
+  local had_value=$4
+  local old_value=$5
+  local -a cmd=(git)
+  if [[ $scope == global ]]; then
+    cmd+=(config --global)
+  else
+    cmd+=(-C "$repo" config --local)
+  fi
+  if [[ $had_value == true ]]; then
+    "${cmd[@]}" "$key" "$old_value" >/dev/null 2>&1
+  else
+    "${cmd[@]}" --unset-all "$key" >/dev/null 2>&1 || true
+  fi
+}
+
+resolve_repo_hooks_path() {
+  local repo=$1
+  local hooks_path=$2
+  (
+    cd "$repo" || exit 1
+    resolve_hooks_path "$hooks_path"
+  )
+}
+
+hooks_paths_are_same() {
+  local repo=$1
+  local left=$2
+  local right=$3
+  local resolved_left resolved_right
+  resolved_left=$(resolve_repo_hooks_path "$repo" "$left") || return 2
+  resolved_right=$(resolve_repo_hooks_path "$repo" "$right") || return 2
+  [[ $resolved_left == "$resolved_right" ]]
+}
+
+hooks_path_is_forwardable() {
+  local repo=$1
+  local hooks_path=$2
+  local resolved hook
+  resolved=$(resolve_repo_hooks_path "$repo" "$hooks_path") || return 1
+  [[ -d $resolved && -r $resolved && -x $resolved ]] || return 1
+  if hooks_paths_are_same "$repo" "$resolved" "$expected_hooks"; then
+    return 1
+  fi
+  while IFS= read -r hook; do
+    if [[ -x $resolved/$hook ]]; then
+      [[ -x $expected_hooks/$hook ]] || return 1
+      if paths_identify_same_file "$resolved/$hook" "$expected_hooks/$hook"; then
+        return 1
+      else
+        same_status=$?
+        [[ $same_status -eq 1 ]] || return 1
+      fi
+    fi
+  done < <(git_hook_names)
+}
+
+audit_global_chained_hooks() {
+  local global_chain global_chain_status
+  global_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath 2>/dev/null)
+  global_chain_status=$?
+  if [[ $global_chain_status -eq 1 ]]; then
+    return 0
+  fi
+  if [[ $global_chain_status -gt 1 || -z $global_chain || $global_chain != /* ]]; then
+    printf 'FAIL global chained hooks metadata is invalid\n'
+    return 1
+  fi
+  if ! hooks_path_is_forwardable "$projects_root" "$global_chain"; then
+    printf 'FAIL global chained hooks are not safely forwardable from %s\n' "$global_chain"
+    return 1
+  fi
+}
+
+if [[ ! -r $common ]]; then
+  printf 'FAIL common policy library is unavailable: %s\n' "$common"
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "$common"
+if [[ ! -d $projects_root || ! -r $projects_root ]]; then
+  printf 'FAIL cannot scan projects root %s\n' "$projects_root"
+  exit 1
+fi
+
+if [[ ! -r $policy_file ]] ||
+   ! grep -q '^## Internal Knowledge And Public Projection Boundary$' "$policy_file"; then
+  printf 'FAIL canonical server policy is missing the internal/public knowledge boundary\n'
+  failures=$((failures + 1))
+else
+  for policy_copy in \
+    "$projects_root/AGENTS.md" \
+    "$projects_root/CLAUDE.md" \
+    "$projects_root/SERVER-DEVELOPMENT-CONSENSUS.md"; do
+    if ! cmp -s "$policy_file" "$policy_copy"; then
+      printf 'FAIL policy copy drifted from canonical source: %s\n' "$policy_copy"
+      failures=$((failures + 1))
+    fi
+  done
+fi
+if [[ ! -x $codex_updater || ! -r $codex_policy_file ]] ||
+   ! python3 "$codex_updater" --verify "$policy_home/.codex/config.toml" \
+     "$codex_policy_file" >/dev/null 2>&1; then
+  printf 'FAIL Codex developer instructions drifted from server policy\n'
+  failures=$((failures + 1))
+fi
+
+expected_hooks_complete=true
+if [[ ! -r $managed_hooks_manifest ]] ||
+   ! (cd "$expected_hooks" && sha256sum --check --status "$managed_hooks_manifest"); then
+  printf 'FAIL managed hook content failed integrity verification\n'
+  failures=$((failures + 1))
+  expected_hooks_complete=false
+fi
+while IFS= read -r hook; do
+  case $hook in
+    pre-commit|pre-merge-commit|pre-push)
+      if [[ ! -f $expected_hooks/$hook || -L $expected_hooks/$hook ||
+            ! -x $expected_hooks/$hook ]]; then
+        printf 'FAIL managed policy hook is invalid: %s/%s\n' "$expected_hooks" "$hook"
+        failures=$((failures + 1))
+        expected_hooks_complete=false
+      fi
+      ;;
+    *)
+      if [[ ! -L $expected_hooks/$hook ]] ||
+         [[ $(readlink "$expected_hooks/$hook" 2>/dev/null) != hook-forwarder ]]; then
+        printf 'FAIL managed hook forwarder link is invalid: %s/%s\n' \
+          "$expected_hooks" "$hook"
+        failures=$((failures + 1))
+        expected_hooks_complete=false
+      fi
+      ;;
+  esac
+done < <(git_hook_names)
+
+global_hooks=$(git config --global --path --get core.hooksPath 2>/dev/null)
+global_hooks_status=$?
+if [[ $global_hooks_status -gt 1 ]]; then
+  printf 'FAIL cannot inspect global core.hooksPath\n'
+  failures=$((failures + 1))
+elif [[ $global_hooks_status -eq 0 ]] &&
+     hooks_paths_are_same "$projects_root" "$global_hooks" "$expected_hooks"; then
+  if audit_global_chained_hooks; then
+    printf 'ok global-hooks %s\n' "$expected_hooks"
+  else
+    failures=$((failures + 1))
+  fi
+elif $repair && $expected_hooks_complete; then
+  old_global_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath 2>/dev/null)
+  old_global_chain_status=$?
+  if [[ $old_global_chain_status -gt 1 ]]; then
+    printf 'FAIL cannot inspect global chained hooks metadata\n'
+    failures=$((failures + 1))
+  else
+    old_global_chain_present=false
+    [[ $old_global_chain_status -eq 0 ]] && old_global_chain_present=true
+    chain_write_ok=true
+    if [[ $global_hooks_status -eq 0 && -n $global_hooks ]]; then
+      if [[ $global_hooks != /* ]] ||
+         ! hooks_path_is_forwardable "$projects_root" "$global_hooks"; then
+        chain_write_ok=false
+      else
+        canonical_global_hooks=$(resolve_repo_hooks_path "$projects_root" "$global_hooks") ||
+          chain_write_ok=false
+        if $chain_write_ok; then
+          git config --global serverPolicy.globalChainedHooksPath "$canonical_global_hooks" ||
+            chain_write_ok=false
+        fi
+      fi
+    elif $old_global_chain_present; then
+      git config --global --unset-all serverPolicy.globalChainedHooksPath ||
+        chain_write_ok=false
+    fi
+    if $chain_write_ok && git config --global core.hooksPath "$expected_hooks"; then
+      printf 'repaired global-hooks %s\n' "$expected_hooks"
+      repaired=$((repaired + 1))
+    else
+      restore_config global '' serverPolicy.globalChainedHooksPath \
+        "$old_global_chain_present" "${old_global_chain:-}"
+      printf 'FAIL could not repair global core.hooksPath\n'
+      failures=$((failures + 1))
+    fi
+  fi
+else
+  printf 'FAIL global-hooks expected=%s actual=%s\n' \
+    "$expected_hooks" "${global_hooks:-unset}"
+  failures=$((failures + 1))
+fi
+
+scan_file=$(mktemp)
+sorted_scan_file=$(mktemp)
+while IFS= read -r skipped_path; do
+  printf 'skip unreadable non-development path %s\n' "$skipped_path"
+done < <(find "$projects_root" -type d ! -readable -prune -print 2>/dev/null)
+if ! find_project_git_entries "$projects_root" >"$scan_file"; then
+  printf 'FAIL cannot scan projects root %s\n' "$projects_root"
+  exit 1
+fi
+if ! sort -zu "$scan_file" >"$sorted_scan_file"; then
+  printf 'FAIL cannot sort repository inventory for %s\n' "$projects_root"
+  exit 1
+fi
+
+while IFS= read -r -d '' git_path; do
+  repo=${git_path%/.git}
+  if ! branch=$(git -C "$repo" branch --show-current 2>/dev/null) ||
+     ! status_output=$(git -C "$repo" status --porcelain 2>/dev/null); then
+    printf 'FAIL %s cannot inspect repository state\n' "$repo"
+    failures=$((failures + 1))
+    continue
+  fi
+  dirty=$(printf '%s\n' "$status_output" | awk 'NF { count++ } END { print count + 0 }')
+
+  local_hooks=$(git -C "$repo" config --local --path --get core.hooksPath 2>/dev/null)
+  local_hooks_status=$?
+  chained_hooks=$(git -C "$repo" config --local --path --get serverPolicy.chainedHooksPath 2>/dev/null)
+  chained_hooks_status=$?
+  if [[ $local_hooks_status -gt 1 || $chained_hooks_status -gt 1 ]]; then
+    printf 'FAIL %s cannot inspect hook configuration\n' "$repo"
+    failures=$((failures + 1))
+    continue
+  fi
+  [[ $local_hooks_status -eq 0 ]] || local_hooks=
+  [[ $chained_hooks_status -eq 0 ]] || chained_hooks=
+
+  local_hooks_are_managed=false
+  if [[ -n $local_hooks ]] && hooks_paths_are_same "$repo" "$local_hooks" "$expected_hooks"; then
+    local_hooks_are_managed=true
+  fi
+  if [[ -n $local_hooks ]] && ! $local_hooks_are_managed; then
+    if $repair && $expected_hooks_complete; then
+      if ! hooks_path_is_forwardable "$repo" "$local_hooks"; then
+        printf 'FAIL %s cannot safely forward hooks from %s\n' "$repo" "$local_hooks"
+        failures=$((failures + 1))
+      else
+        canonical_local_hooks=$(resolve_repo_hooks_path "$repo" "$local_hooks")
+        old_chain_present=false
+        [[ $chained_hooks_status -eq 0 ]] && old_chain_present=true
+        if git -C "$repo" config --local serverPolicy.chainedHooksPath "$canonical_local_hooks" &&
+           git -C "$repo" config --local core.hooksPath "$expected_hooks"; then
+          chained_hooks=$canonical_local_hooks
+          local_hooks=$expected_hooks
+          repaired=$((repaired + 1))
+        else
+          restore_config local "$repo" serverPolicy.chainedHooksPath \
+            "$old_chain_present" "${chained_hooks:-}"
+          printf 'FAIL %s could not repair core.hooksPath\n' "$repo"
+          failures=$((failures + 1))
+        fi
+      fi
+    else
+      printf 'FAIL %s overrides core.hooksPath=%s\n' "$repo" "$local_hooks"
+      failures=$((failures + 1))
+    fi
+  fi
+
+  default_branch=$(
+    cd "$repo" &&
+      SERVER_POLICY_IGNORE_CONFIG=1 &&
+      export SERVER_POLICY_IGNORE_CONFIG &&
+      # shellcheck disable=SC1090
+      source "$common" &&
+      default_branch_for_remote origin
+  ) 2>/dev/null
+  default_status=$?
+  origin_url=$(git -C "$repo" remote get-url origin 2>/dev/null)
+  origin_status=$?
+  configured_default=$(git -C "$repo" config --local --get serverPolicy.defaultBranch 2>/dev/null)
+  configured_status=$?
+  if [[ $configured_status -gt 1 ]]; then
+    printf 'FAIL %s cannot inspect default-branch metadata\n' "$repo"
+    failures=$((failures + 1))
+    configured_default=
+  elif [[ $configured_status -ne 0 ]]; then
+    configured_default=
+  fi
+  if [[ $origin_status -eq 0 && $default_status -ne 0 ]]; then
+    if $repair && [[ $configured_status -eq 0 ]]; then
+      if git -C "$repo" config --local --unset-all serverPolicy.defaultBranch; then
+        configured_default=
+        repaired=$((repaired + 1))
+      else
+        printf 'FAIL %s could not clear stale default-branch metadata\n' "$repo"
+        failures=$((failures + 1))
+      fi
+    fi
+    printf 'FAIL %s cannot determine origin default branch\n' "$repo"
+    failures=$((failures + 1))
+  elif [[ $origin_status -gt 2 ]]; then
+    printf 'FAIL %s cannot inspect origin remote\n' "$repo"
+    failures=$((failures + 1))
+  fi
+  if [[ $default_status -eq 0 && $configured_default != "$default_branch" ]]; then
+    if $repair; then
+      if git -C "$repo" config --local serverPolicy.defaultBranch "$default_branch"; then
+        configured_default=$default_branch
+        repaired=$((repaired + 1))
+      else
+        printf 'FAIL %s could not repair default-branch metadata\n' "$repo"
+        failures=$((failures + 1))
+      fi
+    else
+      printf 'FAIL %s default-branch expected=%s actual=%s\n' \
+        "$repo" "$default_branch" "${configured_default:-unset}"
+      failures=$((failures + 1))
+    fi
+  fi
+
+  chain_state=none
+  if [[ -n $chained_hooks ]]; then
+    chain_path=$(resolve_repo_hooks_path "$repo" "$chained_hooks" 2>/dev/null || true)
+    if [[ -n $chain_path ]] && hooks_path_is_forwardable "$repo" "$chained_hooks"; then
+      chain_state=$chained_hooks
+    else
+      printf 'FAIL %s chained hooks are not safely forwardable from %s\n' \
+        "$repo" "${chain_path:-$chained_hooks}"
+      failures=$((failures + 1))
+    fi
+  fi
+
+  printf 'repo %s branch=%s default=%s dirty=%s chain=%s\n' \
+    "$repo" "${branch:-detached}" "${configured_default:-unknown}" "$dirty" "$chain_state"
+done <"$sorted_scan_file"
+
+printf 'audit complete: failures=%d repaired=%d\n' "$failures" "$repaired"
+[[ $failures -eq 0 ]]

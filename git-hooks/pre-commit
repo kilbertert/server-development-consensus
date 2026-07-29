@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+enforce_default_branch_commit_policy || exit 1
+
+if chained_hook=$(chained_hook_for pre-commit); then
+  if paths_identify_same_file "$0" "$chained_hook"; then
+    printf '%s\n' 'SERVER POLICY: chained pre-commit hook resolves to the managed hook; commit stopped safely.' >&2
+    exit 1
+  else
+    same_status=$?
+    [ "$same_status" -eq 1 ] || {
+      printf '%s\n' 'SERVER POLICY: cannot validate the chained pre-commit hook; commit stopped safely.' >&2
+      exit 1
+    }
+  fi
+  exec "$chained_hook" "$@"
+else
+  chained_status=$?
+  if [ "$chained_status" -ne 1 ]; then
+    printf '%s\n' 'SERVER POLICY: cannot resolve the chained pre-commit hook; commit stopped safely.' >&2
+    exit 1
+  fi
+fi
+
+exit 0

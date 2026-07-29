@@ -1,0 +1,802 @@
+#!/usr/bin/python3
+"""Synchronize root-maintained policy mirrors with durable audit records."""
+
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from dataclasses import dataclass
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import stat
+import sys
+import time
+from typing import Any, Iterator
+
+
+CANONICAL_PATH = Path(
+    "/home/claude/.config/server-development-consensus/"
+    "SERVER-DEVELOPMENT-CONSENSUS.md"
+)
+TARGET_PATHS = (
+    Path("/etc/agent-governance/server-development-consensus.md"),
+    Path("/home/claude/.codex/AGENTS.md"),
+    Path("/home/claude/.codex/AGENTS.override.md"),
+    Path("/home/claude/.claude/CLAUDE.md"),
+)
+BACKUP_ROOT = Path("/var/backups/server-development-consensus")
+AUDIT_LOG = Path("/var/log/server-development-consensus/privileged-sync.jsonl")
+LOCK_PATH = Path("/run/lock/server-development-consensus-privileged-sync.lock")
+REQUIRED_HEADING = b"## Internal Knowledge And Public Projection Boundary\n"
+
+
+class PolicySyncError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class FileSnapshot:
+    data: bytes
+    sha256: str
+    mode: int
+    uid: int
+    gid: int
+    identity: tuple[int, int, int, int, int]
+
+
+@dataclass
+class TargetHandle:
+    index: int
+    logical_path: Path
+    path: Path
+    parent_fd: int
+    parent_identity: tuple[int, int]
+    name: str
+
+
+@dataclass
+class PreparedReplacement:
+    staging_name: str
+    staging_fd: int
+    staging_identity: tuple[int, int]
+    temp_name: str
+    temp_identity: tuple[int, int]
+    committed: bool = False
+    closed: bool = False
+
+
+def testing() -> bool:
+    return os.environ.get("SERVER_POLICY_PRIVILEGED_SYNC_TESTING") == "1"
+
+
+def rooted(path: Path) -> Path:
+    if not testing():
+        return path
+    root_value = os.environ.get("SERVER_POLICY_PRIVILEGED_SYNC_ROOT")
+    if not root_value:
+        raise PolicySyncError("SERVER_POLICY_PRIVILEGED_SYNC_ROOT is required in test mode")
+    root = Path(root_value)
+    if not root.is_absolute() or root == Path("/"):
+        raise PolicySyncError("test root must be an absolute non-root path")
+    return root / path.relative_to("/")
+
+
+def require_trusted_invocation() -> None:
+    if testing():
+        return
+    if os.geteuid() != 0:
+        raise PolicySyncError("privileged policy sync and verification must run as root")
+    executable = Path(__file__).resolve()
+    executable_stat = executable.stat()
+    if (executable_stat.st_uid, executable_stat.st_gid) != (0, 0) or (
+        stat.S_IMODE(executable_stat.st_mode) & 0o022
+    ):
+        raise PolicySyncError(
+            "run the root-owned, non-writable copy of sync-privileged-policy"
+        )
+
+
+def validate_expected_hash(value: str) -> str:
+    normalized = value.lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", normalized):
+        raise PolicySyncError("--expected-sha256 must be a 64-character SHA-256")
+    return normalized
+
+
+def read_snapshot_descriptor(
+    descriptor: int, display_path: Path, *, require_root_owner: bool
+) -> FileSnapshot:
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode):
+        raise PolicySyncError(f"policy path is not a regular file: {display_path}")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks = []
+    while True:
+        chunk = os.read(descriptor, 1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    after = os.fstat(descriptor)
+    before_identity = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+    after_identity = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    )
+    if before_identity != after_identity:
+        raise PolicySyncError(f"policy file changed while being read: {display_path}")
+    mode = stat.S_IMODE(after.st_mode) & 0o777
+    if require_root_owner:
+        if not testing() and (after.st_uid, after.st_gid) != (0, 0):
+            raise PolicySyncError(
+                f"root-maintained policy has unexpected ownership: {display_path}"
+            )
+        if mode & 0o022:
+            raise PolicySyncError(
+                f"root-maintained policy is group/world writable: {display_path}"
+            )
+    data = b"".join(chunks)
+    return FileSnapshot(
+        data=data,
+        sha256=hashlib.sha256(data).hexdigest(),
+        mode=mode,
+        uid=after.st_uid,
+        gid=after.st_gid,
+        identity=after_identity,
+    )
+
+
+def open_flags(base: int) -> int:
+    flags = base
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    return flags
+
+
+def snapshot_path(path: Path, *, require_root_owner: bool) -> FileSnapshot:
+    try:
+        descriptor = os.open(path, open_flags(os.O_RDONLY))
+    except FileNotFoundError as exc:
+        raise PolicySyncError(f"required file is missing: {path}") from exc
+    except OSError as exc:
+        if path.is_symlink():
+            raise PolicySyncError(f"refusing symlinked policy file: {path}") from exc
+        raise PolicySyncError(f"cannot open policy file: {path}: {exc}") from exc
+    try:
+        snapshot = read_snapshot_descriptor(
+            descriptor, path, require_root_owner=require_root_owner
+        )
+        path_stat = path.lstat()
+        if (path_stat.st_dev, path_stat.st_ino) != snapshot.identity[:2]:
+            raise PolicySyncError(f"policy file changed while being read: {path}")
+        return snapshot
+    finally:
+        os.close(descriptor)
+
+
+def open_target(index: int, logical_path: Path) -> TargetHandle:
+    path = rooted(logical_path)
+    parent = path.parent
+    flags = open_flags(os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    if not parent.is_absolute():
+        raise PolicySyncError(f"target directory is not absolute: {parent}")
+    parent_fd = os.open("/", flags)
+    try:
+        for component in parent.parts[1:]:
+            next_fd = os.open(component, flags, dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = next_fd
+    except OSError as exc:
+        os.close(parent_fd)
+        raise PolicySyncError(f"cannot open target directory: {parent}: {exc}") from exc
+    parent_stat = os.fstat(parent_fd)
+    path_stat = parent.lstat()
+    parent_identity = (parent_stat.st_dev, parent_stat.st_ino)
+    if (path_stat.st_dev, path_stat.st_ino) != parent_identity:
+        os.close(parent_fd)
+        raise PolicySyncError(f"target directory changed while being opened: {parent}")
+    return TargetHandle(index, logical_path, path, parent_fd, parent_identity, path.name)
+
+
+def validate_target_parent(target: TargetHandle) -> None:
+    try:
+        current = target.path.parent.lstat()
+    except FileNotFoundError as exc:
+        raise PolicySyncError(f"target directory disappeared: {target.path.parent}") from exc
+    if (current.st_dev, current.st_ino) != target.parent_identity:
+        raise PolicySyncError(f"target directory changed during sync: {target.path.parent}")
+
+
+def snapshot_target(target: TargetHandle) -> FileSnapshot:
+    validate_target_parent(target)
+    try:
+        descriptor = os.open(
+            target.name,
+            open_flags(os.O_RDONLY),
+            dir_fd=target.parent_fd,
+        )
+    except FileNotFoundError as exc:
+        raise PolicySyncError(f"required file is missing: {target.logical_path}") from exc
+    except OSError as exc:
+        raise PolicySyncError(
+            f"cannot open policy mirror: {target.logical_path}: {exc}"
+        ) from exc
+    try:
+        return read_snapshot_descriptor(
+            descriptor, target.logical_path, require_root_owner=True
+        )
+    finally:
+        os.close(descriptor)
+
+
+def metadata(item: FileSnapshot) -> dict[str, Any]:
+    return {
+        "sha256": item.sha256,
+        "size": len(item.data),
+        "mode": f"{item.mode:04o}",
+        "uid": item.uid,
+        "gid": item.gid,
+    }
+
+
+def fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def ensure_private_directory(path: Path) -> None:
+    missing = []
+    cursor = path
+    while not cursor.exists():
+        missing.append(cursor)
+        cursor = cursor.parent
+    if cursor.is_symlink() or not cursor.is_dir():
+        raise PolicySyncError(f"state directory parent is unsafe: {cursor}")
+    for directory in reversed(missing):
+        directory.mkdir(mode=0o700)
+        fsync_directory(directory.parent)
+    if path.is_symlink() or not path.is_dir():
+        raise PolicySyncError(f"state path is not a safe directory: {path}")
+    path_stat = path.lstat()
+    if not testing() and (path_stat.st_uid, path_stat.st_gid) != (0, 0):
+        raise PolicySyncError(f"root state directory has unexpected ownership: {path}")
+    os.chmod(path, 0o700)
+    fsync_directory(path)
+
+
+def write_all(descriptor: int, data: bytes) -> None:
+    offset = 0
+    while offset < len(data):
+        written = os.write(descriptor, data[offset:])
+        if written <= 0:
+            raise OSError("short write")
+        offset += written
+
+
+def apply_metadata(descriptor: int, item: FileSnapshot, display_path: Path) -> None:
+    os.fchmod(descriptor, item.mode)
+    if os.geteuid() == 0:
+        os.fchown(descriptor, item.uid, item.gid)
+    elif (item.uid, item.gid) != (os.geteuid(), os.getegid()):
+        raise PolicySyncError(f"cannot preserve ownership without root: {display_path}")
+    os.fsync(descriptor)
+
+
+def write_backup(path: Path, item: FileSnapshot) -> None:
+    descriptor = os.open(
+        path,
+        open_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY),
+        0o600,
+    )
+    try:
+        write_all(descriptor, item.data)
+        apply_metadata(descriptor, item, path)
+    finally:
+        os.close(descriptor)
+    fsync_directory(path.parent)
+
+
+def remove_staging_directory(
+    target: TargetHandle, staging_name: str, staging_identity: tuple[int, int]
+) -> None:
+    try:
+        current = os.stat(
+            staging_name,
+            dir_fd=target.parent_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return
+    if (current.st_dev, current.st_ino) != staging_identity:
+        return
+    os.rmdir(staging_name, dir_fd=target.parent_fd)
+
+
+def cleanup_replacement(target: TargetHandle, replacement: PreparedReplacement) -> None:
+    if replacement.closed:
+        return
+    try:
+        if not replacement.committed:
+            try:
+                os.unlink(replacement.temp_name, dir_fd=replacement.staging_fd)
+            except FileNotFoundError:
+                pass
+    finally:
+        os.close(replacement.staging_fd)
+        replacement.closed = True
+    remove_staging_directory(
+        target, replacement.staging_name, replacement.staging_identity
+    )
+
+
+def prepare_replacement(
+    target: TargetHandle, source: FileSnapshot, original: FileSnapshot
+) -> PreparedReplacement:
+    validate_target_parent(target)
+    staging_name = (
+        f".{target.name}.server-policy-staging-{os.getpid()}-{secrets.token_hex(8)}"
+    )
+    os.mkdir(staging_name, 0o700, dir_fd=target.parent_fd)
+    staging_fd = -1
+    staging_identity: tuple[int, int] | None = None
+    try:
+        staging_fd = os.open(
+            staging_name,
+            open_flags(os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)),
+            dir_fd=target.parent_fd,
+        )
+        staging_stat = os.fstat(staging_fd)
+        staging_entry = os.stat(
+            staging_name,
+            dir_fd=target.parent_fd,
+            follow_symlinks=False,
+        )
+        staging_identity = (staging_stat.st_dev, staging_stat.st_ino)
+        if (staging_entry.st_dev, staging_entry.st_ino) != staging_identity:
+            raise PolicySyncError(
+                f"replacement staging directory changed: {target.logical_path}"
+            )
+        if not stat.S_ISDIR(staging_stat.st_mode):
+            raise PolicySyncError(
+                f"replacement staging path is not a directory: {target.logical_path}"
+            )
+        if not testing() and (staging_stat.st_uid, staging_stat.st_gid) != (0, 0):
+            raise PolicySyncError(
+                f"replacement staging directory is not root-owned: {target.logical_path}"
+            )
+        if stat.S_IMODE(staging_stat.st_mode) != 0o700:
+            raise PolicySyncError(
+                f"replacement staging directory has unsafe mode: {target.logical_path}"
+            )
+
+        temp_name = "replacement"
+        descriptor = os.open(
+            temp_name,
+            open_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY),
+            0o600,
+            dir_fd=staging_fd,
+        )
+        try:
+            write_all(descriptor, source.data)
+            apply_metadata(descriptor, original, target.logical_path)
+            temp_stat = os.fstat(descriptor)
+            temp_identity = (temp_stat.st_dev, temp_stat.st_ino)
+        finally:
+            os.close(descriptor)
+        return PreparedReplacement(
+            staging_name,
+            staging_fd,
+            staging_identity,
+            temp_name,
+            temp_identity,
+        )
+    except Exception:
+        if staging_fd >= 0:
+            try:
+                os.unlink("replacement", dir_fd=staging_fd)
+            except FileNotFoundError:
+                pass
+            os.close(staging_fd)
+        if staging_identity is not None:
+            remove_staging_directory(target, staging_name, staging_identity)
+        else:
+            try:
+                os.rmdir(staging_name, dir_fd=target.parent_fd)
+            except FileNotFoundError:
+                pass
+        raise
+
+
+def replace_target(
+    target: TargetHandle,
+    replacement: PreparedReplacement,
+    *,
+    allow_test_injection: bool = True,
+) -> None:
+    validate_target_parent(target)
+    staging_stat = os.fstat(replacement.staging_fd)
+    if (staging_stat.st_dev, staging_stat.st_ino) != replacement.staging_identity:
+        raise PolicySyncError(
+            f"replacement staging directory changed: {target.logical_path}"
+        )
+    if allow_test_injection and testing() and os.environ.get(
+        "SERVER_POLICY_PRIVILEGED_SYNC_SWAP_PREPARED_INDEX"
+    ) == str(target.index):
+        os.unlink(replacement.temp_name, dir_fd=replacement.staging_fd)
+        descriptor = os.open(
+            replacement.temp_name,
+            open_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY),
+            0o600,
+            dir_fd=replacement.staging_fd,
+        )
+        try:
+            write_all(descriptor, b"swapped replacement\n")
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    temp_stat = os.stat(
+        replacement.temp_name,
+        dir_fd=replacement.staging_fd,
+        follow_symlinks=False,
+    )
+    if not stat.S_ISREG(temp_stat.st_mode) or (
+        temp_stat.st_dev,
+        temp_stat.st_ino,
+    ) != replacement.temp_identity:
+        raise PolicySyncError(
+            f"prepared replacement changed before install: {target.logical_path}"
+        )
+    os.replace(
+        replacement.temp_name,
+        target.name,
+        src_dir_fd=replacement.staging_fd,
+        dst_dir_fd=target.parent_fd,
+    )
+    replacement.committed = True
+    installed_stat = os.stat(
+        target.name,
+        dir_fd=target.parent_fd,
+        follow_symlinks=False,
+    )
+    if (installed_stat.st_dev, installed_stat.st_ino) != replacement.temp_identity:
+        raise PolicySyncError(
+            f"installed replacement identity changed: {target.logical_path}"
+        )
+    if allow_test_injection and testing() and os.environ.get(
+        "SERVER_POLICY_PRIVILEGED_SYNC_FAIL_REPLACE_POST_INDEX"
+    ) == str(target.index):
+        raise PolicySyncError(
+            f"injected post-replace failure for {target.logical_path}"
+        )
+    os.fsync(target.parent_fd)
+    validate_target_parent(target)
+
+
+def restore_target(target: TargetHandle, original: FileSnapshot) -> None:
+    if testing() and os.environ.get("SERVER_POLICY_PRIVILEGED_SYNC_FAIL_RESTORE_INDEX") == str(
+        target.index
+    ):
+        raise PolicySyncError(f"injected restore failure for {target.logical_path}")
+    replacement = prepare_replacement(target, original, original)
+    try:
+        replace_target(target, replacement, allow_test_injection=False)
+    finally:
+        cleanup_replacement(target, replacement)
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    temp_path = path.with_name(f".{path.name}-{os.getpid()}-{secrets.token_hex(6)}")
+    descriptor = os.open(
+        temp_path,
+        open_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY),
+        0o600,
+    )
+    try:
+        data = (
+            json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+        ).encode()
+        write_all(descriptor, data)
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temp_path, path)
+    fsync_directory(path.parent)
+
+
+def append_audit(payload: dict[str, Any]) -> None:
+    audit_path = rooted(AUDIT_LOG)
+    ensure_private_directory(audit_path.parent)
+    descriptor = os.open(
+        audit_path,
+        open_flags(os.O_CREAT | os.O_APPEND | os.O_WRONLY),
+        0o600,
+    )
+    try:
+        audit_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(audit_stat.st_mode):
+            raise PolicySyncError(f"audit path is not a regular file: {audit_path}")
+        if not testing() and (audit_stat.st_uid, audit_stat.st_gid) != (0, 0):
+            raise PolicySyncError(f"audit file has unexpected ownership: {audit_path}")
+        write_all(
+            descriptor,
+            (json.dumps(payload, ensure_ascii=True, sort_keys=True) + "\n").encode(),
+        )
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    fsync_directory(audit_path.parent)
+
+
+@contextmanager
+def policy_lock() -> Iterator[None]:
+    lock_path = rooted(LOCK_PATH)
+    if testing():
+        lock_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    elif lock_path.parent.is_symlink() or not lock_path.parent.is_dir():
+        raise PolicySyncError(f"lock directory is unavailable: {lock_path.parent}")
+    descriptor = os.open(lock_path, open_flags(os.O_CREAT | os.O_RDWR), 0o600)
+    try:
+        lock_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(lock_stat.st_mode):
+            raise PolicySyncError(f"lock path is not a regular file: {lock_path}")
+        if not testing() and (lock_stat.st_uid, lock_stat.st_gid) != (0, 0):
+            raise PolicySyncError(f"lock file has unexpected ownership: {lock_path}")
+        os.fchmod(descriptor, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def source_snapshot(expected_sha256: str) -> FileSnapshot:
+    source_path = rooted(CANONICAL_PATH)
+    source = snapshot_path(source_path, require_root_owner=False)
+    if source.sha256 != expected_sha256:
+        raise PolicySyncError(
+            f"canonical policy hash does not match the reviewed digest: {source_path}"
+        )
+    if REQUIRED_HEADING not in source.data:
+        raise PolicySyncError(f"canonical policy is missing the required boundary: {source_path}")
+    return source
+
+
+def open_targets() -> dict[Path, TargetHandle]:
+    handles = {}
+    try:
+        for index, logical_path in enumerate(TARGET_PATHS, start=1):
+            handles[logical_path] = open_target(index, logical_path)
+        return handles
+    except Exception:
+        for handle in handles.values():
+            os.close(handle.parent_fd)
+        raise
+
+
+def close_targets(handles: dict[Path, TargetHandle]) -> None:
+    for handle in handles.values():
+        os.close(handle.parent_fd)
+
+
+def verify_locked(expected_sha256: str) -> bool:
+    source = source_snapshot(expected_sha256)
+    handles = open_targets()
+    failures = 0
+    try:
+        for logical_path, target in handles.items():
+            try:
+                current = snapshot_target(target)
+            except PolicySyncError as exc:
+                print(f"FAIL {exc}")
+                failures += 1
+                continue
+            if current.data != source.data:
+                print(f"FAIL policy mirror drifted: {logical_path}")
+                failures += 1
+            else:
+                print(f"ok policy mirror {logical_path}")
+    finally:
+        close_targets(handles)
+    print(f"privileged policy verification: failures={failures}")
+    return failures == 0
+
+
+def record_failure(
+    backup_dir: Path | None,
+    manifest_path: Path | None,
+    manifest: dict[str, Any],
+    source: FileSnapshot,
+    status: str,
+    error: Exception,
+    rollback_errors: list[str],
+) -> list[str]:
+    recording_errors = []
+    manifest["status"] = status
+    manifest["error"] = str(error)
+    if rollback_errors:
+        manifest["rollback_errors"] = rollback_errors
+    manifest["finished_at"] = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    if manifest_path is not None:
+        try:
+            write_json(manifest_path, manifest)
+        except Exception as exc:
+            recording_errors.append(f"manifest: {exc}")
+    if backup_dir is not None:
+        try:
+            append_audit({
+                "backup": str(backup_dir),
+                "result": status,
+                "source_sha256": source.sha256,
+                "timestamp": manifest["finished_at"],
+            })
+        except Exception as exc:
+            recording_errors.append(f"audit: {exc}")
+    return recording_errors
+
+
+def synchronize_locked(expected_sha256: str) -> Path:
+    source = source_snapshot(expected_sha256)
+    handles = open_targets()
+    target_snapshots: dict[Path, FileSnapshot] = {}
+    prepared: dict[Path, PreparedReplacement] = {}
+    replaced: set[Path] = set()
+    backup_dir: Path | None = None
+    manifest_path: Path | None = None
+    manifest: dict[str, Any] = {
+        "version": 1,
+        "status": "preparing",
+        "source": {"path": str(CANONICAL_PATH), **metadata(source)},
+        "targets": [],
+    }
+    try:
+        for logical_path, target in handles.items():
+            target_snapshots[logical_path] = snapshot_target(target)
+
+        timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        manifest["started_at"] = timestamp
+        backup_root = rooted(BACKUP_ROOT)
+        ensure_private_directory(backup_root)
+        backup_dir = backup_root / f"{timestamp}-{os.getpid()}"
+        ensure_private_directory(backup_dir)
+        manifest_path = backup_dir / "manifest.json"
+
+        for logical_path, original in target_snapshots.items():
+            relative = logical_path.relative_to("/")
+            backup_path = backup_dir / "files" / relative
+            ensure_private_directory(backup_path.parent)
+            write_backup(backup_path, original)
+            manifest["targets"].append({
+                "path": str(logical_path),
+                "backup": str(Path("files") / relative),
+                "before": metadata(original),
+                "after": None,
+            })
+        manifest["status"] = "prepared"
+        write_json(manifest_path, manifest)
+        fsync_directory(backup_dir)
+        fsync_directory(backup_root)
+
+        for logical_path, target in handles.items():
+            prepared[logical_path] = prepare_replacement(
+                target, source, target_snapshots[logical_path]
+            )
+        for logical_path, target in handles.items():
+            current = snapshot_target(target)
+            original = target_snapshots[logical_path]
+            if current.identity != original.identity or current.data != original.data:
+                raise PolicySyncError(f"policy mirror changed after backup: {logical_path}")
+
+        fail_after = 0
+        if testing():
+            fail_after = int(os.environ.get("SERVER_POLICY_PRIVILEGED_SYNC_FAIL_AFTER", "0"))
+        for index, logical_path in enumerate(TARGET_PATHS, start=1):
+            replacement = prepared[logical_path]
+            try:
+                replace_target(handles[logical_path], replacement)
+            finally:
+                if replacement.committed:
+                    replaced.add(logical_path)
+                cleanup_replacement(handles[logical_path], replacement)
+                prepared.pop(logical_path, None)
+            if fail_after == index:
+                raise PolicySyncError(f"injected failure after replacement {index}")
+
+        for entry, logical_path in zip(manifest["targets"], TARGET_PATHS, strict=True):
+            current = snapshot_target(handles[logical_path])
+            original = target_snapshots[logical_path]
+            if current.data != source.data:
+                raise PolicySyncError(f"policy mirror verification failed: {logical_path}")
+            if (current.mode, current.uid, current.gid) != (
+                original.mode,
+                original.uid,
+                original.gid,
+            ):
+                raise PolicySyncError(f"policy mirror metadata changed: {logical_path}")
+            entry["after"] = metadata(current)
+
+        manifest["status"] = "completed"
+        manifest["finished_at"] = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        write_json(manifest_path, manifest)
+        append_audit({
+            "backup": str(backup_dir),
+            "result": "completed",
+            "source_sha256": source.sha256,
+            "timestamp": manifest["finished_at"],
+        })
+        return backup_dir
+    except Exception as exc:
+        for logical_path, replacement in prepared.items():
+            try:
+                cleanup_replacement(handles[logical_path], replacement)
+            except Exception:
+                pass
+        rollback_errors = []
+        for logical_path in replaced:
+            try:
+                restore_target(handles[logical_path], target_snapshots[logical_path])
+            except Exception as restore_exc:
+                rollback_errors.append(f"{logical_path}: {restore_exc}")
+        if replaced:
+            status = "rollback_failed" if rollback_errors else "rolled_back"
+        else:
+            status = "preparation_failed"
+        recording_errors = record_failure(
+            backup_dir,
+            manifest_path,
+            manifest,
+            source,
+            status,
+            exc,
+            rollback_errors,
+        )
+        details = f"privileged policy sync failed: {exc}"
+        if backup_dir is not None:
+            details += f"; backup={backup_dir}"
+        if recording_errors:
+            details += f"; record errors={'; '.join(recording_errors)}"
+        raise PolicySyncError(details) from exc
+    finally:
+        close_targets(handles)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--expected-sha256", required=True)
+    args = parser.parse_args()
+    require_trusted_invocation()
+    expected_sha256 = validate_expected_hash(args.expected_sha256)
+    with policy_lock():
+        if args.verify:
+            if not verify_locked(expected_sha256):
+                raise SystemExit(1)
+            return
+        backup_dir = synchronize_locked(expected_sha256)
+    print(f"privileged policy sync complete: backup={backup_dir}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except PolicySyncError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc

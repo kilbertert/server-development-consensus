@@ -12,6 +12,15 @@ from urllib.request import Request, urlopen
 import jwt
 
 
+EXPECTED_APP_PERMISSIONS = {
+    "contents": "read",
+    "issues": "write",
+    "metadata": "read",
+    "pull_requests": "read",
+}
+EXPECTED_APP_EVENTS = {"pull_request"}
+
+
 @dataclass(frozen=True)
 class PullRequestContext:
     repo: str
@@ -34,6 +43,14 @@ class GitHubClient:
         self.app_id = app_id
         self.private_key = private_key_file.read_bytes()
 
+    def _app_jwt(self) -> str:
+        now = int(time.time())
+        return jwt.encode(
+            {"iat": now - 30, "exp": now + 540, "iss": self.app_id},
+            self.private_key,
+            algorithm="RS256",
+        )
+
     def _request(self, method: str, path: str, token: str | None = None, body: dict | None = None) -> object:
         headers = {
             "Accept": "application/vnd.github+json",
@@ -54,15 +71,20 @@ class GitHubClient:
         return json.loads(raw) if raw else {}
 
     def installation_token(self, installation_id: int, permissions: dict[str, str] | None = None) -> str:
-        now = int(time.time())
-        app_jwt = jwt.encode(
-            {"iat": now - 30, "exp": now + 540, "iss": self.app_id},
-            self.private_key,
-            algorithm="RS256",
-        )
         body = {"permissions": permissions} if permissions else None
-        result = self._request("POST", f"/app/installations/{installation_id}/access_tokens", app_jwt, body)
+        result = self._request(
+            "POST",
+            f"/app/installations/{installation_id}/access_tokens",
+            self._app_jwt(),
+            body,
+        )
         return str(result["token"])
+
+    def app_configuration_errors(self) -> list[str]:
+        details = self._request("GET", "/app", self._app_jwt())
+        if not isinstance(details, dict):
+            return ["GitHub App configuration response is invalid"]
+        return validate_app_configuration(details)
 
     def pull_request(self, token: str, repo: str, number: int) -> PullRequestContext:
         item = self._request("GET", f"/repos/{repo}/pulls/{number}", token)
@@ -114,3 +136,19 @@ def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
         return False
     expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature[7:], expected)
+
+
+def validate_app_configuration(details: dict) -> list[str]:
+    errors: list[str] = []
+    permissions = details.get("permissions")
+    if permissions != EXPECTED_APP_PERMISSIONS:
+        errors.append(
+            "GitHub App permissions must be exactly: contents=read, issues=write, "
+            "metadata=read, pull_requests=read"
+        )
+    events = set(details.get("events") or [])
+    if events != EXPECTED_APP_EVENTS:
+        errors.append("GitHub App events must contain only pull_request")
+    if int(details.get("installations_count") or 0) < 1:
+        errors.append("GitHub App is not installed on an allowed repository")
+    return errors

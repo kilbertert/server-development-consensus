@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from review_sentinel.db import Queue
 from review_sentinel.config import Settings
-from review_sentinel.github import verify_signature
+from review_sentinel.github import validate_app_configuration, verify_signature
 from review_sentinel.review import render_comment, validate_report
 from review_sentinel.review import ReviewError, _extract_archive
 from review_sentinel.github import PullRequestContext
@@ -21,6 +21,24 @@ from review_sentinel.service import create_app
 
 
 class ReviewSentinelTests(unittest.TestCase):
+    def test_app_configuration_must_be_exactly_least_privilege(self) -> None:
+        valid = {
+            "permissions": {
+                "contents": "read",
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "read",
+            },
+            "events": ["pull_request"],
+            "installations_count": 1,
+        }
+        self.assertEqual(validate_app_configuration(valid), [])
+        overprivileged = dict(valid)
+        overprivileged["permissions"] = {**valid["permissions"], "workflows": "write"}
+        self.assertTrue(validate_app_configuration(overprivileged))
+        self.assertTrue(validate_app_configuration({**valid, "events": ["push", "pull_request"]}))
+        self.assertTrue(validate_app_configuration({**valid, "installations_count": 0}))
+
     def test_runtime_rejects_interactive_codex_home_and_requires_explicit_binary(self) -> None:
         with tempfile.NamedTemporaryFile() as key:
             with patch.dict(os.environ, {

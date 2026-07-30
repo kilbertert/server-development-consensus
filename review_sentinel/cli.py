@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .config import Settings
 from .db import Queue
+from .github import GitHubClient, GitHubError
 from .service import serve
 
 
@@ -36,6 +37,12 @@ def main() -> None:
     settings = Settings.from_env()
     if args.command == "doctor":
         errors = settings.validate_runtime()
+        if not errors:
+            try:
+                github = GitHubClient(settings.api_url, settings.app_id, settings.private_key_file)
+                errors.extend(github.app_configuration_errors())
+            except (GitHubError, OSError, ValueError) as exc:
+                errors.append(f"GitHub App validation failed: {exc}")
         queue = Queue(settings.data_dir / "review-sentinel.sqlite3", settings.max_queue)
         print(json.dumps({"ready": not errors, "errors": errors, "queue": queue.counts()}, sort_keys=True))
         raise SystemExit(0 if not errors else 2)

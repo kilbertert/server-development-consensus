@@ -1,0 +1,27 @@
+[Unit]
+Description=Review-only GitHub PR queue
+After=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+EnvironmentFile=/home/claude/.config/review-sentinel/review-sentinel.env
+Environment=PYTHONPATH=/home/claude/.local/lib/review-sentinel
+Environment=PATH=/home/claude/miniconda3/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env python3 -m review_sentinel.cli --env-file /home/claude/.config/review-sentinel/review-sentinel.env serve
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+ReadWritePaths=/home/claude/.local/state/review-sentinel
+
+[Install]
+WantedBy=default.target

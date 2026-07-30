@@ -76,3 +76,6 @@ def test_review_sentinel_is_review_only_and_least_privilege() -> None:
     assert '"workflows"' not in manifest
     assert '"administration"' not in manifest
     assert "Review Sentinel" in (ROOT / "ops/review-sentinel/README.md").read_text(encoding="utf-8")
+    unit = (ROOT / "ops/review-sentinel/systemd/review-sentinel.service").read_text(encoding="utf-8")
+    assert "ProtectKernelModules" not in unit
+    assert "RestrictSUIDSGID" not in unit

@@ -146,6 +146,14 @@ class Queue:
                 (status, json.dumps(report) if report else None, error, time.time(), job_id),
             )
 
+    def fail_incomplete(self, error: str) -> int:
+        with self._db() as db:
+            cursor = db.execute(
+                "UPDATE jobs SET status='failed', error=?, updated_at=? WHERE status IN ('running','publishing')",
+                (error, time.time()),
+            )
+        return cursor.rowcount
+
     def counts(self) -> dict[str, int]:
         with self._db() as db:
             rows = db.execute("SELECT status, count(*) AS count FROM jobs GROUP BY status").fetchall()

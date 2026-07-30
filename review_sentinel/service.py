@@ -138,6 +138,9 @@ def serve(settings: Settings) -> None:
         raise RuntimeError("; ".join(errors))
     settings.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     queue = Queue(settings.data_dir / "review-sentinel.sqlite3", settings.max_queue)
+    recovered = queue.fail_incomplete("review worker stopped before completing the job")
+    if recovered:
+        LOG.warning("marked %s interrupted review jobs as failed", recovered)
     github = GitHubClient(settings.api_url, settings.app_id, settings.private_key_file)
     app_errors = github.app_configuration_errors()
     if app_errors:

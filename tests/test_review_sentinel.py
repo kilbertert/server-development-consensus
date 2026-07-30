@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import tarfile
 import unittest
@@ -15,7 +16,7 @@ from review_sentinel.db import Queue
 from review_sentinel.config import Settings
 from review_sentinel.github import validate_app_configuration, verify_signature
 from review_sentinel.review import render_comment, validate_report
-from review_sentinel.review import ReviewError, _extract_archive
+from review_sentinel.review import ReviewError, _codex_command, _extract_archive, _run
 from review_sentinel.github import PullRequestContext
 from review_sentinel.service import create_app
 
@@ -80,6 +81,17 @@ class ReviewSentinelTests(unittest.TestCase):
             assert publication is not None
             self.assertEqual(publication.id, claimed.id)
 
+    def test_queue_marks_interrupted_jobs_failed_without_retrying(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            queue = Queue(Path(raw) / "queue.sqlite3")
+            queued = queue.enqueue("owner/repo", 7, "a" * 40, 42)
+            running = queue.claim()
+            assert running is not None
+            self.assertEqual(running.id, queued.id)
+            self.assertEqual(queue.fail_incomplete("worker stopped"), 1)
+            self.assertEqual(queue.get(queued.id).status, "failed")
+            self.assertIsNone(queue.claim())
+
     def test_report_validation_and_marker_comment(self) -> None:
         report = {
             "verdict": "findings",
@@ -138,6 +150,50 @@ class ReviewSentinelTests(unittest.TestCase):
                 })
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json["accepted"], True)
+
+    def test_internal_git_commands_ignore_server_hooks_and_global_config(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            work = root / "repo"
+            hooks = root / "hooks"
+            work.mkdir()
+            hooks.mkdir()
+            hook = hooks / "pre-commit"
+            hook.write_text("#!/bin/sh\nexit 1\n")
+            hook.chmod(0o700)
+            global_config = root / "global.gitconfig"
+            global_config.write_text(f"[core]\n\thooksPath = {hooks}\n")
+            with patch.dict(os.environ, {"HOME": str(root), "GIT_CONFIG_GLOBAL": str(global_config)}):
+                _run(["git", "init", "-q"], work, 10)
+                _run(["git", "config", "user.email", "review-sentinel@localhost"], work, 10)
+                _run(["git", "config", "user.name", "Review Sentinel"], work, 10)
+                (work / "file.txt").write_text("test\n")
+                _run(["git", "add", "-A"], work, 10)
+                _run(["git", "commit", "-qm", "isolated"], work, 10)
+
+    def test_internal_command_timeout_is_a_review_error(self) -> None:
+        with patch(
+            "review_sentinel.review.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["git"], 10),
+        ):
+            with self.assertRaisesRegex(ReviewError, "command timed out after 10 seconds"):
+                _run(["git", "status"], Path("."), 10)
+
+    def test_codex_command_uses_generic_exec_with_explicit_diff_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            with patch.dict(os.environ, {"REVIEW_SENTINEL_CODEX_BIN": "/bin/true"}):
+                settings = Settings.from_env()
+            context = PullRequestContext(
+                "owner/repo", 7, "a" * 40, "b" * 40,
+                "https://github.com/owner/repo/pull/7", True, False, "open",
+            )
+            command = _codex_command(
+                settings, Path(raw), Path(raw) / "schema.json",
+                Path(raw) / "report.json", context,
+            )
+        self.assertNotIn("review", command)
+        self.assertNotIn("--base", command)
+        self.assertIn("git diff review-base...HEAD", command[-1])
 
 
 if __name__ == "__main__":

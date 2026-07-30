@@ -24,6 +24,9 @@ CLI and from CodeRabbit.
   ambient environment variables. Do not point it at a wrapper containing
   unrelated API keys.
 - The service unit uses a read-only system view and only writes its queue state.
+- Model and internal Git timeouts become failed jobs without stopping the queue
+  worker. Service startup marks interrupted jobs failed and never retries them
+  automatically.
 
 This does not copy ClawSweeper's worker fleet, Durable Objects, R2 state repo,
 repair, issue implementation, or automerge lanes. Those are intentionally out

@@ -14,6 +14,7 @@ targets='etc/agent-governance/server-development-consensus.md
 home/claude/.codex/AGENTS.md
 home/claude/.codex/AGENTS.override.md
 home/claude/.claude/CLAUDE.md'
+export SERVER_POLICY_PRIVILEGED_SYNC_TEST_IMMUTABLE_TARGETS=/home/claude/.codex/AGENTS.md,/home/claude/.codex/AGENTS.override.md,/home/claude/.claude/CLAUDE.md
 mode_for_index() {
   case $1 in
     1) printf '%s\n' 600 ;;
@@ -47,6 +48,11 @@ sync_output=$("$sync_tool" --expected-sha256 "$expected_sha256")
 printf '%s\n' "$sync_output" | grep -q 'privileged policy sync complete: backup='
 "$sync_tool" --verify --expected-sha256 "$expected_sha256" |
   grep -q 'privileged policy verification: failures=0'
+if SERVER_POLICY_PRIVILEGED_SYNC_TEST_IMMUTABLE_TARGETS= \
+  "$sync_tool" --verify --expected-sha256 "$expected_sha256" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL mutable privileged mirrors passed verification' >&2
+  exit 1
+fi
 
 index=0
 printf '%s\n' "$targets" | while IFS= read -r relative; do
@@ -86,6 +92,8 @@ for index, item in enumerate(manifest["targets"], start=1):
     backup = Path(sys.argv[1]).parent / item["backup"]
     assert backup.read_text() == f"old-{index}\n"
     assert f"{backup.stat().st_mode & 0o777:04o}" == item["before"]["mode"]
+    assert item["before"]["immutable"] == (index != 1)
+    assert item["after"]["immutable"] == (index != 1)
 PY
 [ "$(python3 -c 'import json,sys; print(json.loads(sys.stdin.readlines()[-1])["result"])' <"$tmp/root/var/log/server-development-consensus/privileged-sync.jsonl")" = completed ]
 

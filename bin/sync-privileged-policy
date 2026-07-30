@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
+import errno
 import fcntl
 import hashlib
 import json
@@ -14,6 +15,7 @@ from pathlib import Path
 import re
 import secrets
 import stat
+import struct
 import sys
 import time
 from typing import Any, Iterator
@@ -29,10 +31,15 @@ TARGET_PATHS = (
     Path("/home/claude/.codex/AGENTS.override.md"),
     Path("/home/claude/.claude/CLAUDE.md"),
 )
+IMMUTABLE_TARGET_PATHS = frozenset(TARGET_PATHS[1:])
 BACKUP_ROOT = Path("/var/backups/server-development-consensus")
 AUDIT_LOG = Path("/var/log/server-development-consensus/privileged-sync.jsonl")
 LOCK_PATH = Path("/run/lock/server-development-consensus-privileged-sync.lock")
 REQUIRED_HEADING = b"## Internal Knowledge And Public Projection Boundary\n"
+FS_IOC_GETFLAGS = 0x80086601
+FS_IOC_SETFLAGS = 0x40086602
+FS_IMMUTABLE_FL = 0x00000010
+_TEST_IMMUTABLE_PATHS: set[Path] | None = None
 
 
 class PolicySyncError(RuntimeError):
@@ -46,6 +53,7 @@ class FileSnapshot:
     mode: int
     uid: int
     gid: int
+    immutable: bool
     identity: tuple[int, int, int, int, int]
 
 
@@ -108,6 +116,80 @@ def validate_expected_hash(value: str) -> str:
     return normalized
 
 
+def test_immutable_paths() -> set[Path]:
+    global _TEST_IMMUTABLE_PATHS
+    if _TEST_IMMUTABLE_PATHS is None:
+        raw = os.environ.get("SERVER_POLICY_PRIVILEGED_SYNC_TEST_IMMUTABLE_TARGETS", "")
+        _TEST_IMMUTABLE_PATHS = {
+            Path(item) for item in raw.split(",") if item
+        }
+    return _TEST_IMMUTABLE_PATHS
+
+
+def file_flags(descriptor: int, display_path: Path) -> int:
+    if testing() and display_path in test_immutable_paths():
+        return FS_IMMUTABLE_FL
+    buffer = bytearray(struct.pack("I", 0))
+    try:
+        fcntl.ioctl(descriptor, FS_IOC_GETFLAGS, buffer, True)
+    except OSError as exc:
+        if exc.errno in {
+            errno.EINVAL,
+            errno.ENOTTY,
+            errno.ENOSYS,
+            errno.EOPNOTSUPP,
+        }:
+            return 0
+        raise PolicySyncError(f"cannot inspect filesystem flags: {display_path}: {exc}") from exc
+    return struct.unpack("I", buffer)[0]
+
+
+def set_target_immutable(target: TargetHandle, enabled: bool) -> None:
+    if testing():
+        paths = test_immutable_paths()
+        if enabled:
+            paths.add(target.logical_path)
+        else:
+            paths.discard(target.logical_path)
+        if enabled and os.environ.get(
+            "SERVER_POLICY_PRIVILEGED_SYNC_TEST_FAIL_IMMUTABLE_INDEX"
+        ) == str(target.index):
+            raise PolicySyncError(
+                f"injected immutable restore failure for {target.logical_path}"
+            )
+        return
+    validate_target_parent(target)
+    try:
+        descriptor = os.open(
+            target.name,
+            open_flags(os.O_RDONLY),
+            dir_fd=target.parent_fd,
+        )
+    except OSError as exc:
+        raise PolicySyncError(
+            f"cannot open policy mirror for filesystem flags: {target.logical_path}: {exc}"
+        ) from exc
+    try:
+        flags = file_flags(descriptor, target.logical_path)
+        current = bool(flags & FS_IMMUTABLE_FL)
+        if current == enabled:
+            return
+        desired = flags | FS_IMMUTABLE_FL if enabled else flags & ~FS_IMMUTABLE_FL
+        buffer = bytearray(struct.pack("I", desired))
+        try:
+            fcntl.ioctl(descriptor, FS_IOC_SETFLAGS, buffer, True)
+        except OSError as exc:
+            raise PolicySyncError(
+                f"cannot set immutable={enabled} on {target.logical_path}: {exc}"
+            ) from exc
+        if bool(file_flags(descriptor, target.logical_path) & FS_IMMUTABLE_FL) != enabled:
+            raise PolicySyncError(
+                f"immutable state did not settle on {target.logical_path}"
+            )
+    finally:
+        os.close(descriptor)
+
+
 def read_snapshot_descriptor(
     descriptor: int, display_path: Path, *, require_root_owner: bool
 ) -> FileSnapshot:
@@ -139,6 +221,7 @@ def read_snapshot_descriptor(
     if before_identity != after_identity:
         raise PolicySyncError(f"policy file changed while being read: {display_path}")
     mode = stat.S_IMODE(after.st_mode) & 0o777
+    immutable = bool(file_flags(descriptor, display_path) & FS_IMMUTABLE_FL)
     if require_root_owner:
         if not testing() and (after.st_uid, after.st_gid) != (0, 0):
             raise PolicySyncError(
@@ -155,6 +238,7 @@ def read_snapshot_descriptor(
         mode=mode,
         uid=after.st_uid,
         gid=after.st_gid,
+        immutable=immutable,
         identity=after_identity,
     )
 
@@ -251,6 +335,7 @@ def metadata(item: FileSnapshot) -> dict[str, Any]:
         "mode": f"{item.mode:04o}",
         "uid": item.uid,
         "gid": item.gid,
+        "immutable": item.immutable,
     }
 
 
@@ -502,6 +587,26 @@ def restore_target(target: TargetHandle, original: FileSnapshot) -> None:
         cleanup_replacement(target, replacement)
 
 
+def make_targets_mutable(
+    handles: dict[Path, TargetHandle], snapshots: dict[Path, FileSnapshot]
+) -> None:
+    for logical_path, target in handles.items():
+        if snapshots[logical_path].immutable:
+            set_target_immutable(target, False)
+
+
+def apply_snapshot_immutability(
+    handles: dict[Path, TargetHandle], snapshots: dict[Path, FileSnapshot]
+) -> None:
+    for logical_path, target in handles.items():
+        set_target_immutable(target, snapshots[logical_path].immutable)
+
+
+def apply_expected_immutability(handles: dict[Path, TargetHandle]) -> None:
+    for logical_path, target in handles.items():
+        set_target_immutable(target, logical_path in IMMUTABLE_TARGET_PATHS)
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     temp_path = path.with_name(f".{path.name}-{os.getpid()}-{secrets.token_hex(6)}")
     descriptor = os.open(
@@ -609,10 +714,21 @@ def verify_locked(expected_sha256: str) -> bool:
                 print(f"FAIL {exc}")
                 failures += 1
                 continue
+            target_failed = False
             if current.data != source.data:
                 print(f"FAIL policy mirror drifted: {logical_path}")
                 failures += 1
-            else:
+                target_failed = True
+            expected_immutable = logical_path in IMMUTABLE_TARGET_PATHS
+            if current.immutable != expected_immutable:
+                print(
+                    "FAIL policy mirror immutable state drifted: "
+                    f"{logical_path} expected={expected_immutable} "
+                    f"actual={current.immutable}"
+                )
+                failures += 1
+                target_failed = True
+            if not target_failed:
                 print(f"ok policy mirror {logical_path}")
     finally:
         close_targets(handles)
@@ -702,8 +818,17 @@ def synchronize_locked(expected_sha256: str) -> Path:
         for logical_path, target in handles.items():
             current = snapshot_target(target)
             original = target_snapshots[logical_path]
-            if current.identity != original.identity or current.data != original.data:
+            if (
+                current.identity != original.identity
+                or current.data != original.data
+                or current.immutable != original.immutable
+            ):
                 raise PolicySyncError(f"policy mirror changed after backup: {logical_path}")
+
+        # Immutable targets cannot be atomically replaced. Clear only the
+        # original immutable bit while the fixed target set is held under the
+        # privileged lock, then restore it after every replacement verifies.
+        make_targets_mutable(handles, target_snapshots)
 
         fail_after = 0
         if testing():
@@ -720,6 +845,8 @@ def synchronize_locked(expected_sha256: str) -> Path:
             if fail_after == index:
                 raise PolicySyncError(f"injected failure after replacement {index}")
 
+        apply_expected_immutability(handles)
+
         for entry, logical_path in zip(manifest["targets"], TARGET_PATHS, strict=True):
             current = snapshot_target(handles[logical_path])
             original = target_snapshots[logical_path]
@@ -731,6 +858,10 @@ def synchronize_locked(expected_sha256: str) -> Path:
                 original.gid,
             ):
                 raise PolicySyncError(f"policy mirror metadata changed: {logical_path}")
+            if current.immutable != (logical_path in IMMUTABLE_TARGET_PATHS):
+                raise PolicySyncError(
+                    f"policy mirror immutable state changed: {logical_path}"
+                )
             entry["after"] = metadata(current)
 
         manifest["status"] = "completed"
@@ -750,13 +881,23 @@ def synchronize_locked(expected_sha256: str) -> Path:
             except Exception:
                 pass
         rollback_errors = []
+        try:
+            make_targets_mutable(handles, target_snapshots)
+        except Exception as restore_exc:
+            rollback_errors.append(f"clear immutable flags: {restore_exc}")
         for logical_path in replaced:
             try:
                 restore_target(handles[logical_path], target_snapshots[logical_path])
             except Exception as restore_exc:
                 rollback_errors.append(f"{logical_path}: {restore_exc}")
-        if replaced:
-            status = "rollback_failed" if rollback_errors else "rolled_back"
+        try:
+            apply_snapshot_immutability(handles, target_snapshots)
+        except Exception as restore_exc:
+            rollback_errors.append(f"restore immutable flags: {restore_exc}")
+        if rollback_errors:
+            status = "rollback_failed"
+        elif replaced:
+            status = "rolled_back"
         else:
             status = "preparation_failed"
         recording_errors = record_failure(

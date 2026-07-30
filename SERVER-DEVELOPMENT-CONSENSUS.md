@@ -80,13 +80,25 @@ require a branch.
 
 - Required merge gates are deterministic repository checks: tests, build,
   formatting, static analysis, migrations, and other project-specific CI.
-- Code review has three separate layers, each with one owner:
+- The server uses a three-layer code-review architecture:
+  1. **OpenCodeReview CLI + delegation**: Codex or Claude runs a bounded local
+     review during the development loop, preferably through delegation so the
+     newly opened review context drives the inspection. It does not use a
+     GitHub Action and does not depend on an OCR gateway.
+  2. **ClawSweeper/CodeRabbit PR review**: GitHub PR review is an external or
+     queue-based advisory layer. CodeRabbit may be used where its App and plan
+     are authorized; the official ClawSweeper hosted service is not a free
+     third-party review service.
+  3. **CI/Ruleset**: deterministic CI and the hosting service's Ruleset are the
+     only mandatory quality and merge gates. AI output never becomes an
+     authoritative required check.
+- Each layer has one owner and a separate budget:
   - `ocr review` is the server's local development review tool. It runs as the
     `claude` user against the workspace, commit, or branch range and can be
     delegated to Codex or Claude Code. Run it with an approved local provider,
     or use its delegation mode when no provider is configured. It is advisory
     and must be run at a meaningful milestone, not after every edit or every
-    agent turn.
+    agent turn. It must not invoke the GitHub Action.
   - CodeRabbit is an optional managed PR reviewer when its GitHub App is
     explicitly authorized. It is opt-in by `review-ready` or
     `@coderabbitai review`, does not review drafts, and does not automatically
@@ -101,11 +113,16 @@ require a branch.
     repository and PR context, never TEAM-MEMORY, host configuration, logs, or
     credentials. A public-repository report is a redacted candidate that needs
     human approval before publication.
-- OpenCodeReview's GitHub Action is optional transport only. If a repository
-  uses it, the workflow must be manual or explicitly requested, advisory,
-  single-concurrency, time-bounded, deduplicated by PR head SHA, and never a
-  required merge check. The `review-ready` label belongs to CodeRabbit and must
-  not trigger OpenCodeReview.
+  - The repository's minimal self-hosted implementation is
+    `ops/review-sentinel/`. It is review-only, exact-head deduplicated, and
+    disabled until a separately created GitHub App and a dedicated Codex home
+    are configured. It must not reuse the interactive `~/.codex` home or a
+    credential-embedding wrapper; its App permissions exclude contents write,
+    workflows, administration, merge, push, and autofix operations.
+- OpenCodeReview's GitHub Action is not part of the server architecture and must
+  not be installed or triggered for normal development. Existing legacy action
+  files are migration debt and should be removed through focused PRs. The
+  `review-ready` label belongs to CodeRabbit and must not trigger OpenCodeReview.
 - AI findings are review candidates, not authoritative verdicts. A human must
   confirm severity and applicability. A local OCR pass and at most one managed
   PR review round are the default budgets for a logical milestone; another run

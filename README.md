@@ -39,13 +39,16 @@ bypassed with low-level Git options, so they complement rather than replace
 remote Rulesets. Policy prohibits bypassing either layer.
 
 AI review is deliberately separate from the deterministic merge gate. The
-server's default development-time review uses local OpenCodeReview: `ocr review`
+server's three-layer architecture is explicit: **OpenCodeReview CLI +
+delegation** for local development; **ClawSweeper/CodeRabbit** for external or
+queue-based GitHub PR review; and **CI/Ruleset** as the only mandatory quality
+gate. The default development-time review uses local OpenCodeReview: `ocr review`
 inspects a workspace, commit, or branch range as the `claude` user when an
 approved local provider is configured, while the agent integrations use
 delegation mode when one is not. It is useful as a focused second opinion after
 a coherent implementation milestone, but must not run after every edit, agent
-turn, or push. OpenCodeReview's GitHub Action is optional manual transport, not
-its primary role and never a required check.
+turn, or push. It does not use a GitHub Action and does not depend on an OCR
+gateway.
 
 CodeRabbit is an optional managed PR reviewer after its GitHub App is authorized
 for selected repositories. Repository configuration uses `reviews.profile:
@@ -70,13 +73,17 @@ read TEAM-MEMORY, host configuration, logs, or credentials. For a public
 repository, the generated report is a redacted candidate that needs human
 approval before a public GitHub comment is published.
 
-The optional OpenCodeReview workflow records the reviewed PR head SHA in a
-hidden comment and skips duplicate runs; only an explicit workflow dispatch
-with `force=true` may repeat the same SHA. Its action is `continue-on-error`,
-so model findings, malformed output, gateway throttling, and timeouts remain
-advisory evidence rather than merge failures. A local OCR pass and at most one
-managed PR review round are the default budget for one logical milestone;
-further runs need a material change or explicit human request.
+The first review-only implementation is `ops/review-sentinel/`. It provides a
+GitHub App webhook, an SQLite exact-head queue, a read-only structured Codex
+worker, and a marker-backed publisher. Its installer deliberately leaves the
+user service disabled until an owner creates a separate private GitHub App and
+fills the allowlist and secret files. It does not copy ClawSweeper's worker
+fleet, Cloudflare state, repair, push, close, or automerge infrastructure.
+
+The retired OpenCodeReview workflow is not part of this architecture and must
+not be re-enabled. A local OCR pass and at most one managed PR review round are
+the default budget for one logical milestone; further runs need a material
+change or explicit human request.
 
 CodeRabbit authorization requires an owner to sign in through the browser and
 install the GitHub App for selected repositories. The repository YAML can be

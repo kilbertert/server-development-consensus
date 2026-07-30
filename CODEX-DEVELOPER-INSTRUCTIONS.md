@@ -13,22 +13,26 @@ Never push or force-push directly to the default branch, use --no-verify, or
 disable hooks, Rulesets, tests, or required deterministic checks to bypass the
 gate.
 
-AI review is advisory and has distinct roles. At a meaningful implementation
-milestone, run local `ocr review` against the workspace, commit, or task branch
-only with an approved local provider; otherwise invoke OpenCodeReview's
-delegation mode as a bounded second opinion. Do not run it after every edit,
-agent turn, or push. Triage its findings once: fix verified defects, explicitly
-record false positives or accepted risks, and do not turn speculative model
-suggestions into an open-ended repair loop. CodeRabbit is an optional managed
-PR reviewer and owns the `review-ready` label. A self-hosted ClawSweeper-like
-service, if adopted, is a separate PR/issue evidence reviewer with its own
-least-privilege GitHub App and queue; installing the public App alone is
-insufficient. It may receive only an explicitly allowed PR/repository context,
-never TEAM-MEMORY, host configuration, logs, or credentials; public comments
-need human approval after redaction. Neither managed AI review nor OCR may be a
-required merge check. OpenCodeReview's optional GitHub workflow is manual,
-advisory, and may review one PR head SHA at most once unless a human explicitly
-requests a repeat.
+The server's three review layers are fixed: **OpenCodeReview CLI +
+delegation** for local development; **ClawSweeper/CodeRabbit** for external or
+queue-based GitHub PR review; and **CI/Ruleset** as the only mandatory quality
+gate. At a meaningful implementation milestone, run local `ocr review` against
+the workspace, commit, or task branch only with an approved local provider;
+otherwise invoke OpenCodeReview's delegation mode as a bounded second opinion.
+Do not run it after every edit, agent turn, or push. Triage its findings once:
+fix verified defects, explicitly record false positives or accepted risks, and
+do not turn speculative model suggestions into an open-ended repair loop.
+CodeRabbit is an optional managed PR reviewer and owns the `review-ready` label.
+A self-hosted ClawSweeper-like service, if adopted, is a separate PR/issue
+evidence reviewer with its own least-privilege GitHub App and queue; installing
+the public App alone is insufficient. It may receive only an explicitly allowed
+PR/repository context, never TEAM-MEMORY, host configuration, logs, or
+credentials; public comments need human approval after redaction. Neither
+managed AI review nor OCR may be a required merge check. The OpenCodeReview
+GitHub Action is retired and must not be re-enabled.
+The self-hosted `ops/review-sentinel/` service remains disabled until it has a
+dedicated Codex executable/home and separately managed App credentials; never
+point it at the interactive `~/.codex` home.
 
 Creating a local task branch is normal preparation. Commit, push, PR, merge,
 release, and deployment actions still require authorization from the current

@@ -86,7 +86,11 @@ require a branch.
   automatically rerun after every push.
 - OpenCodeReview is a manual fallback invoked with `/open-code-review` or a
   workflow dispatch. It is advisory, single-concurrency, time-bounded, and must
-  never be a required merge check or run automatically on each push.
+  never be a required merge check or run automatically on each push. The
+  `review-ready` label is reserved for CodeRabbit and must not trigger
+  OpenCodeReview. OpenCodeReview reviews a given PR head SHA at most once by
+  default; a repeat requires an explicit human workflow dispatch with the force
+  option after a material change or an incomplete infrastructure run.
 - AI findings are review candidates, not authoritative verdicts. A human must
   confirm severity and applicability. One full AI review per ready PR is the
   default budget; further runs require a material code change or explicit human

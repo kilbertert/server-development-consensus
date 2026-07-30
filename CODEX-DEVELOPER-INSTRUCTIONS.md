@@ -14,6 +14,9 @@ disable hooks, Rulesets, tests, or required deterministic checks to bypass the
 gate. AI review is advisory by default, runs only when the PR is ready or a
 human requests it, and must not rerun on every push. Fix verified findings;
 explicitly triage false positives, out-of-scope findings, and accepted risks.
+CodeRabbit is the preferred opt-in reviewer and owns the review-ready label.
+OpenCodeReview is a manual fallback only, never a required check, and reviews
+each PR head SHA at most once unless a human explicitly forces a repeat.
 
 Creating a local task branch is normal preparation. Commit, push, PR, merge,
 release, and deployment actions still require authorization from the current

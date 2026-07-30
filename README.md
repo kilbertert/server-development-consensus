@@ -43,7 +43,12 @@ CodeRabbit is the preferred PR reviewer after its GitHub App is authorized for
 selected repositories. Repository configuration uses `reviews.profile: chill`,
 manual or `review-ready` opt-in, no draft reviews, and no automatic incremental
 review on every push. OpenCodeReview remains available only as the time-bounded
-manual fallback `/open-code-review`; it is not a required check.
+manual fallback `/open-code-review`; it is not a required check. The
+`review-ready` label starts CodeRabbit only. The OpenCodeReview template records
+the reviewed PR head SHA in a hidden comment and skips duplicate runs; only an
+explicit workflow dispatch with `force=true` may repeat the same SHA. Its action
+is `continue-on-error`, so model findings, malformed output, gateway throttling,
+and timeouts remain advisory evidence rather than merge failures.
 
 CodeRabbit authorization requires an owner to sign in through the browser and
 install the GitHub App for selected repositories. The repository YAML can be

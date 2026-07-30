@@ -80,21 +80,37 @@ require a branch.
 
 - Required merge gates are deterministic repository checks: tests, build,
   formatting, static analysis, migrations, and other project-specific CI.
-- CodeRabbit is the preferred managed AI reviewer where its GitHub App has been
-  explicitly authorized. It is opt-in by `review-ready` label or the
-  `@coderabbitai review` command, does not review drafts, and does not
-  automatically rerun after every push.
-- OpenCodeReview is a manual fallback invoked with `/open-code-review` or a
-  workflow dispatch. It is advisory, single-concurrency, time-bounded, and must
-  never be a required merge check or run automatically on each push. The
-  `review-ready` label is reserved for CodeRabbit and must not trigger
-  OpenCodeReview. OpenCodeReview reviews a given PR head SHA at most once by
-  default; a repeat requires an explicit human workflow dispatch with the force
-  option after a material change or an incomplete infrastructure run.
+- Code review has three separate layers, each with one owner:
+  - `ocr review` is the server's local development review tool. It runs as the
+    `claude` user against the workspace, commit, or branch range and can be
+    delegated to Codex or Claude Code. Run it with an approved local provider,
+    or use its delegation mode when no provider is configured. It is advisory
+    and must be run at a meaningful milestone, not after every edit or every
+    agent turn.
+  - CodeRabbit is an optional managed PR reviewer when its GitHub App is
+    explicitly authorized. It is opt-in by `review-ready` or
+    `@coderabbitai review`, does not review drafts, and does not automatically
+    rerun after every push. Its free plan and trial limits are external product
+    terms, not a server guarantee.
+  - ClawSweeper is a separate GitHub PR/issue queue and evidence reviewer. The
+    OpenClaw-hosted instance is not a public service for third-party
+    repositories; using it for this server requires a separately deployed and
+    permission-scoped instance. Installing an App alone does not provide that
+    backend. Its first deployment must use an explicit repository allowlist and
+    approved model/retention boundary; workers may read only the selected
+    repository and PR context, never TEAM-MEMORY, host configuration, logs, or
+    credentials. A public-repository report is a redacted candidate that needs
+    human approval before publication.
+- OpenCodeReview's GitHub Action is optional transport only. If a repository
+  uses it, the workflow must be manual or explicitly requested, advisory,
+  single-concurrency, time-bounded, deduplicated by PR head SHA, and never a
+  required merge check. The `review-ready` label belongs to CodeRabbit and must
+  not trigger OpenCodeReview.
 - AI findings are review candidates, not authoritative verdicts. A human must
-  confirm severity and applicability. One full AI review per ready PR is the
-  default budget; further runs require a material code change or explicit human
-  request. Stop the run when its time or cost exceeds its likely review value.
+  confirm severity and applicability. A local OCR pass and at most one managed
+  PR review round are the default budgets for a logical milestone; another run
+  requires a material change or explicit human request. Stop when review cost,
+  latency, or noise exceeds likely value.
 - Public repositories use an active Ruleset with no bypass actors, require a
   pull request, require the branch to be current, and require the selected
   deterministic CI checks.
@@ -121,6 +137,24 @@ and live references and preserve a rollback path. After a migration, verify
 ownership, account/group state, service cgroups, health endpoints, and
 compatibility references. Never delete archives or compatibility paths merely
 to make the filesystem appear cleaner.
+
+## Development Review Sequence
+
+For normal work led by Codex or Claude Code:
+
+1. Start on a task branch and inspect the current worktree before editing.
+2. Implement the smallest coherent change and run deterministic local checks.
+3. At a meaningful milestone, run `ocr review --from <default> --to <branch>`
+   only when an approved local provider is configured; otherwise invoke the
+   installed OpenCodeReview delegation skill. Use `--preview` first for a large
+   or unfamiliar change. Do not run OCR after every turn.
+4. Triage findings once. Fix confirmed defects, record accepted risks and false
+   positives, and do not ask the coding agent to make every model suggestion
+   true by adding unrelated complexity.
+5. Commit, push, open the PR, and rely on deterministic CI. Add
+   `review-ready` only when a managed PR review is worth the external quota.
+6. Merge only through the hosting service after deterministic checks pass. AI
+   feedback never replaces tests, human judgment, or the PR gate.
 
 ## Internal Knowledge And Public Projection Boundary
 

@@ -38,17 +38,45 @@ repositories that GitHub Free cannot protect remotely. Local hooks can be
 bypassed with low-level Git options, so they complement rather than replace
 remote Rulesets. Policy prohibits bypassing either layer.
 
-AI review is deliberately separate from the deterministic merge gate.
-CodeRabbit is the preferred PR reviewer after its GitHub App is authorized for
-selected repositories. Repository configuration uses `reviews.profile: chill`,
-manual or `review-ready` opt-in, no draft reviews, and no automatic incremental
-review on every push. OpenCodeReview remains available only as the time-bounded
-manual fallback `/open-code-review`; it is not a required check. The
-`review-ready` label starts CodeRabbit only. The OpenCodeReview template records
-the reviewed PR head SHA in a hidden comment and skips duplicate runs; only an
-explicit workflow dispatch with `force=true` may repeat the same SHA. Its action
-is `continue-on-error`, so model findings, malformed output, gateway throttling,
-and timeouts remain advisory evidence rather than merge failures.
+AI review is deliberately separate from the deterministic merge gate. The
+server's default development-time review uses local OpenCodeReview: `ocr review`
+inspects a workspace, commit, or branch range as the `claude` user when an
+approved local provider is configured, while the agent integrations use
+delegation mode when one is not. It is useful as a focused second opinion after
+a coherent implementation milestone, but must not run after every edit, agent
+turn, or push. OpenCodeReview's GitHub Action is optional manual transport, not
+its primary role and never a required check.
+
+CodeRabbit is an optional managed PR reviewer after its GitHub App is authorized
+for selected repositories. Repository configuration uses `reviews.profile:
+chill`, manual or `review-ready` opt-in, no draft reviews, and no automatic
+incremental review on every push. `review-ready` starts CodeRabbit only.
+CodeRabbit pricing and trial terms are external product terms, so the server
+does not depend on it as a permanent gate.
+
+ClawSweeper is a different system: a self-hosted GitHub PR/issue review queue
+that can publish one durable evidence and merge-readiness report. The
+OpenClaw-hosted instance is not a public service for third-party repositories;
+installing its GitHub App alone does not create a backend for this server. A
+future server instance must begin as review-only, with read-only model workers,
+least-privilege GitHub App tokens, exact-head deduplication, bounded queues and
+budgets, and a human-triaged comment. It must not start with repair, push,
+automerge, close, or state-publication capabilities.
+
+Before any ClawSweeper-like deployment, the organization must explicitly allow
+each repository and approve the model provider and retention boundary. Review
+workers may receive only selected repository and PR context; they must never
+read TEAM-MEMORY, host configuration, logs, or credentials. For a public
+repository, the generated report is a redacted candidate that needs human
+approval before a public GitHub comment is published.
+
+The optional OpenCodeReview workflow records the reviewed PR head SHA in a
+hidden comment and skips duplicate runs; only an explicit workflow dispatch
+with `force=true` may repeat the same SHA. Its action is `continue-on-error`,
+so model findings, malformed output, gateway throttling, and timeouts remain
+advisory evidence rather than merge failures. A local OCR pass and at most one
+managed PR review round are the default budget for one logical milestone;
+further runs need a material change or explicit human request.
 
 CodeRabbit authorization requires an owner to sign in through the browser and
 install the GitHub App for selected repositories. The repository YAML can be

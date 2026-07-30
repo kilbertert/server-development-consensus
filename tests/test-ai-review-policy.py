@@ -22,10 +22,10 @@ def test_open_code_review_github_action_is_not_installed() -> None:
     assert not any("open-code-review" in path.read_text(encoding="utf-8") for path in workflows.glob("*.y*ml"))
 
 
-def test_coderabbit_is_opt_in_and_non_incremental() -> None:
+def test_coderabbit_is_active_label_gated_and_non_incremental() -> None:
     config = load_yaml(CODERABBIT)
     auto_review = config["reviews"]["auto_review"]
-    assert auto_review["enabled"] == "false"
+    assert auto_review["enabled"] == "true"
     assert auto_review["drafts"] == "false"
     assert auto_review["auto_incremental_review"] == "false"
     assert auto_review["labels"] == ["review-ready"]

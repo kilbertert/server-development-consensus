@@ -20,6 +20,15 @@ TEAM-MEMORY and other engineering records remain private by default; public
 material must be a separate, selected, redacted, edited, human-approved
 artifact and cannot mutate or approve its internal source.
 
+The Engineering Article Release contract standardizes a frequent cross-project
+workflow without making publication automatic. After explicit authorization,
+an agent creates a verified and redacted publication brief, writes a separate
+article in an isolated `ranlei-blog` task worktree, runs content and rendering
+checks, uses one PR and deterministic CI, and deploys only from the clean
+canonical blog `main`. Its terminal states distinguish `merged_waiting_deploy`
+from `live`, so a Git merge or local Hugo build cannot be reported as a
+production publication.
+
 The local enforcement layer is installed at:
 
 - `~/.config/git/hooks/pre-push`

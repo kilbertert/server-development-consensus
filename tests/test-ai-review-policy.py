@@ -66,6 +66,32 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "Neither managed AI review nor OCR may be a required merge check" in normalized_codex_instructions
 
 
+def test_engineering_article_release_contract_is_explicit() -> None:
+    policy = POLICY.read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+    codex_instructions = CODEX_INSTRUCTIONS.read_text(encoding="utf-8")
+    normalized_policy = " ".join(policy.split())
+    normalized_readme = " ".join(readme.split())
+    normalized_codex_instructions = " ".join(codex_instructions.split())
+
+    assert "## Engineering Article Publication" in policy
+    assert "publication is never an automatic completion requirement" in normalized_policy
+    assert "requires explicit human authorization in the current task" in normalized_policy
+    assert "Never copy raw chats, hidden reasoning, TEAM-MEMORY bodies or evidence" in normalized_policy
+    assert "Do not turn one canary or partial workflow into a universal product claim" in normalized_policy
+    assert "clean, current, isolated task branch or worktree of the canonical blog repository" in normalized_policy
+    assert "Automated redaction checks are guardrails, not proof of privacy" in normalized_policy
+    assert "`draft_ready`, `pr_open`, `merged_waiting_deploy`, `live`, or `blocked`" in normalized_policy
+    assert "Do not stash, commit, rebase, discard, or otherwise move another task's work" in normalized_policy
+
+    assert "Engineering Article Release contract standardizes a frequent cross-project workflow" in normalized_readme
+    assert "distinguish `merged_waiting_deploy` from `live`" in normalized_readme
+
+    assert "Engineering articles use one explicit public-projection workflow" in normalized_codex_instructions
+    assert "do not write, push, merge, or deploy public blog content unless the current task authorizes publication" in normalized_codex_instructions
+    assert "Never move another task's uncommitted work" in normalized_codex_instructions
+
+
 def test_review_sentinel_is_review_only_and_least_privilege() -> None:
     manifest = (ROOT / "ops/review-sentinel/github-app-manifest.json").read_text(encoding="utf-8")
     assert '"contents": "read"' in manifest

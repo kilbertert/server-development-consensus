@@ -50,3 +50,16 @@ are not authoritative and cannot overwrite or approve internal sources. Public
 feedback may create an inbox candidate only; it must never automatically modify
 or approve formal TEAM-MEMORY. When sensitivity is unclear, keep the material
 private.
+
+Engineering articles use one explicit public-projection workflow. You may
+recommend an article at a meaningful milestone, but do not write, push, merge,
+or deploy public blog content unless the current task authorizes publication.
+Create a human-readable publication brief from verified outcomes, rewrite the
+article as a separate artifact, remove private operational context, and state
+the exact acceptance scope and unproven boundaries. Use an isolated branch or
+worktree of the canonical blog repository, run its article/content/build/site
+checks, open one focused PR, wait for deterministic CI, merge through GitHub,
+and deploy only from a clean canonical blog main checkout. Report
+`merged_waiting_deploy` when root access, a clean canonical checkout, or a
+production gate is unavailable. Never move another task's uncommitted work or
+claim that a merged article is live without public URL verification.

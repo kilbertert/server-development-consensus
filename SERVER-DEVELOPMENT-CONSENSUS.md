@@ -188,6 +188,58 @@ For normal work led by Codex or Claude Code:
 - When the sensitivity or publication authority of information is unclear,
   keep it private and request explicit direction.
 
+## Engineering Article Publication
+
+Engineering work may produce a public article candidate at a meaningful
+milestone, but publication is never an automatic completion requirement. An
+agent may recommend an article; writing to the public blog, pushing a content
+branch, merging, or deploying requires explicit human authorization in the
+current task.
+
+When that authorization is present, Codex, Claude Code, and other agents use
+the same Engineering Article Release workflow:
+
+1. Build a publication brief from verified outcomes only: intended audience,
+   public angle, title/slug, proven claims, acceptance boundaries, reusable
+   lessons, and an explicit exclusion list.
+2. Create a separately written and narrated public artifact. Never copy raw
+   chats, hidden reasoning, TEAM-MEMORY bodies or evidence, logs, commit
+   streams, repository metadata, filesystem paths, service topology, account
+   data, private endpoints, credentials, tenant data, or identifiers into the
+   article.
+3. Preserve uncertainty and scope. State what was actually verified, the
+   platform and scenario when relevant, and what remains unproven. Do not turn
+   one canary or partial workflow into a universal product claim.
+4. Leave the source project's worktree and internal records unchanged unless
+   the task separately authorizes a source documentation update. Prepare the
+   article in a clean, current, isolated task branch or worktree of the
+   canonical blog repository.
+5. Run the blog's article validator, Hugo build, generated-site audit, and
+   content checks. Perform desktop/mobile browser verification when the article
+   adds media, complex tables, diagrams, embeds, or layout-sensitive content.
+   Automated redaction checks are guardrails, not proof of privacy; the agent
+   and human approver still inspect the final public diff for context-specific
+   sensitive information.
+6. Deliver through one focused blog pull request and required deterministic CI.
+   AI review remains advisory and must not be triggered merely because an
+   article was generated.
+7. Merge through the hosting service, then deploy only from the clean canonical
+   blog `main` checkout through the canonical deployment command. Root is used
+   only for the deployment boundary. Never rsync or write the production tree
+   directly from an agent worktree.
+8. Verify the public URL, metadata, assets, and production health. Report one
+   of `draft_ready`, `pr_open`, `merged_waiting_deploy`, `live`, or `blocked`;
+   never describe a merged-but-not-deployed article as live.
+
+If the canonical blog checkout contains unrelated work, sudo is unavailable,
+or production gates are not satisfied, stop at `merged_waiting_deploy` or
+`blocked`. Do not stash, commit, rebase, discard, or otherwise move another
+task's work merely to publish an article without explicit authorization.
+
+Publication does not mutate or approve the source evidence. A live article is
+a curated public projection, while project documentation and formal
+TEAM-MEMORY remain the internal sources of truth.
+
 ## Services And Docker
 
 - Persistent development applications run as enabled `claude` user units in

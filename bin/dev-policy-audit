@@ -16,6 +16,7 @@ policy_file=$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md
 codex_policy_file=$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md
 managed_hooks_manifest=$policy_dir/managed-hooks.sha256
 codex_updater=$policy_home/.local/bin/update-codex-config
+worktree_tool=$policy_home/.local/bin/dev-worktree
 failures=0
 repaired=0
 scan_file=
@@ -145,6 +146,10 @@ if [[ ! -r $common ]]; then
 fi
 # shellcheck disable=SC1090
 source "$common"
+if [[ ! -x $worktree_tool ]]; then
+  printf 'FAIL worktree lifecycle tool is unavailable: %s\n' "$worktree_tool"
+  failures=$((failures + 1))
+fi
 if [[ ! -d $projects_root || ! -r $projects_root ]]; then
   printf 'FAIL cannot scan projects root %s\n' "$projects_root"
   exit 1
@@ -269,6 +274,7 @@ if ! sort -zu "$scan_file" >"$sorted_scan_file"; then
   exit 1
 fi
 
+declare -A audited_worktree_roots=()
 while IFS= read -r -d '' git_path; do
   repo=${git_path%/.git}
   if ! branch=$(git -C "$repo" branch --show-current 2>/dev/null) ||
@@ -371,6 +377,23 @@ while IFS= read -r -d '' git_path; do
       printf 'FAIL %s default-branch expected=%s actual=%s\n' \
         "$repo" "$default_branch" "${configured_default:-unset}"
       failures=$((failures + 1))
+    fi
+  fi
+
+  common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  if [[ -n $common_dir && -z ${audited_worktree_roots[$common_dir]+present} ]]; then
+    audited_worktree_roots[$common_dir]=true
+    if [[ $default_status -eq 0 && -x $worktree_tool ]]; then
+      worktree_output=$(
+        "$worktree_tool" audit --repo "$repo" --default "$default_branch" 2>&1
+      )
+      worktree_status=$?
+      if [[ $worktree_status -eq 0 ]]; then
+        printf 'ok worktrees %s\n' "$repo"
+      else
+        printf 'FAIL worktree lifecycle %s\n%s\n' "$repo" "$worktree_output"
+        failures=$((failures + 1))
+      fi
     fi
   fi
 

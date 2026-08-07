@@ -6,11 +6,14 @@ hook=$base_dir/git-hooks/pre-push
 tmp=$(mktemp -d)
 trap 'chmod -R u+w "$tmp" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 export HOME=$tmp/home
+export XDG_CONFIG_HOME=$HOME/.config
 export GIT_CONFIG_NOSYSTEM=1
 unset GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT \
   GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
-mkdir -p "$HOME/.local/lib/server-development-consensus"
+mkdir -p "$HOME/.local/bin" "$HOME/.local/lib/server-development-consensus"
 cp "$base_dir/lib/dev-git-common.sh" "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+cp "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
+chmod +x "$HOME/.local/bin/dev-worktree"
 
 git init --bare --initial-branch=main "$tmp/remote.git" >/dev/null
 git init --bare --initial-branch=master "$tmp/upstream.git" >/dev/null
@@ -23,6 +26,7 @@ git -C "$tmp/work" remote add origin "$tmp/remote.git"
 git -C "$tmp/work" remote add upstream "$tmp/upstream.git"
 git -C "$tmp/work" commit --allow-empty -m initial >/dev/null
 git -C "$tmp/work" push origin HEAD:main >/dev/null
+git -C "$tmp/work" fetch origin main:refs/remotes/origin/main >/dev/null
 git -C "$tmp/work" push upstream HEAD:master >/dev/null
 git -C "$tmp/work" fetch upstream master:refs/remotes/upstream/master >/dev/null
 mkdir -p "$tmp/work/.project-hooks"
@@ -63,6 +67,32 @@ printf '%s\n' "$feature_update" |
   printf '%s\n' 'FAIL project pre-push hook did not receive the original stdin' >&2
   exit 1
 }
+
+git -C "$tmp/work" worktree add --no-track -b feat/dirty-sibling \
+  "$tmp/dirty-sibling" origin/main >/dev/null
+printf '%s\n' dirty >"$tmp/dirty-sibling/overlap.txt"
+git -C "$tmp/work" switch -c feat/overlap >/dev/null
+printf '%s\n' committed >"$tmp/work/overlap.txt"
+git -C "$tmp/work" add overlap.txt
+git -C "$tmp/work" commit -m overlap >/dev/null
+overlap_head=$(git -C "$tmp/work" rev-parse HEAD)
+overlap_update="refs/heads/feat/overlap $overlap_head refs/heads/feat/overlap $zero"
+rm -f "$tmp/chained.args" "$tmp/chained.stdin"
+if printf '%s\n' "$overlap_update" |
+   (cd "$tmp/work" && "$hook" origin "$tmp/remote.git") \
+     >"$tmp/overlap.out" 2>&1; then
+  printf '%s\n' 'FAIL push overlapping a dirty sibling worktree was allowed' >&2
+  exit 1
+fi
+grep -q 'overlap.txt' "$tmp/overlap.out"
+[ ! -e "$tmp/chained.args" ] || {
+  printf '%s\n' 'FAIL chained hook ran for a worktree-overlap rejection' >&2
+  exit 1
+}
+rm -f "$tmp/dirty-sibling/overlap.txt"
+git -C "$tmp/work" worktree remove "$tmp/dirty-sibling"
+git -C "$tmp/work" branch -D feat/dirty-sibling >/dev/null
+git -C "$tmp/work" switch main >/dev/null
 
 if printf 'refs/heads/master %s refs/heads/master %s\n' "$head" "$zero" |
    (cd "$tmp/work" && "$hook" upstream "$tmp/upstream.git") >/dev/null 2>&1; then

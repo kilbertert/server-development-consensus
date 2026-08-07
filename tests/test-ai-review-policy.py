@@ -92,6 +92,26 @@ def test_engineering_article_release_contract_is_explicit() -> None:
     assert "Never move another task's uncommitted work" in normalized_codex_instructions
 
 
+def test_worktree_delivery_lifecycle_is_explicit_and_non_destructive() -> None:
+    policy = " ".join(POLICY.read_text(encoding="utf-8").split())
+    readme = " ".join(README.read_text(encoding="utf-8").split())
+    codex_instructions = " ".join(CODEX_INSTRUCTIONS.read_text(encoding="utf-8").split())
+
+    assert "## Git And Worktree Delivery Invariants" in policy
+    assert "dev-worktree start TYPE DESCRIPTION PATH" in policy
+    assert "dev-worktree audit" in policy
+    assert "dev-worktree retire PATH" in policy
+    assert "preserve marker documents ownership but does not bypass an actual overlap" in policy
+    assert "never deletes files, branches, or worktrees automatically" in policy
+
+    assert "committed paths overlap uncommitted paths in another worktree" in readme
+    assert "None of these commands automatically delete dirty work or a remote branch" in readme
+
+    assert "Create isolated tasks with `dev-worktree start TYPE DESCRIPTION PATH`" in codex_instructions
+    assert "this does not bypass the pre-push overlap guard" in codex_instructions
+    assert "daily audit reports stale lifecycle states without deleting them" in codex_instructions
+
+
 def test_review_sentinel_is_review_only_and_least_privilege() -> None:
     manifest = (ROOT / "ops/review-sentinel/github-app-manifest.json").read_text(encoding="utf-8")
     assert '"contents": "read"' in manifest

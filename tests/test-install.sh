@@ -10,6 +10,7 @@ installer=$base_dir/install.sh
 tmp=$(mktemp -d)
 trap 'chmod -R u+w "$tmp" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 export HOME=$tmp/home
+export XDG_CONFIG_HOME=$HOME/.config
 export SERVER_POLICY_INSTALL_TESTING=1
 export GIT_CONFIG_NOSYSTEM=1
 unset GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT \
@@ -77,6 +78,8 @@ printf '%s\n' \
 chmod +x "$HOME/.config/git/hooks/pre-commit"
 "$installer" >/dev/null
 custom_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -x "$HOME/.local/bin/dev-worktree" ]
+cmp "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
 [ "$custom_chain" != "$HOME/.config/git/hooks" ]
 grep -q 'CUSTOM_HOOK_MARKER' "$custom_chain/pre-commit"
 [ ! -e "$custom_chain/pre-push" ]

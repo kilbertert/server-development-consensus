@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=../lib/dev-git-common.sh
+source "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  dev-worktree start TYPE DESCRIPTION PATH
+  dev-worktree audit [--repo PATH] [--default BRANCH]
+  dev-worktree preserve PATH REASON
+  dev-worktree activate PATH
+  dev-worktree retire PATH
+
+Internal hook command:
+  dev-worktree guard-overlap --tip OID --default REF [--current PATH]
+
+types: feat fix refactor docs test chore hotfix
+EOF
+  exit 2
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 2
+}
+
+absolute_path() {
+  realpath -m -- "$1"
+}
+
+require_task_name() {
+  local type=$1
+  local description=$2
+  case $type in
+    feat|fix|refactor|docs|test|chore|hotfix) ;;
+    *) die "unsupported task type: $type" ;;
+  esac
+  case $description in
+    *[!a-z0-9-]*|''|-*|*-|*--*)
+      die 'DESCRIPTION must be lowercase kebab-case'
+      ;;
+  esac
+}
+
+declare -a worktree_paths=()
+declare -a worktree_heads=()
+declare -a worktree_branches=()
+
+load_worktrees() {
+  worktree_paths=()
+  worktree_heads=()
+  worktree_branches=()
+  local path=''
+  local head=''
+  local branch=''
+  local line
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ -z $line ]]; then
+      if [[ -n $path ]]; then
+        worktree_paths+=("$path")
+        worktree_heads+=("$head")
+        worktree_branches+=("$branch")
+      fi
+      path=''
+      head=''
+      branch=''
+      continue
+    fi
+    case $line in
+      'worktree '*) path=${line#worktree } ;;
+      'HEAD '*) head=${line#HEAD } ;;
+      'branch '*) branch=${line#branch refs/heads/} ;;
+      detached) branch='(detached)' ;;
+    esac
+  done < <(git worktree list --porcelain; printf '\n')
+}
+
+worktree_index_for_path() {
+  local requested
+  requested=$(absolute_path "$1")
+  local index
+  for index in "${!worktree_paths[@]}"; do
+    if [[ $(absolute_path "${worktree_paths[$index]}") == "$requested" ]]; then
+      printf '%s\n' "$index"
+      return 0
+    fi
+  done
+  return 1
+}
+
+default_ref_for() {
+  local default_branch=$1
+  if git show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
+    printf 'origin/%s\n' "$default_branch"
+  elif git show-ref --verify --quiet "refs/heads/$default_branch"; then
+    printf '%s\n' "$default_branch"
+  else
+    return 1
+  fi
+}
+
+branch_config_value() {
+  local branch=$1
+  local key=$2
+  git config --local --get "branch.$branch.$key" 2>/dev/null || true
+}
+
+branch_has_integrated_commits() {
+  local branch=$1
+  local default_ref=$2
+  local base_oid=$3
+  local head
+  head=$(git rev-parse "$branch")
+  if [[ $head == "$(git rev-parse "$default_ref")" ]]; then
+    return 1
+  fi
+
+  if [[ -n $base_oid ]] && git cat-file -e "$base_oid^{commit}" 2>/dev/null; then
+    if [[ $head == "$base_oid" ]]; then
+      return 1
+    fi
+  elif git merge-base --is-ancestor "$branch" "$default_ref" &&
+       [[ $head != "$(git rev-parse "$default_ref")" ]]; then
+    return 0
+  fi
+
+  if git merge-base --is-ancestor "$branch" "$default_ref"; then
+    return 0
+  fi
+
+  local cherry
+  cherry=$(git cherry "$default_ref" "$branch") || return 1
+  [[ -n $cherry ]] || return 1
+  ! grep -q '^+' <<<"$cherry"
+}
+
+verified_pr_number=''
+verified_pr_url=''
+verified_pr_merge_oid=''
+
+branch_has_verified_merged_pr() {
+  local branch=$1
+  local default_ref=$2
+  command -v gh >/dev/null 2>&1 || return 1
+  local head records record
+  head=$(git rev-parse "$branch")
+  records=$(
+    gh pr list \
+      --state merged \
+      --head "$branch" \
+      --limit 100 \
+      --json headRefOid,mergeCommit,number,url \
+      --jq ".[] | select(.headRefOid == \"$head\") | [.number, .url, .mergeCommit.oid] | @tsv" \
+      2>/dev/null
+  ) || return 1
+  record=${records%%$'\n'*}
+  [[ -n $record ]] || return 1
+  IFS=$'\t' read -r verified_pr_number verified_pr_url verified_pr_merge_oid <<<"$record"
+  [[ -n $verified_pr_number && -n $verified_pr_url && -n $verified_pr_merge_oid ]] || return 1
+  git cat-file -e "$verified_pr_merge_oid^{commit}" 2>/dev/null || return 1
+  git merge-base --is-ancestor "$verified_pr_merge_oid" "$default_ref"
+}
+
+audit_worktrees() {
+  local default_branch=$1
+  local default_ref
+  default_ref=$(default_ref_for "$default_branch") ||
+    die "default branch reference is unavailable: $default_branch"
+  load_worktrees
+
+  local issues=0
+  local index path head branch dirty upstream tracking behind ahead state
+  local base_oid lifecycle_state preserve_reason
+  for index in "${!worktree_paths[@]}"; do
+    path=${worktree_paths[$index]}
+    head=${worktree_heads[$index]}
+    branch=${worktree_branches[$index]}
+    if [[ $branch == '(detached)' || -z $branch ]]; then
+      printf 'worktree path=%q branch=detached state=detached\n' "$path"
+      issues=$((issues + 1))
+      continue
+    fi
+
+    dirty=$(git -C "$path" status --porcelain --untracked-files=all |
+      awk 'NF { count++ } END { print count + 0 }')
+    upstream=$(git for-each-ref --format='%(upstream:short)' "refs/heads/$branch")
+    tracking=$(git for-each-ref --format='%(upstream:track)' "refs/heads/$branch")
+    read -r behind ahead < <(git rev-list --left-right --count "$default_ref...$branch")
+    base_oid=$(branch_config_value "$branch" serverPolicyBaseOid)
+    lifecycle_state=$(branch_config_value "$branch" serverPolicyState)
+    preserve_reason=$(branch_config_value "$branch" serverPolicyPreserveReason)
+    state=active
+
+    if [[ $branch == "$default_branch" ]]; then
+      state=default
+    elif [[ $upstream == "origin/$default_branch" ]]; then
+      state=tracks_default
+      issues=$((issues + 1))
+    elif [[ $tracking == *'[gone]'* ]]; then
+      state=upstream_gone
+      issues=$((issues + 1))
+    elif [[ $lifecycle_state == preserved && -n $preserve_reason ]]; then
+      state=preserved
+    elif [[ $dirty -gt 0 && $ahead -eq 0 && $behind -gt 0 ]]; then
+      state=uncommitted_only_behind
+      issues=$((issues + 1))
+    elif branch_has_integrated_commits "$branch" "$default_ref" "$base_oid"; then
+      if [[ $dirty -gt 0 ]]; then
+        state=dirty_after_integration
+      else
+        state=integrated_not_retired
+      fi
+      issues=$((issues + 1))
+    elif [[ $dirty -eq 0 ]]; then
+      state=clean
+    fi
+
+    printf 'worktree path=%q branch=%q head=%s dirty=%s behind=%s ahead=%s upstream=%q state=%s\n' \
+      "$path" "$branch" "$head" "$dirty" "$behind" "$ahead" "${upstream:-none}" "$state"
+  done
+
+  if [[ $issues -gt 0 ]]; then
+    printf 'worktree audit failed: issues=%s\n' "$issues" >&2
+    return 1
+  fi
+  printf 'worktree audit passed: worktrees=%s\n' "${#worktree_paths[@]}"
+}
+
+start_worktree() {
+  [[ $# -eq 3 ]] || usage
+  local type=$1
+  local description=$2
+  local requested_path=$3
+  require_task_name "$type" "$description"
+  require_repository
+
+  local branch="$type/$description"
+  local target projects_root default_branch remote_default
+  target=$(absolute_path "$requested_path")
+  projects_root=$(absolute_path "$HOME/Projects")
+  case "$target/" in
+    "$projects_root/"*) ;;
+    *) die "task worktrees must stay below $projects_root" ;;
+  esac
+  [[ $target != "$(absolute_path "$(git rev-parse --show-toplevel)")" ]] ||
+    die 'task worktree path must differ from the current worktree'
+  if [[ -e $target ]] && [[ -n $(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null) ]]; then
+    die "task worktree path is not empty: $target"
+  fi
+
+  default_branch=$(default_branch_for_remote origin) ||
+    die 'could not determine the origin default branch'
+  git fetch --prune origin \
+    "+refs/heads/$default_branch:refs/remotes/origin/$default_branch"
+  remote_default=$(git rev-parse "origin/$default_branch")
+  audit_worktrees "$default_branch" >/dev/null ||
+    die 'resolve existing worktree lifecycle issues before starting another task'
+  git show-ref --verify --quiet "refs/heads/$branch" &&
+    die "branch already exists: $branch"
+  [[ -z $(git ls-remote --heads origin "refs/heads/$branch") ]] ||
+    die "remote branch already exists: origin/$branch"
+
+  local created=false
+  cleanup_failed_start() {
+    local status=$?
+    trap - EXIT
+    if $created; then
+      git worktree remove --force "$target" >/dev/null 2>&1 || true
+      git branch -D "$branch" >/dev/null 2>&1 || true
+    fi
+    exit "$status"
+  }
+  trap cleanup_failed_start EXIT
+  git worktree add --no-track -b "$branch" "$target" "origin/$default_branch"
+  created=true
+  git config --local "branch.$branch.serverPolicyBaseRef" "origin/$default_branch"
+  git config --local "branch.$branch.serverPolicyBaseOid" "$remote_default"
+  git config --local "branch.$branch.serverPolicyWorktree" "$target"
+  git config --local "branch.$branch.serverPolicyOwner" "$(id -un)"
+  git config --local "branch.$branch.serverPolicyStartedAt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  git config --local "branch.$branch.serverPolicyState" active
+  trap - EXIT
+  printf 'started worktree path=%s branch=%s base=%s\n' "$target" "$branch" "$remote_default"
+}
+
+set_lifecycle_state() {
+  local action=$1
+  local requested_path=$2
+  local reason=${3:-}
+  require_repository
+  load_worktrees
+  local index
+  index=$(worktree_index_for_path "$requested_path") ||
+    die "path is not a registered worktree: $requested_path"
+  local branch=${worktree_branches[$index]}
+  [[ -n $branch && $branch != '(detached)' ]] || die 'detached worktrees cannot be preserved or activated'
+
+  if [[ $action == preserve ]]; then
+    [[ -n $reason ]] || die 'preserve requires a non-empty reason'
+    git config --local "branch.$branch.serverPolicyState" preserved
+    git config --local "branch.$branch.serverPolicyPreserveReason" "$reason"
+    git config --local "branch.$branch.serverPolicyPreservedAt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    git config --local "branch.$branch.serverPolicyOwner" "$(id -un)"
+    printf 'preserved worktree path=%s branch=%s reason=%s\n' "${worktree_paths[$index]}" "$branch" "$reason"
+  else
+    git config --local "branch.$branch.serverPolicyState" active
+    git config --local --unset-all "branch.$branch.serverPolicyPreserveReason" 2>/dev/null || true
+    git config --local --unset-all "branch.$branch.serverPolicyPreservedAt" 2>/dev/null || true
+    printf 'activated worktree path=%s branch=%s\n' "${worktree_paths[$index]}" "$branch"
+  fi
+}
+
+retire_worktree() {
+  [[ $# -eq 1 ]] || usage
+  require_repository
+  local requested_path=$1
+  local target current default_branch default_ref
+  target=$(absolute_path "$requested_path")
+  current=$(absolute_path "$(git rev-parse --show-toplevel)")
+  [[ $target != "$current" ]] || die 'run retire from another worktree in the same repository'
+  load_worktrees
+  local index
+  index=$(worktree_index_for_path "$target") || die "path is not a registered worktree: $target"
+  local branch=${worktree_branches[$index]}
+  [[ -n $branch && $branch != '(detached)' ]] || die 'detached worktrees require manual audit'
+
+  default_branch=$(default_branch_for_remote origin) ||
+    die 'could not determine the origin default branch'
+  [[ $branch != "$default_branch" ]] || die 'the default-branch worktree cannot be retired'
+  [[ -z $(git -C "$target" status --porcelain --untracked-files=all) ]] ||
+    die 'worktree is dirty; audit and preserve its changes before retirement'
+  git fetch --prune origin \
+    "+refs/heads/$default_branch:refs/remotes/origin/$default_branch"
+  default_ref="origin/$default_branch"
+
+  local base_oid head integration_source
+  base_oid=$(branch_config_value "$branch" serverPolicyBaseOid)
+  head=$(git rev-parse "$branch")
+  if [[ -n $base_oid && $head == "$base_oid" ]]; then
+    integration_source=empty
+  elif branch_has_integrated_commits "$branch" "$default_ref" "$base_oid"; then
+    integration_source=git
+  elif branch_has_verified_merged_pr "$branch" "$default_ref"; then
+    integration_source="pr#$verified_pr_number"
+  else
+    die "branch still has commits not verified in $default_ref: $branch"
+  fi
+
+  git worktree remove "$target"
+  git branch -D "$branch"
+  if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+    printf 'retired local worktree and branch; verification=%s remote branch remains: origin/%s\n' \
+      "$integration_source" "$branch"
+  else
+    printf 'retired worktree path=%s branch=%s verification=%s\n' \
+      "$target" "$branch" "$integration_source"
+  fi
+  if [[ $integration_source == pr#* ]]; then
+    printf 'verified merged PR: number=%s merge=%s url=%s\n' \
+      "$verified_pr_number" "$verified_pr_merge_oid" "$verified_pr_url"
+  fi
+}
+
+guard_overlap() {
+  local tip=''
+  local default_ref=''
+  local current=''
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --tip) [[ $# -ge 2 ]] || usage; tip=$2; shift 2 ;;
+      --default) [[ $# -ge 2 ]] || usage; default_ref=$2; shift 2 ;;
+      --current) [[ $# -ge 2 ]] || usage; current=$2; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n $tip && -n $default_ref ]] || usage
+  require_repository
+  git cat-file -e "$tip^{commit}" 2>/dev/null || die "tip is not a commit: $tip"
+  git cat-file -e "$default_ref^{commit}" 2>/dev/null || die "default ref is not a commit: $default_ref"
+  current=$(absolute_path "${current:-$(git rev-parse --show-toplevel)}")
+
+  local temp_dir
+  temp_dir=$(mktemp -d)
+  trap "rm -rf -- $(printf '%q' "$temp_dir")" EXIT
+  git diff --name-only -z "$default_ref...$tip" | sort -zu >"$temp_dir/proposed"
+  [[ -s $temp_dir/proposed ]] || return 0
+  load_worktrees
+
+  local found=0 index path branch
+  for index in "${!worktree_paths[@]}"; do
+    path=$(absolute_path "${worktree_paths[$index]}")
+    [[ $path != "$current" ]] || continue
+    if [[ -z $(git -C "$path" status --porcelain --untracked-files=all) ]]; then
+      continue
+    fi
+    {
+      git -C "$path" diff --name-only -z HEAD
+      git -C "$path" ls-files --others --exclude-standard -z
+    } | sort -zu >"$temp_dir/dirty"
+    comm -z -12 "$temp_dir/proposed" "$temp_dir/dirty" >"$temp_dir/overlap"
+    [[ -s $temp_dir/overlap ]] || continue
+    found=1
+    branch=${worktree_branches[$index]:-(detached)}
+    while IFS= read -r -d '' overlap_path; do
+      printf 'overlap worktree=%q branch=%q path=%q\n' "$path" "$branch" "$overlap_path"
+    done <"$temp_dir/overlap"
+  done
+  [[ $found -eq 0 ]] || return 3
+}
+
+command=${1:-}
+[[ -n $command ]] || usage
+shift
+case $command in
+  start) start_worktree "$@" ;;
+  audit)
+    repo='.'
+    requested_default=''
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        --repo) [[ $# -ge 2 ]] || usage; repo=$2; shift 2 ;;
+        --default) [[ $# -ge 2 ]] || usage; requested_default=$2; shift 2 ;;
+        *) usage ;;
+      esac
+    done
+    cd "$repo"
+    require_repository
+    default=${requested_default:-$(default_branch_for_remote origin)}
+    [[ -n $default ]] || die 'could not determine the default branch'
+    audit_worktrees "$default"
+    ;;
+  preserve) [[ $# -eq 2 ]] || usage; set_lifecycle_state preserve "$1" "$2" ;;
+  activate) [[ $# -eq 1 ]] || usage; set_lifecycle_state activate "$1" ;;
+  retire) retire_worktree "$@" ;;
+  guard-overlap) guard_overlap "$@" ;;
+  *) usage ;;
+esac

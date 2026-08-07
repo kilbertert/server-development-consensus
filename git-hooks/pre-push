@@ -8,6 +8,7 @@ push_url=${2:-}
 input_file=$(mktemp)
 trap 'rm -f "$input_file"' EXIT
 cat >"$input_file"
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
 
 if ! git remote get-url "$remote" >/dev/null 2>&1; then
   printf '%s\n' 'SERVER POLICY: pushes must target a configured remote so its default branch can be verified.' >&2
@@ -39,6 +40,53 @@ if [ "$blocked" -eq 1 ]; then
   printf '%s\n' 'Use: dev-start TYPE DESCRIPTION' >&2
   exit 1
 fi
+
+worktree_tool=$HOME/.local/bin/dev-worktree
+[ -x "$worktree_tool" ] || {
+  printf '%s\n' 'SERVER POLICY: worktree lifecycle guard is unavailable; push stopped safely.' >&2
+  printf 'Expected: %s\n' "$worktree_tool" >&2
+  exit 1
+}
+default_ref="refs/remotes/$remote/$default_branch"
+git show-ref --verify --quiet "$default_ref" || {
+  printf 'SERVER POLICY: fetched default reference is unavailable: %s\n' "$default_ref" >&2
+  printf '%s\n' 'Fetch the remote default branch before retrying the push.' >&2
+  exit 1
+}
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [ -n "${remote_ref:-}" ] || continue
+  [ "$local_oid" != "$zero" ] || continue
+  case $local_ref in
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
+  set +e
+  overlap_report=$(
+    "$worktree_tool" guard-overlap \
+      --tip "$local_oid" \
+      --default "$default_ref" 2>&1
+  )
+  overlap_status=$?
+  set -e
+  case $overlap_status in
+    0) ;;
+    3)
+      printf '\n%s\n' \
+        'SERVER POLICY: push overlaps uncommitted changes in another worktree.' >&2
+      printf '%s\n' "$overlap_report" >&2
+      printf '%s\n' \
+        'Audit the sibling worktree and move the overlapping delivery into one owned branch; preserve records ownership but does not bypass overlap.' >&2
+      exit 1
+      ;;
+    *)
+      printf '%s\n' \
+        'SERVER POLICY: worktree overlap guard could not complete; push stopped safely.' >&2
+      printf '%s\n' "$overlap_report" >&2
+      exit 1
+      ;;
+  esac
+done <"$input_file"
 
 if chained_hook=$(chained_hook_for pre-push); then
   if paths_identify_same_file "$0" "$chained_hook"; then

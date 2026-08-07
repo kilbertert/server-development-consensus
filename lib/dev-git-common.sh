@@ -173,19 +173,26 @@ resolve_hooks_path() (
 chained_hook_for() (
   hook_name=$1
   if project_chain=$(git config --local --path --get serverPolicy.chainedHooksPath 2>/dev/null); then
-    [ -n "$project_chain" ] || return 2
-    chain_path=$(resolve_hooks_path "$project_chain") || return 2
+    project_status=0
   else
     project_status=$?
-    [ "$project_status" -eq 1 ] || return 2
-    if global_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath 2>/dev/null); then
-      [ -n "$global_chain" ] || return 2
-      chain_path=$(resolve_hooks_path "$global_chain") || return 2
-    else
-      global_status=$?
-      [ "$global_status" -eq 1 ] || return 2
-      return 1
-    fi
+  fi
+  if [ "$project_status" -eq 0 ]; then
+    [ -n "$project_chain" ] || return 2
+    chain_path=$(resolve_hooks_path "$project_chain") || return 2
+  elif [ "$project_status" -ne 1 ] &&
+       git rev-parse --git-dir >/dev/null 2>&1; then
+    # A real repository whose local config cannot be read is unsafe. Git 2.54
+    # also invokes reference-transaction during `git init`, before a repository
+    # context exists; that case legitimately has no project chain yet.
+    return 2
+  elif global_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath 2>/dev/null); then
+    [ -n "$global_chain" ] || return 2
+    chain_path=$(resolve_hooks_path "$global_chain") || return 2
+  else
+    global_status=$?
+    [ "$global_status" -eq 1 ] || return 2
+    return 1
   fi
 
   candidate=$chain_path/$hook_name

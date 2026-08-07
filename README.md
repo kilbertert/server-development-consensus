@@ -37,6 +37,7 @@ The local enforcement layer is installed at:
 - `~/.local/lib/server-development-consensus/dev-git-common.sh`
 - `~/.local/bin/dev-start`
 - `~/.local/bin/dev-pr`
+- `~/.local/bin/dev-worktree`
 - `~/.local/bin/dev-policy-audit`
 - `~/.local/bin/sync-privileged-policy`
 - `~/.config/systemd/user/dev-policy-audit.{service,timer}`
@@ -104,6 +105,16 @@ The wrappers run the server guard and then the original project hook. A prior
 global `core.hooksPath` is similarly preserved in
 `serverPolicy.globalChainedHooksPath`; project-local hooks retain precedence,
 matching Git's original configuration semantics.
+
+For isolated task work, use `dev-worktree start TYPE DESCRIPTION PATH`. The
+command fetches the remote default branch, creates a no-track task branch from
+that exact commit, and records local lifecycle metadata. `dev-worktree audit`
+reports every sibling worktree and fails on stale delivery states;
+`dev-worktree preserve PATH REASON` records intentionally paused user work;
+and `dev-worktree retire PATH` removes only a clean branch whose changes are
+verified as integrated. The global pre-push hook independently rejects a push
+when its committed paths overlap uncommitted paths in another worktree. None of
+these commands automatically delete dirty work or a remote branch.
 
 Run `dev-policy-audit` to inspect every repository or
 `dev-policy-audit --repair` after adding repositories. The repair operation

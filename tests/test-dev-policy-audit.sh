@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+# Keep failures actionable in CI.  This script intentionally exercises many
+# rejected states under `if`/`set +e`, so the ERR trap only reports an
+# unexpected command that actually aborts the test process.
+trap 'status=$?; printf "FAIL test-dev-policy-audit.sh:%s command=%q status=%s\\n" "$LINENO" "$BASH_COMMAND" "$status" >&2; exit "$status"' ERR
 
 base_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 audit=$base_dir/bin/dev-policy-audit
@@ -7,6 +12,7 @@ tmp=$(mktemp -d)
 trap 'chmod -R u+w "$tmp" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 export HOME=$tmp/home
 export SERVER_POLICY_HOME=$HOME
+export XDG_CONFIG_HOME=$HOME/.config
 export GIT_CONFIG_NOSYSTEM=1
 unset GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT \
   GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
@@ -16,6 +22,8 @@ policy_dir=$HOME/.config/server-development-consensus
 mkdir -p "$HOME/.local/lib/server-development-consensus" "$HOME/.local/bin" \
   "$HOME/.codex" "$projects" "$hooks" "$policy_dir"
 cp "$base_dir/lib/dev-git-common.sh" "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+cp "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
+chmod +x "$HOME/.local/bin/dev-worktree"
 cp "$base_dir/bin/update-codex-config" "$HOME/.local/bin/update-codex-config"
 chmod +x "$HOME/.local/bin/update-codex-config"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md"
@@ -33,6 +41,16 @@ chmod +x "$hooks/hook-forwarder" "$hooks/pre-commit" "$hooks/pre-merge-commit" "
 
 # shellcheck disable=SC1090
 source "$base_dir/lib/dev-git-common.sh"
+if (cd "$tmp" && chained_hook_for reference-transaction >/dev/null 2>&1); then
+  no_repo_chain_status=0
+else
+  no_repo_chain_status=$?
+fi
+[ "$no_repo_chain_status" -eq 1 ] || {
+  printf 'FAIL no-repository hook lookup returned %s instead of no chain\n' \
+    "$no_repo_chain_status" >&2
+  exit 1
+}
 while IFS= read -r hook; do
   case $hook in
     pre-commit|pre-merge-commit|pre-push) ;;
@@ -56,7 +74,14 @@ printf '#!/bin/sh\nprintf executed >"%s"\n' "$tmp/commit-msg-ran" \
 chmod +x "$projects/repo/.project-hooks/commit-msg"
 git -C "$projects/repo" config core.hooksPath "$projects/repo/.project-hooks"
 
-repair_output=$("$audit" --repair "$projects")
+if repair_output=$("$audit" --repair "$projects"); then
+  :
+else
+  audit_status=$?
+  printf 'FAIL initial policy audit returned %s:\n%s\n' \
+    "$audit_status" "$repair_output" >&2
+  exit "$audit_status"
+fi
 [ "$(git -C "$projects/repo" config --local --get core.hooksPath)" = "$hooks" ]
 [ "$(git -C "$projects/repo" config --local --get serverPolicy.chainedHooksPath)" = "$projects/repo/.project-hooks" ]
 
@@ -124,6 +149,22 @@ git -C "$projects/repo" worktree add -b feat/linked "$projects/linked" main >/de
 audit_output=$("$audit" "$projects")
 printf '%s\n' "$audit_output" | grep -q "repo $projects/repo "
 printf '%s\n' "$audit_output" | grep -q "repo $projects/linked "
+printf '%s\n' pending >"$projects/linked/pending.txt"
+git -C "$projects/repo" -c core.hooksPath=/dev/null \
+  worktree add "$projects/default-main" main >/dev/null
+printf '%s\n' advanced >"$projects/default-main/main-advance.txt"
+git -C "$projects/default-main" add main-advance.txt
+git -C "$projects/default-main" -c core.hooksPath=/dev/null commit -m advance-main >/dev/null
+git -C "$projects/repo" -c core.hooksPath=/dev/null \
+  worktree remove "$projects/default-main"
+if "$audit" "$projects" >"$tmp/worktree-lifecycle.out" 2>&1; then
+  printf '%s\n' 'FAIL uncommitted-only-behind worktree passed policy audit' >&2
+  exit 1
+fi
+grep -q 'state=uncommitted_only_behind' "$tmp/worktree-lifecycle.out"
+rm "$projects/linked/pending.txt"
+git -C "$projects/linked" -c core.hooksPath=/dev/null \
+  merge --ff-only main >/dev/null
 
 git config --global serverPolicy.globalChainedHooksPath "$hooks"
 if "$audit" "$projects" >/dev/null 2>&1; then

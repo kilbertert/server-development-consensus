@@ -38,8 +38,10 @@ code. Normal development never happens directly on it.
 For every code, configuration, schema, infrastructure-as-code, or maintained
 documentation change:
 
-1. Start from a clean, current default branch. Fetch with pruning and update
-   using fast-forward only.
+1. Establish the repository's canonical checkout before editing. Fetch with
+   pruning, inspect every worktree and branch, and update the default branch
+   using fast-forward only. A task worktree is not the canonical checkout
+   unless that handoff path is explicitly recorded.
 2. Create one short-lived branch for one logical task before editing tracked
    files. Use `feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, or
    `hotfix/`, followed by a short lowercase kebab-case description. Agent-owned
@@ -61,8 +63,10 @@ documentation change:
    accepted risks require explicit human triage rather than repeated model runs.
 7. Merge through the Git hosting service after the branch is current and every
    required check passes. Prefer squash merge unless project history requires a
-   different method. Delete the merged task branch and resync the local default
-   branch.
+   different method. After the hosting service confirms the merge, fetch with
+   pruning, verify the merge commit and changed paths on `origin/main`, fast-
+   forward the local default branch, and only then delete agent-owned task
+   branches and worktrees.
 
 Direct pushes, force pushes, local merges pushed to the default branch, and
 using `--no-verify` to bypass the server guard are prohibited. Do not weaken or
@@ -75,6 +79,59 @@ If existing uncommitted work is found on a default branch, preserve it by
 creating a task branch in place before continuing. Never discard it merely to
 make the worktree clean. Read-only investigation and analysis tasks do not
 require a branch.
+
+## Git And Worktree Delivery Invariants
+
+The repository root used for handoff is a delivery surface, not an incidental
+checkout. Every maintained repository must have one declared canonical path
+and one declared default branch. Agents must report the canonical path, current
+branch, `git status --short --branch`, `git worktree list`, and `git branch -vv`
+before editing and before final handoff.
+
+Use `dev-worktree start TYPE DESCRIPTION PATH` for a new isolated task
+worktree. It creates the branch from the fetched `origin/<default>` with no
+upstream to the default branch and records its base, owner, path, and lifecycle
+state. Run `dev-worktree audit` before handoff and `dev-worktree retire PATH`
+only after integration is verified. `retire` refuses dirty or unintegrated
+work; it never deletes a remote branch. A user-owned or intentionally paused
+dirty worktree may be registered with `dev-worktree preserve PATH REASON` and
+reactivated with `dev-worktree activate PATH`.
+
+- Create agent-owned worktrees from `origin/<default>` (not from a stale local
+  task branch) and record the task branch, worktree path, base commit, PR
+  number, and owner. Never silently repurpose a user's existing worktree.
+- Before opening or merging a PR, fetch with pruning and verify that the task
+  branch contains the current base (`git merge-base --is-ancestor
+  origin/<default> HEAD`). If the base moved, update the task branch and rerun
+  deterministic CI before merging. Do not use force-push or rewrite a
+  published task branch merely to resolve drift.
+- A branch whose upstream is marked `[gone]`, or a worktree whose branch is no
+  longer present on the hosting service, is a stale-delivery state. It must be
+  reported and must not be presented as the current integrated project.
+- The pre-push guard rejects a task branch when its committed paths overlap
+  uncommitted paths in another worktree of the same repository. Resolve,
+  commit, or explicitly preserve the other worktree before delivery; a
+  preserve marker documents ownership but does not bypass an actual overlap.
+- The daily policy audit reports and fails on task branches that track the
+  default branch, gone upstreams, integrated worktrees that were not retired,
+  and unpreserved worktrees whose only changes are uncommitted while the
+  default branch has advanced. It reports state only and never deletes files,
+  branches, or worktrees automatically.
+- After merge, verify `gh pr view` reports `MERGED`, capture the hosting merge
+  commit, confirm every changed maintained path exists at `origin/<default>`
+  with `git show`, and fast-forward the local default branch. For documentation
+  changes, verify the final path and links from the canonical checkout.
+- Delete only agent-owned task branches and worktrees after the checks above.
+  Preserve user-owned worktrees, uncommitted changes, and compatibility paths.
+  Remote branch deletion, local branch deletion, and worktree removal are
+  separate operations and must each be reported.
+- If `gh pr merge` selects a local merge path because the default branch is
+  checked out in another worktree, do not move or reset that worktree. After
+  the merge gates pass, use the hosting service's merge API or UI, then run the
+  same post-merge verification.
+- The final handoff must include `base_sha`, task branch, PR URL, merge commit,
+  final `origin/<default>` SHA, deterministic check results, changed-path
+  verification, and the exact worktrees/branches that were cleaned up.
 
 ## Pull Request Gate
 

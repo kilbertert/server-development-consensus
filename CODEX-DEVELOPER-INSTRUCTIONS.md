@@ -5,13 +5,39 @@ If on the default branch, create one short-lived task branch first; preserve
 existing uncommitted work on that branch and never discard it to clean the
 worktree. Read-only investigation does not require a branch.
 
-Normal delivery is: one logical task -> one short-lived branch -> focused
-commits and relevant formatter/static checks/tests/build -> one pull request ->
-all required deterministic CI passes -> human review -> merge through GitHub ->
-delete the task branch. Multiple commits and pushes belong to the same PR.
+Normal delivery is: establish the canonical checkout and inspect all worktrees
+-> one logical task -> one short-lived branch/worktree based on the latest
+origin default branch -> focused commits and relevant formatter/static
+checks/tests/build -> one pull request -> all required deterministic CI passes
+-> human review -> merge through GitHub -> verify the merge and changed paths
+on origin/default -> fast-forward local default -> delete only agent-owned task
+branches and worktrees. Multiple commits and pushes belong to the same PR.
 Never push or force-push directly to the default branch, use --no-verify, or
 disable hooks, Rulesets, tests, or required deterministic checks to bypass the
 gate.
+
+The repository root is a delivery surface. Before editing and before handoff,
+report its path, current branch, `git status --short --branch`, `git worktree
+list`, and `git branch -vv`. A task worktree is not the canonical checkout
+unless its handoff path is explicitly recorded. Create isolated tasks with
+`dev-worktree start TYPE DESCRIPTION PATH`; it records the current origin base
+and does not track the default branch. Run `dev-worktree audit` before handoff
+and `dev-worktree retire PATH` only after integration is verified. Use
+`dev-worktree preserve PATH REASON` for intentionally paused user work; this
+does not bypass the pre-push overlap guard. The guard rejects a push whose
+committed paths overlap uncommitted paths in another worktree, and the daily
+audit reports stale lifecycle states without deleting them.
+
+An upstream marked `[gone]` is a stale-delivery state, not an integrated
+project. Before opening or merging a PR, fetch with pruning and verify the task
+branch contains the current base; update it and rerun deterministic CI when the
+base moved. After merge, confirm `gh pr view` is `MERGED`, capture the hosting
+merge commit, verify maintained paths with `git show origin/<default>:<path>`,
+and report remote branch deletion, local branch deletion, and worktree cleanup
+separately. Preserve user-owned worktrees and uncommitted changes. If `gh pr
+merge` selects a local merge path because another worktree has the default
+branch checked out, use the hosting merge API or UI after the gates pass instead
+of moving or resetting that worktree.
 
 The server's three review layers are fixed: **OpenCodeReview CLI +
 delegation** for local development; **ClawSweeper/CodeRabbit** for external or

@@ -56,6 +56,7 @@ printf '%s\n' "$first_output" | grep -q 'server development consensus installed'
 [ "$(git config --global --path --get core.hooksPath)" = "$HOME/.config/git/hooks" ]
 [ "$(git config --global --path --get serverPolicy.globalChainedHooksPath)" = "$HOME/custom-hooks" ]
 grep -q '^## Internal Knowledge And Public Projection Boundary$' "$HOME/Projects/AGENTS.md"
+grep -q '^## Standards-Based Engineering$' "$HOME/Projects/AGENTS.md"
 [ "$(cat "$HOME/.codex/AGENTS.md")" = root-maintained ]
 python3 "$HOME/.local/bin/update-codex-config" --verify "$HOME/.codex/config.toml" \
   "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"

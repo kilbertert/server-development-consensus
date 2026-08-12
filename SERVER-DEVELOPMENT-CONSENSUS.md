@@ -29,6 +29,23 @@ weaken this policy.
   ACLs, cross-user groups, or recursive cross-account ownership changes as a
   shortcut.
 
+## Standards-Based Engineering
+
+- Before defining or changing a public contract, protocol, schema, diagnostic
+  taxonomy, logging or telemetry model, security boundary, persistence
+  guarantee, time or locale behavior, or cross-system interface, check for an
+  applicable authoritative standard or official platform specification.
+- Prefer, in order: formal standards and official specifications, official
+  dependency documentation, verified repository conventions, established de
+  facto standards, then a documented local design.
+- When a standard materially affects observable behavior, record its scope and
+  concrete mapping, and verify the implementation with focused tests.
+- Do not use "best practice" to justify speculative abstractions, dependencies,
+  or complexity. When no applicable standard exists, follow established
+  repository conventions and document important tradeoffs.
+- Routine local naming and implementation details do not require external
+  research unless ambiguity or interoperability risk makes it useful.
+
 ## Mandatory Git Workflow
 
 The default branch (`main`, `master`, or the remote's configured default) is a

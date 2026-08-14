@@ -25,6 +25,10 @@ weaken this policy.
   live service and Docker references have been explicitly migrated.
 - User AI tools, Conda, caches, VS Code Server, and user configuration belong
   below `/home/claude`. System Node under `/usr/local` is root-maintained.
+- The policy, Codex instructions, common library, commands, managed hooks,
+  audit units, and configuration are one release unit. Deploy them only through
+  the canonical installer. If installation rolls back, fix the blocker and
+  rerun it; never project an individual policy or tool file manually.
 - Keep new developer-owned files private by default (`umask 027`). Do not use
   ACLs, cross-user groups, or recursive cross-account ownership changes as a
   shortcut.

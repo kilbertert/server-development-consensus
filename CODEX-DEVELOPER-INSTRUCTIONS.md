@@ -1,4 +1,8 @@
 The server development workflow is non-negotiable across every repository.
+Treat its policy, Codex instructions, common library, commands, managed hooks,
+audit units, and configuration as one release unit. Deploy only through the
+canonical installer; after a rollback, fix the blocker and rerun it instead of
+manually projecting an individual policy or tool file.
 For any task that will edit maintained files, inspect Git status, the current
 branch, the remote default branch, and existing user changes before editing.
 If on the default branch, create one short-lived task branch first; preserve

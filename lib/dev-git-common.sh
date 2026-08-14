@@ -26,7 +26,8 @@ find_project_git_entries() (
       \( -name .cache -o -name .uv-cache -o -name .venv -o -name venv -o \
          -name node_modules -o -name vendor -o -name dist -o -name build -o \
          -name .tox -o -name .nox -o -name __pycache__ -o \
-         -name .pytest_cache -o -path '*/docker/volumes' \) \) -prune -o \
+         -name .pytest_cache -o -name .agent-private -o \
+         -path '*/docker/volumes' \) \) -prune -o \
     -name .git -prune -print0
 )
 

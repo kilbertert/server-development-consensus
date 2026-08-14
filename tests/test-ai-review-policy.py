@@ -112,6 +112,17 @@ def test_worktree_delivery_lifecycle_is_explicit_and_non_destructive() -> None:
     assert "daily audit reports stale lifecycle states without deleting them" in codex_instructions
 
 
+def test_policy_runtime_is_one_release_unit() -> None:
+    policy = " ".join(POLICY.read_text(encoding="utf-8").split())
+    readme = " ".join(README.read_text(encoding="utf-8").split())
+    codex_instructions = " ".join(CODEX_INSTRUCTIONS.read_text(encoding="utf-8").split())
+
+    assert "common library, commands, managed hooks, audit units, and configuration are one release unit" in policy
+    assert "Deploy them only through the canonical installer" in policy
+    assert "do not manually copy an individual policy or tool file into place" in readme
+    assert "instead of manually projecting an individual policy or tool file" in codex_instructions
+
+
 def test_review_sentinel_is_review_only_and_least_privilege() -> None:
     manifest = (ROOT / "ops/review-sentinel/github-app-manifest.json").read_text(encoding="utf-8")
     assert '"contents": "read"' in manifest

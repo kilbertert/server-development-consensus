@@ -15,6 +15,11 @@ all unrelated model, provider, project, MCP, hook, and plugin settings remain
 unchanged. The updater uses `tomlkit`, an explicit installer prerequisite, to
 preserve unrelated TOML and comments safely.
 
+The policy, Codex instructions, common library, commands, managed hooks, audit
+units, and configuration are one release unit. Deploy them only through
+`install.sh`. If installation rolls back, resolve the blocker and rerun the
+installer; do not manually copy an individual policy or tool file into place.
+
 The policy also defines an internal-knowledge/public-projection boundary.
 TEAM-MEMORY and other engineering records remain private by default; public
 material must be a separate, selected, redacted, edited, human-approved

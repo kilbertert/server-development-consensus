@@ -68,6 +68,7 @@ git init --initial-branch=main "$projects/repo" >/dev/null
 git -C "$projects/repo" config user.name test
 git -C "$projects/repo" config user.email test@example.com
 git -C "$projects/repo" -c core.hooksPath=/dev/null commit --allow-empty -m initial >/dev/null
+mkdir -p "$projects/artifacts/.agent-private/codex-home/.tmp/plugins-clone/.git"
 mkdir -p "$projects/repo/.project-hooks"
 printf '#!/bin/sh\nprintf executed >"%s"\n' "$tmp/commit-msg-ran" \
   >"$projects/repo/.project-hooks/commit-msg"

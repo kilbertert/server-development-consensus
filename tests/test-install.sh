@@ -108,6 +108,18 @@ git -C "$HOME/Projects/repo" switch -c feat/custom-hook-migration >/dev/null
 "$installer" >/dev/null
 [ "$(git config --global --path --get serverPolicy.globalChainedHooksPath)" = "$custom_chain" ]
 
+git config --global --unset-all serverPolicy.globalChainedHooksPath
+printf '%s\n' '# previous managed version' >>"$HOME/.config/git/hooks/pre-push"
+(
+  cd "$HOME/.config/git/hooks"
+  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push
+) >"$HOME/.config/server-development-consensus/managed-hooks.sha256"
+"$installer" >/dev/null
+if git config --global --get serverPolicy.globalChainedHooksPath >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL manifest-verified managed hooks were preserved as a chain' >&2
+  exit 1
+fi
+
 printf '%s\n' before-rollback >"$HOME/Projects/AGENTS.md"
 printf '%s\n' '# sentinel' >>"$HOME/.local/bin/dev-start"
 cp "$HOME/.local/bin/dev-start" "$tmp/dev-start.before"

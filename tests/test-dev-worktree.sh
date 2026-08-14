@@ -70,7 +70,8 @@ git -C "$HOME/Projects/repo" add independent.txt
 git -C "$HOME/Projects/repo" commit -m independent >/dev/null
 (
   cd "$HOME/Projects/repo"
-  "$HOME/.local/bin/dev-worktree" guard-overlap --tip HEAD --default origin/main
+  GIT_DIR=$(git rev-parse --absolute-git-dir) \
+    "$HOME/.local/bin/dev-worktree" guard-overlap --tip HEAD --default origin/main
 )
 
 printf '%s\n' advanced >"$tmp/seed/main.txt"

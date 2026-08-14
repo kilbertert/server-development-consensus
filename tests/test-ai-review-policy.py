@@ -123,6 +123,11 @@ def test_policy_runtime_is_one_release_unit() -> None:
     assert "instead of manually projecting an individual policy or tool file" in codex_instructions
 
 
+def test_policy_audit_service_uses_the_installer_python_environment() -> None:
+    unit = (ROOT / "ops/server-development-consensus/systemd/dev-policy-audit.service").read_text()
+    assert "Environment=PATH=%h/miniconda3/bin:%h/.local/bin:" in unit
+
+
 def test_review_sentinel_is_review_only_and_least_privilege() -> None:
     manifest = (ROOT / "ops/review-sentinel/github-app-manifest.json").read_text(encoding="utf-8")
     assert '"contents": "read"' in manifest

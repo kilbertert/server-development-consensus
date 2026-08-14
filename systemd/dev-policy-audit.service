@@ -3,6 +3,7 @@ Description=Audit server development workflow policy
 
 [Service]
 Type=oneshot
+Environment=PATH=%h/miniconda3/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=%h/.local/bin/dev-policy-audit %h/Projects
 UMask=0077
 NoNewPrivileges=true

@@ -445,6 +445,15 @@ if [ -n "$previous_global_chain" ]; then
 fi
 
 legacy_policy_hooks=false
+managed_hook_manifest_matches=false
+if [ -f "$hooks_dir/.managed-by-server-development-consensus" ] &&
+   [ ! -L "$hooks_dir/.managed-by-server-development-consensus" ] &&
+   [ -f "$policy_dir/managed-hooks.sha256" ] &&
+   [ ! -L "$policy_dir/managed-hooks.sha256" ] &&
+   (cd "$hooks_dir" &&
+     sha256sum --check --status "$policy_dir/managed-hooks.sha256"); then
+  managed_hook_manifest_matches=true
+fi
 pre_commit_hook_known=false
 if cmp -s "$hooks_dir/pre-commit" "$base_dir/git-hooks/pre-commit" ||
    known_legacy_pre_commit_hook; then
@@ -468,7 +477,8 @@ if cmp -s "$hooks_dir/pre-merge-commit" "$base_dir/git-hooks/pre-merge-commit" |
      [ "$(readlink "$hooks_dir/pre-merge-commit")" = hook-forwarder ]; }; then
   pre_merge_hook_known=true
 fi
-if $policy_hook_pair_known && $pre_merge_hook_known &&
+if { $managed_hook_manifest_matches ||
+     { $policy_hook_pair_known && $pre_merge_hook_known; }; } &&
    managed_forwarder_layout_matches; then
   legacy_policy_hooks=true
 fi

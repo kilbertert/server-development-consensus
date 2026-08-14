@@ -387,6 +387,7 @@ guard_overlap() {
   git diff --name-only -z "$default_ref...$tip" | sort -zu >"$temp_dir/proposed"
   [[ -s $temp_dir/proposed ]] || return 0
   load_worktrees
+  unset $(git rev-parse --local-env-vars)
 
   local found=0 index path branch
   for index in "${!worktree_paths[@]}"; do

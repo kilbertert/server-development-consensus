@@ -163,10 +163,8 @@ reactivated with `dev-worktree activate PATH`.
      review during the development loop, preferably through delegation so the
      newly opened review context drives the inspection. It does not use a
      GitHub Action and does not depend on an OCR gateway.
-  2. **ClawSweeper/CodeRabbit PR review**: GitHub PR review is an external or
-     queue-based advisory layer. CodeRabbit may be used where its App and plan
-     are authorized; the official ClawSweeper hosted service is not a free
-     third-party review service.
+  2. **PR-Agent PR review**: the server's self-hosted GitHub App automatically
+     reviews a PR when it is opened, reopened, or marked ready for review.
   3. **CI/Ruleset**: deterministic CI and the hosting service's Ruleset are the
      only mandatory quality and merge gates. AI output never becomes an
      authoritative required check.
@@ -177,11 +175,11 @@ reactivated with `dev-worktree activate PATH`.
     or use its delegation mode when no provider is configured. It is advisory
     and must be run at a meaningful milestone, not after every edit or every
     agent turn. It must not invoke the GitHub Action.
-  - CodeRabbit is an optional managed PR reviewer when its GitHub App is
-    explicitly authorized. It is opt-in by `review-ready` or
-    `@coderabbitai review`, does not review drafts, and does not automatically
-    rerun after every push. Its free plan and trial limits are external product
-    terms, not a server guarantee.
+  - PR-Agent is the server's automatic PR advisory reviewer. It reviews the
+    initial ready PR, does not rerun after every push, and never replaces
+    deterministic CI or human triage. After a material change made in response
+    to verified findings, the responsible agent requests one re-review with
+    `/review`; the human operator is not expected to trigger it manually.
   - ClawSweeper is a separate GitHub PR/issue queue and evidence reviewer. The
     OpenClaw-hosted instance is not a public service for third-party
     repositories; using it for this server requires a separately deployed and
@@ -200,11 +198,12 @@ reactivated with `dev-worktree activate PATH`.
 - OpenCodeReview's GitHub Action is not part of the server architecture and must
   not be installed or triggered for normal development. Existing legacy action
   files are migration debt and should be removed through focused PRs. The
-  `review-ready` label belongs to CodeRabbit and must not trigger OpenCodeReview.
+  `review-ready` label must not trigger OpenCodeReview.
 - AI findings are review candidates, not authoritative verdicts. A human must
-  confirm severity and applicability. A local OCR pass and at most one managed
-  PR review round are the default budgets for a logical milestone; another run
-  requires a material change or explicit human request. Stop when review cost,
+  confirm severity and applicability. A local OCR pass, one automatic PR-Agent
+  review, and at most one re-review are the default budgets for a logical
+  milestone; the re-review is allowed after a material change or explicit human
+  request. Stop when review cost,
   latency, or noise exceeds likely value.
 - Public repositories use an active Ruleset with no bypass actors, require a
   pull request, require the branch to be current, and require the selected
@@ -243,13 +242,17 @@ For normal work led by Codex or Claude Code:
    only when an approved local provider is configured; otherwise invoke the
    installed OpenCodeReview delegation skill. Use `--preview` first for a large
    or unfamiliar change. Do not run OCR after every turn.
-4. Triage findings once. Fix confirmed defects, record accepted risks and false
-   positives, and do not ask the coding agent to make every model suggestion
-   true by adding unrelated complexity.
-5. Commit, push, open the PR, and rely on deterministic CI. Add
-   `review-ready` only when a managed PR review is worth the external quota.
-6. Merge only through the hosting service after deterministic checks pass. AI
-   feedback never replaces tests, human judgment, or the PR gate.
+4. Triage local findings once. Fix confirmed defects, record accepted risks and
+   false positives, and do not turn every model suggestion into added complexity.
+5. Commit, push, and open the PR. PR-Agent automatically reviews the PR when it
+   is opened, reopened, or ready for review; it does not rerun after every push.
+6. The responsible agent waits for the PR-Agent result, triages findings once,
+   fixes verified defects, and records false positives or accepted risks. After
+   a material change, the agent requests one re-review with `/review` and waits
+   for it; the human operator does not manually trigger the review loop.
+7. Wait for deterministic CI and merge only through the hosting service after
+   all mandatory checks pass. AI review remains advisory and feedback never
+   replaces tests, human judgment, or the PR gate.
 
 ## Internal Knowledge And Public Projection Boundary
 

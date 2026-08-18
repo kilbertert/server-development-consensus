@@ -1,0 +1,17 @@
+{
+  "name": "server-review-sentinel",
+  "url": "https://REPLACE-WITH-APP-ENDPOINT",
+  "hook_attributes": {
+    "url": "https://REPLACE-WITH-APP-ENDPOINT/webhook",
+    "active": true
+  },
+  "redirect_url": "https://REPLACE-WITH-APP-ENDPOINT/app/callback",
+  "public": false,
+  "default_permissions": {
+    "contents": "read",
+    "issues": "write",
+    "metadata": "read",
+    "pull_requests": "read"
+  },
+  "default_events": ["pull_request"]
+}

@@ -19,6 +19,12 @@ development must live below `/home/claude/Projects`, whose inherited copies are:
 - `~/Projects/CLAUDE.md`
 - `~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md`
 
+`DEVELOPMENT-PORT-REGISTRY.md` is the separate source of truth for fixed
+development host-port allocations. The installer publishes it to:
+
+- `~/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md`
+- `~/Projects/DEVELOPMENT-PORT-REGISTRY.md`
+
 The installer updates user-global Codex and Claude files when they are missing
 or user-writable. Root-maintained immutable files are preserved. Codex also
 receives the core Git workflow through a TOML-validated update of the

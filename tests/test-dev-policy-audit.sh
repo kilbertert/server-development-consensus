@@ -28,9 +28,11 @@ cp "$base_dir/bin/update-codex-config" "$HOME/.local/bin/update-codex-config"
 chmod +x "$HOME/.local/bin/update-codex-config"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md"
 cp "$base_dir/CODEX-DEVELOPER-INSTRUCTIONS.md" "$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md"
+cp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" "$policy_dir/DEVELOPMENT-PORT-REGISTRY.md"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/AGENTS.md"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/CLAUDE.md"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/SERVER-DEVELOPMENT-CONSENSUS.md"
+cp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" "$projects/DEVELOPMENT-PORT-REGISTRY.md"
 python3 "$HOME/.local/bin/update-codex-config" "$HOME/.codex/config.toml" \
   "$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md"
 cp "$base_dir/git-hooks/hook-forwarder" "$hooks/hook-forwarder"
@@ -189,6 +191,13 @@ if "$audit" "$projects" >/dev/null 2>&1; then
   exit 1
 fi
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/AGENTS.md"
+
+printf '%s\n' drift >"$projects/DEVELOPMENT-PORT-REGISTRY.md"
+if "$audit" "$projects" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL drifted development port registry passed policy audit' >&2
+  exit 1
+fi
+cp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" "$projects/DEVELOPMENT-PORT-REGISTRY.md"
 
 git init --initial-branch=main "$tmp/external" >/dev/null
 git -C "$tmp/external" config user.name test

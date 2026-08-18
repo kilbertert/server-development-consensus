@@ -323,6 +323,24 @@ TEAM-MEMORY remain the internal sources of truth.
 - Persistent development applications run as enabled `claude` user units in
   `/home/claude/.config/systemd/user`, managed with `systemctl --user`. Do not
   use root `tmux`, `nohup`, or a login shell as a service supervisor.
+- Temporary host services should request an automatically assigned port when
+  the runtime supports it. A service that needs a stable host endpoint must
+  receive an allocation from `DEVELOPMENT-PORT-REGISTRY.md` before startup;
+  framework defaults such as `3000`, `5000`, `8000`, and `8080` are not a
+  server-wide allocation mechanism.
+- Development listeners bind to `127.0.0.1` or `::1` by default. Binding to a
+  non-loopback address, publishing a container port on all interfaces, opening
+  a firewall path, or adding a public proxy requires an explicit exposure and
+  security decision independent of the port number.
+- Containers and infrastructure services retain their standard internal ports.
+  Prefer service-name networking without host publication; when host access is
+  required, map the internal port to a loopback-bound dynamically assigned or
+  registered host port. Do not modify an upstream image or protocol merely to
+  satisfy the host allocation convention.
+- Fixed development host ports must avoid the kernel ephemeral range, IANA
+  conflicts, existing listeners, and prior registry allocations. The registry
+  is the source of truth for the local static pool and ownership; port numbers
+  outside it are exceptions, not precedent.
 - System daemons remain root-managed. Do not alter `/etc`, SSH, Nginx, Docker
   daemon configuration, accounts, groups, or system services without explicit
   authorization for that host change.

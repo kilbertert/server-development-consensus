@@ -13,6 +13,7 @@ expected_hooks=$policy_home/.config/git/hooks
 common=$policy_home/.local/lib/server-development-consensus/dev-git-common.sh
 policy_dir=$policy_home/.config/server-development-consensus
 policy_file=$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md
+port_registry=$policy_dir/DEVELOPMENT-PORT-REGISTRY.md
 codex_policy_file=$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md
 managed_hooks_manifest=$policy_dir/managed-hooks.sha256
 codex_updater=$policy_home/.local/bin/update-codex-config
@@ -169,6 +170,12 @@ else
       failures=$((failures + 1))
     fi
   done
+fi
+if [[ ! -r $port_registry ]] ||
+   ! grep -q '^## Static Pool$' "$port_registry" ||
+   ! cmp -s "$port_registry" "$projects_root/DEVELOPMENT-PORT-REGISTRY.md"; then
+  printf 'FAIL development port registry is missing or drifted\n'
+  failures=$((failures + 1))
 fi
 if [[ ! -x $codex_updater || ! -r $codex_policy_file ]] ||
    ! python3 "$codex_updater" --verify "$policy_home/.codex/config.toml" \

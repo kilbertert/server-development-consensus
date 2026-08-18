@@ -236,10 +236,15 @@ rollback_install() {
     projects-CLAUDE.md projects-CLAUDE.installed
   restore_file_conditionally "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md" \
     projects-consensus.md projects-consensus.installed
+  restore_file_conditionally "$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md" \
+    projects-port-registry.md projects-port-registry.installed
   restore_file_conditionally "$HOME/.gitconfig" gitconfig gitconfig.installed
   restore_file_conditionally \
     "$HOME/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md" \
     installed-consensus.md installed-consensus.installed
+  restore_file_conditionally \
+    "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md" \
+    installed-port-registry.md installed-port-registry.installed
   restore_file_conditionally \
     "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md" \
     installed-codex-policy.md installed-codex-policy.installed
@@ -499,8 +504,10 @@ backup_file "$HOME/.claude/CLAUDE.md" claude-CLAUDE.md
 backup_file "$HOME/Projects/AGENTS.md" projects-AGENTS.md
 backup_file "$HOME/Projects/CLAUDE.md" projects-CLAUDE.md
 backup_file "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md" projects-consensus.md
+backup_file "$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md" projects-port-registry.md
 backup_file "$HOME/.gitconfig" gitconfig
 backup_file "$HOME/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md" installed-consensus.md
+backup_file "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md" installed-port-registry.md
 backup_file "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md" installed-codex-policy.md
 backup_file "$HOME/.config/server-development-consensus/managed-hooks.sha256" installed-hooks-manifest
 backup_file "$HOME/.local/lib/server-development-consensus/dev-git-common.sh" installed-common.sh
@@ -593,6 +600,10 @@ install -m 600 "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" \
   "$HOME/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md"
 backup_file "$HOME/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md" \
   installed-consensus.installed
+install -m 600 "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
+  "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md"
+backup_file "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md" \
+  installed-port-registry.installed
 install -m 600 "$base_dir/CODEX-DEVELOPER-INSTRUCTIONS.md" \
   "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
 backup_file "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md" \
@@ -604,6 +615,9 @@ backup_file "$HOME/Projects/CLAUDE.md" projects-CLAUDE.installed
 install -m 640 "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" \
   "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md"
 backup_file "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md" projects-consensus.installed
+install -m 640 "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
+  "$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md"
+backup_file "$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md" projects-port-registry.installed
 
 for global_agent_file in \
   "$HOME/.codex/AGENTS.md" \

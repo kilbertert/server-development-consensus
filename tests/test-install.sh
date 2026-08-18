@@ -61,6 +61,10 @@ grep -q '^## Standards-Based Engineering$' "$HOME/Projects/AGENTS.md"
 python3 "$HOME/.local/bin/update-codex-config" --verify "$HOME/.codex/config.toml" \
   "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
 cmp "$base_dir/bin/sync-privileged-policy" "$HOME/.local/bin/sync-privileged-policy"
+cmp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
+  "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md"
+cmp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
+  "$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md"
 [ "$(head -n 1 "$HOME/.local/bin/sync-privileged-policy")" = '#!/usr/bin/python3' ]
 cmp "$base_dir/git-hooks/pre-merge-commit" \
   "$HOME/.config/git/hooks/pre-merge-commit"
@@ -121,6 +125,9 @@ if git config --global --get serverPolicy.globalChainedHooksPath >/dev/null 2>&1
 fi
 
 printf '%s\n' before-rollback >"$HOME/Projects/AGENTS.md"
+printf '%s\n' registry-before-rollback >"$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md"
+printf '%s\n' canonical-registry-before-rollback \
+  >"$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md"
 printf '%s\n' '# sentinel' >>"$HOME/.local/bin/dev-start"
 cp "$HOME/.local/bin/dev-start" "$tmp/dev-start.before"
 preserved_agent_identity=$(stat -c '%d:%i:%u:%g:%a' "$HOME/.codex/AGENTS.md")
@@ -131,6 +138,9 @@ if "$installer" >/dev/null 2>&1; then
 fi
 unset SERVER_POLICY_INSTALL_FAIL_STAGE
 [ "$(cat "$HOME/Projects/AGENTS.md")" = before-rollback ]
+[ "$(cat "$HOME/Projects/DEVELOPMENT-PORT-REGISTRY.md")" = registry-before-rollback ]
+[ "$(cat "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md")" = \
+  canonical-registry-before-rollback ]
 cmp "$tmp/dev-start.before" "$HOME/.local/bin/dev-start"
 [ "$(stat -c '%d:%i:%u:%g:%a' "$HOME/.codex/AGENTS.md")" = \
   "$preserved_agent_identity" ]

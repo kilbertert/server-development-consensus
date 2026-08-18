@@ -134,4 +134,23 @@ if printf '%s\n' "$feature_update" |
   exit 1
 fi
 
+# An empty remote may be bootstrapped only with an explicit configured default.
+git init --bare --initial-branch=main "$tmp/empty-bootstrap.git" >/dev/null
+git init --initial-branch=feat/bootstrap "$tmp/bootstrap" >/dev/null
+git -C "$tmp/bootstrap" config user.name test
+git -C "$tmp/bootstrap" config user.email test@example.com
+git -C "$tmp/bootstrap" remote add origin "$tmp/empty-bootstrap.git"
+git -C "$tmp/bootstrap" config serverPolicy.defaultBranch main
+git -C "$tmp/bootstrap" commit --allow-empty -m bootstrap >/dev/null
+bootstrap_head=$(git -C "$tmp/bootstrap" rev-parse HEAD)
+printf 'refs/heads/main %s refs/heads/main %s\n' "$bootstrap_head" "$zero" |
+  (cd "$tmp/bootstrap" && "$hook" origin "$tmp/empty-bootstrap.git") >/dev/null
+
+git -C "$tmp/bootstrap" -c core.hooksPath=/dev/null push origin HEAD:refs/heads/other >/dev/null
+if printf 'refs/heads/feature %s refs/heads/feature %s\n' "$bootstrap_head" "$zero" |
+   (cd "$tmp/bootstrap" && "$hook" origin "$tmp/empty-bootstrap.git") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL unresolved default on non-empty remote was allowed' >&2
+  exit 1
+fi
+
 printf '%s\n' 'pre-push policy tests passed'

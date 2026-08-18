@@ -73,8 +73,8 @@ remote Rulesets. Policy prohibits bypassing either layer.
 
 AI review is deliberately separate from the deterministic merge gate. The
 server's three-layer architecture is explicit: **OpenCodeReview CLI +
-delegation** for local development; **ClawSweeper/CodeRabbit** for external or
-queue-based GitHub PR review; and **CI/Ruleset** as the only mandatory quality
+delegation** for local development; **PR-Agent** for automatic GitHub PR review;
+and **CI/Ruleset** as the only mandatory quality
 gate. The default development-time review uses local OpenCodeReview: `ocr review`
 inspects a workspace, commit, or branch range as the `claude` user when an
 approved local provider is configured, while the agent integrations use
@@ -83,12 +83,13 @@ a coherent implementation milestone, but must not run after every edit, agent
 turn, or push. It does not use a GitHub Action and does not depend on an OCR
 gateway.
 
-CodeRabbit is an optional managed PR reviewer after its GitHub App is authorized
-for selected repositories. Repository configuration uses `reviews.profile:
-chill`, manual or `review-ready` opt-in, no draft reviews, and no automatic
-incremental review on every push. `review-ready` starts CodeRabbit only.
-CodeRabbit pricing and trial terms are external product terms, so the server
-does not depend on it as a permanent gate.
+PR-Agent automatically reviews the initial ready PR when it is opened, reopened,
+or marked ready for review. It does not rerun after every push. The responsible
+agent waits for the review, triages findings once, fixes verified defects, and
+records false positives or accepted risks. After a material change, the agent
+requests one re-review with `/review`; the human operator does not manually
+drive the normal review loop. PR-Agent remains advisory, while CI and Rulesets
+remain the only mandatory merge gates.
 
 ClawSweeper is a different system: a self-hosted GitHub PR/issue review queue
 that can publish one durable evidence and merge-readiness report. The
@@ -114,13 +115,9 @@ fills the allowlist and secret files. It does not copy ClawSweeper's worker
 fleet, Cloudflare state, repair, push, close, or automerge infrastructure.
 
 The retired OpenCodeReview workflow is not part of this architecture and must
-not be re-enabled. A local OCR pass and at most one managed PR review round are
-the default budget for one logical milestone; further runs need a material
-change or explicit human request.
-
-CodeRabbit authorization requires an owner to sign in through the browser and
-install the GitHub App for selected repositories. The repository YAML can be
-prepared in advance, but CLI access cannot approve that external authorization.
+not be re-enabled. A local OCR pass, one automatic PR-Agent review, and at most
+one agent-requested re-review after a material change are the default budget for
+one logical milestone.
 
 Repositories that configure a local `core.hooksPath` are migrated by storing
 the old path in `serverPolicy.chainedHooksPath` and using the global wrappers.

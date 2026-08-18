@@ -3,12 +3,12 @@ from pathlib import Path
 import yaml
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/open-code-review.yml"
 CODERABBIT = ROOT / ".coderabbit.yaml"
-POLICY = ROOT / "ops/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md"
-README = ROOT / "ops/server-development-consensus/README.md"
-CODEX_INSTRUCTIONS = ROOT / "ops/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
+POLICY = ROOT / "SERVER-DEVELOPMENT-CONSENSUS.md"
+README = ROOT / "README.md"
+CODEX_INSTRUCTIONS = ROOT / "CODEX-DEVELOPER-INSTRUCTIONS.md"
 
 
 def load_yaml(path: Path) -> dict:
@@ -55,7 +55,7 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "must begin as review-only" in normalized_readme
     assert "approve the model provider and retention boundary" in normalized_readme
     assert "needs human approval before a public GitHub comment is published" in normalized_readme
-    assert "ops/review-sentinel/" in normalized_readme
+    assert "`review-sentinel/`" in normalized_readme
     assert "dedicated Codex home" in normalized_policy
     assert "never point it at the interactive `~/.codex` home" in normalized_codex_instructions
 
@@ -124,12 +124,12 @@ def test_policy_runtime_is_one_release_unit() -> None:
 
 
 def test_policy_audit_service_uses_the_installer_python_environment() -> None:
-    unit = (ROOT / "ops/server-development-consensus/systemd/dev-policy-audit.service").read_text()
+    unit = (ROOT / "systemd/dev-policy-audit.service").read_text()
     assert "Environment=PATH=%h/miniconda3/bin:%h/.local/bin:" in unit
 
 
 def test_review_sentinel_is_review_only_and_least_privilege() -> None:
-    manifest = (ROOT / "ops/review-sentinel/github-app-manifest.json").read_text(encoding="utf-8")
+    manifest = (ROOT / "review-sentinel/github-app-manifest.json").read_text(encoding="utf-8")
     assert '"contents": "read"' in manifest
     assert '"pull_requests": "read"' in manifest
     assert '"issues": "write"' in manifest
@@ -137,7 +137,7 @@ def test_review_sentinel_is_review_only_and_least_privilege() -> None:
     assert '"checks"' not in manifest
     assert '"workflows"' not in manifest
     assert '"administration"' not in manifest
-    assert "Review Sentinel" in (ROOT / "ops/review-sentinel/README.md").read_text(encoding="utf-8")
-    unit = (ROOT / "ops/review-sentinel/systemd/review-sentinel.service").read_text(encoding="utf-8")
+    assert "Review Sentinel" in (ROOT / "review-sentinel/README.md").read_text(encoding="utf-8")
+    unit = (ROOT / "review-sentinel/systemd/review-sentinel.service").read_text(encoding="utf-8")
     assert "ProtectKernelModules" not in unit
     assert "RestrictSUIDSGID" not in unit

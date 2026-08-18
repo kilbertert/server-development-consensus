@@ -1,5 +1,17 @@
 # Server development consensus deployment
 
+This repository is the canonical source of the server development governance
+release unit: the consensus policy, the installer, the managed commands, the
+audit units, and the review-sentinel reference implementation. Deploy it only
+through `install.sh` from a clean checkout of this repository's default branch.
+
+It was extracted on 2026-08-18 from
+`kilibtert/helixent-agent-workbench` (local path `~/Projects/praxis`), which is
+the Helixent product repository and no longer hosts server-level governance.
+Git history is preserved: the consensus unit arrived via `git subtree split`
+of `ops/server-development-consensus`, and `review-sentinel/` retains its three
+commits as merge ancestry of the import commit.
+
 `SERVER-DEVELOPMENT-CONSENSUS.md` is the canonical human and agent policy. All
 development must live below `/home/claude/Projects`, whose inherited copies are:
 
@@ -88,7 +100,7 @@ read TEAM-MEMORY, host configuration, logs, or credentials. For a public
 repository, the generated report is a redacted candidate that needs human
 approval before a public GitHub comment is published.
 
-The first review-only implementation is `ops/review-sentinel/`. It provides a
+The first review-only implementation is `review-sentinel/`. It provides a
 GitHub App webhook, an SQLite exact-head queue, a read-only structured Codex
 worker, and a marker-backed publisher. Its installer deliberately leaves the
 user service disabled until an owner creates a separate private GitHub App and

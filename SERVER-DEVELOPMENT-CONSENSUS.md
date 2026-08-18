@@ -191,8 +191,8 @@ reactivated with `dev-worktree activate PATH`.
     repository and PR context, never TEAM-MEMORY, host configuration, logs, or
     credentials. A public-repository report is a redacted candidate that needs
     human approval before publication.
-  - The repository's minimal self-hosted implementation is
-    `ops/review-sentinel/`. It is review-only, exact-head deduplicated, and
+  - The governance repository's minimal self-hosted implementation is
+    `review-sentinel/`. It is review-only, exact-head deduplicated, and
     disabled until a separately created GitHub App and a dedicated Codex home
     are configured. It must not reuse the interactive `~/.codex` home or a
     credential-embedding wrapper; its App permissions exclude contents write,

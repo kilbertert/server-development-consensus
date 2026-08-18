@@ -37,7 +37,7 @@ of scope until the review-only lane demonstrates value.
 Run as `claude`:
 
 ```bash
-./ops/review-sentinel/install.sh
+./install.sh
 PYTHONPATH="$HOME/.local/lib/review-sentinel" \
   python3 -m review_sentinel.cli \
   --env-file "$HOME/.config/review-sentinel/review-sentinel.env" doctor

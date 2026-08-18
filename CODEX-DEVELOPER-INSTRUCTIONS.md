@@ -60,7 +60,7 @@ PR/repository context, never TEAM-MEMORY, host configuration, logs, or
 credentials; public comments need human approval after redaction. Neither
 managed AI review nor OCR may be a required merge check. The OpenCodeReview
 GitHub Action is retired and must not be re-enabled.
-The self-hosted `ops/review-sentinel/` service remains disabled until it has a
+The self-hosted `review-sentinel/` service remains disabled until it has a
 dedicated Codex executable/home and separately managed App credentials; never
 point it at the interactive `~/.codex` home.
 

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    name: Governance release unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install pytest pyyaml tomlkit Flask PyJWT cryptography
+      - run: python -m pytest tests/test-ai-review-policy.py
+      - name: Server development worktree tests
+        shell: bash
+        run: bash tests/test-dev-worktree.sh
+      - name: Server development pre-push tests
+        shell: sh
+        run: sh tests/test-pre-push.sh
+      - name: Server development policy audit tests
+        shell: bash
+        run: bash tests/test-dev-policy-audit.sh
+      - name: Server development installer tests
+        shell: sh
+        run: sh tests/test-install.sh
+      - name: Review Sentinel unit tests
+        run: PYTHONPATH=review-sentinel python -m unittest discover -s review-sentinel/tests
+      - name: Review Sentinel installer test
+        run: sh review-sentinel/tests/test-install.sh

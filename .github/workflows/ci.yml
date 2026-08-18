@@ -4,19 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   governance:
     name: Governance release unit
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,6 +41,8 @@ jobs:
         shell: sh
         run: sh tests/test-install.sh
       - name: Review Sentinel unit tests
+        shell: bash
         run: PYTHONPATH=review-sentinel python -m unittest discover -s review-sentinel/tests
       - name: Review Sentinel installer test
+        shell: sh
         run: sh review-sentinel/tests/test-install.sh

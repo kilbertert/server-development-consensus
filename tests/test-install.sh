@@ -68,7 +68,9 @@ cmp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
 [ "$(head -n 1 "$HOME/.local/bin/sync-privileged-policy")" = '#!/usr/bin/python3' ]
 cmp "$base_dir/git-hooks/pre-merge-commit" \
   "$HOME/.config/git/hooks/pre-merge-commit"
-[ "$(wc -l <"$HOME/.config/server-development-consensus/managed-hooks.sha256")" = 4 ]
+cmp "$base_dir/git-hooks/commit-msg" \
+  "$HOME/.config/git/hooks/commit-msg"
+[ "$(wc -l <"$HOME/.config/server-development-consensus/managed-hooks.sha256")" = 5 ]
 
 second_output=$("$installer" 2>&1)
 printf '%s\n' "$second_output" | grep -q 'audit complete: failures=0 repaired=0'
@@ -116,7 +118,7 @@ git config --global --unset-all serverPolicy.globalChainedHooksPath
 printf '%s\n' '# previous managed version' >>"$HOME/.config/git/hooks/pre-push"
 (
   cd "$HOME/.config/git/hooks"
-  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push
+  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push commit-msg
 ) >"$HOME/.config/server-development-consensus/managed-hooks.sha256"
 "$installer" >/dev/null
 if git config --global --get serverPolicy.globalChainedHooksPath >/dev/null 2>&1; then

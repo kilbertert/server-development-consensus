@@ -56,6 +56,7 @@ The local enforcement layer is installed at:
 
 - `~/.config/git/hooks/pre-push`
 - `~/.config/git/hooks/pre-commit`
+- `~/.config/git/hooks/commit-msg`
 - forwarding wrappers for every other Git hook name
 - `~/.local/lib/server-development-consensus/dev-git-common.sh`
 - `~/.local/bin/dev-start`
@@ -70,6 +71,14 @@ repositories. The local hook provides fast feedback and covers private
 repositories that GitHub Free cannot protect remotely. Local hooks can be
 bypassed with low-level Git options, so they complement rather than replace
 remote Rulesets. Policy prohibits bypassing either layer.
+
+The managed `commit-msg` hook enforces Conventional Commits
+(`<type>(<scope>): <subject>`, types `feat fix docs style refactor perf test
+chore build ci revert`, optional `!` for breaking changes and an optional
+scope) at commit time. It is fail-closed: a repository that opts out must set
+`serverPolicy.commitMessageOverride=default-branch-only` explicitly (which
+keeps the check on the default branch and allows legacy messages on task
+branches during migration).
 
 AI review is deliberately separate from the deterministic merge gate. The
 server's three-layer architecture is explicit: **OpenCodeReview CLI +
@@ -125,6 +134,11 @@ The wrappers run the server guard and then the original project hook. A prior
 global `core.hooksPath` is similarly preserved in
 `serverPolicy.globalChainedHooksPath`; project-local hooks retain precedence,
 matching Git's original configuration semantics.
+
+Repositories that publish versions use Semantic Versioning (`MAJOR.MINOR.PATCH`)
+and annotated tags on the merged default branch; releases are an explicit,
+authorized act. PRs should stay focused (normally under ~500-800 lines) and
+use a lightweight PR template (`changes`/`tests`/`checklist`) when provided.
 
 For isolated task work, use `dev-worktree start TYPE DESCRIPTION PATH`. The
 command fetches the remote default branch, creates a no-track task branch from

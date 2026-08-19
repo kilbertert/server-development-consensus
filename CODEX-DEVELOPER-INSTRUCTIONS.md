@@ -20,6 +20,13 @@ Never push or force-push directly to the default branch, use --no-verify, or
 disable hooks, Rulesets, tests, or required deterministic checks to bypass the
 gate.
 
+Commit messages must use Conventional Commits (`<type>(<scope>): <subject>`);
+the managed `commit-msg` hook enforces this at commit time. Keep each commit
+small and focused (normally under ~300 changed lines; a PR under ~500-800
+lines), and use a lightweight PR template (`changes`/`tests`/`checklist`) when
+one is provided. When a repository publishes versions, tag the merged default
+branch with an annotated Semantic Version tag (`MAJOR.MINOR.PATCH`).
+
 The repository root is a delivery surface. Before editing and before handoff,
 report its path, current branch, `git status --short --branch`, `git worktree
 list`, and `git branch -vv`. A task worktree is not the canonical checkout

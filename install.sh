@@ -387,7 +387,7 @@ managed_forwarder_layout_matches() {
   [ -x "$hooks_dir/hook-forwarder" ] || return 1
   while IFS= read -r hook; do
     case $hook in
-      pre-commit|pre-merge-commit|pre-push) continue ;;
+      pre-commit|pre-merge-commit|pre-push|commit-msg) continue ;;
     esac
     [ -L "$hooks_dir/$hook" ] || return 1
     [ "$(readlink "$hooks_dir/$hook")" = hook-forwarder ] || return 1
@@ -414,6 +414,9 @@ preserve_managed_hooks_as_chain() {
         ;;
       pre-merge-commit)
         $pre_merge_hook_known && rm -f "$new_chain_target/$hook"
+        ;;
+      commit-msg)
+        $commit_msg_hook_known && rm -f "$new_chain_target/$hook"
         ;;
       *)
         if [ -L "$new_chain_target/$hook" ] &&
@@ -481,6 +484,12 @@ if cmp -s "$hooks_dir/pre-merge-commit" "$base_dir/git-hooks/pre-merge-commit" |
    { [ -L "$hooks_dir/pre-merge-commit" ] &&
      [ "$(readlink "$hooks_dir/pre-merge-commit")" = hook-forwarder ]; }; then
   pre_merge_hook_known=true
+fi
+commit_msg_hook_known=false
+if cmp -s "$hooks_dir/commit-msg" "$base_dir/git-hooks/commit-msg" ||
+   { [ -L "$hooks_dir/commit-msg" ] &&
+     [ "$(readlink "$hooks_dir/commit-msg")" = hook-forwarder ]; }; then
+  commit_msg_hook_known=true
 fi
 if { $managed_hook_manifest_matches ||
      { $policy_hook_pair_known && $pre_merge_hook_known; }; } &&
@@ -648,7 +657,7 @@ backup_file "$HOME/.local/lib/server-development-consensus/dev-git-common.sh" \
 install -m 700 "$base_dir/git-hooks/hook-forwarder" "$hooks_dir/hook-forwarder"
 while IFS= read -r hook; do
   case $hook in
-    pre-commit|pre-merge-commit|pre-push) ;;
+    pre-commit|pre-merge-commit|pre-push|commit-msg) ;;
     *) ln -sfn hook-forwarder "$hooks_dir/$hook" ;;
   esac
 done <<EOF
@@ -657,12 +666,13 @@ EOF
 install -m 700 "$base_dir/git-hooks/pre-push" "$hooks_dir/pre-push"
 install -m 700 "$base_dir/git-hooks/pre-commit" "$hooks_dir/pre-commit"
 install -m 700 "$base_dir/git-hooks/pre-merge-commit" "$hooks_dir/pre-merge-commit"
+install -m 700 "$base_dir/git-hooks/commit-msg" "$hooks_dir/commit-msg"
 : >"$hooks_dir/.managed-by-server-development-consensus"
 chmod 600 "$hooks_dir/.managed-by-server-development-consensus"
 hooks_manifest_temp=$policy_dir/managed-hooks.sha256.tmp.$$
 (
   cd "$hooks_dir"
-  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push
+  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push commit-msg
 ) >"$hooks_manifest_temp"
 chmod 600 "$hooks_manifest_temp"
 mv -f "$hooks_manifest_temp" "$policy_dir/managed-hooks.sha256"

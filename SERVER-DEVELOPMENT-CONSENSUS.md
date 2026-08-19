@@ -69,8 +69,15 @@ documentation change:
    branches may use their established prefix, such as `codex/`.
 3. Make focused commits. Each commit should leave the branch coherent; use the
    project's commit convention, or clear Conventional Commit style when none
-   exists. Never commit secrets, local credentials, `.env` contents, or
-   unrelated generated artifacts.
+   exists. Commit messages must use Conventional Commits
+   (`<type>(<scope>): <subject>`, types `feat fix docs style refactor perf test
+   chore build ci revert`, with an optional `!` for breaking changes and an
+   optional scope). The managed `commit-msg` hook enforces this format at commit
+   time; it is fail-closed, and a repository that opts out must set
+   `serverPolicy.commitMessageOverride=default-branch-only` explicitly. Keep
+   each commit small and focused; as a guardrail, a single commit is normally
+   under 300 changed lines and a PR under 500-800 lines. Never commit secrets,
+   local credentials, `.env` contents, or unrelated generated artifacts.
 4. Run the repository's formatter, static checks, tests, and build in
    proportion to the change. Add or update tests for regressions and non-trivial
    behavior. Record any check that cannot be run.
@@ -78,16 +85,28 @@ documentation change:
    belong to that same branch and PR; each push reruns deterministic CI, not an
    unbounded AI review. Do not create a new PR for every commit.
 6. Keep the PR focused, describe the behavior and verification, and resolve
-   review threads. All required deterministic CI checks must complete
-   successfully. AI review is advisory by default: verified findings must be
-   fixed, while false positives, findings outside the agreed threat model, and
-   accepted risks require explicit human triage rather than repeated model runs.
+   review threads. Use a lightweight PR template (`changes`, `tests`, `checklist`
+   sections, with an issue/`#123` reference when applicable) when a repository
+   provides one; otherwise describe the change, its verification, and its scope
+   in the PR body. A PR is normally under 500-800 lines. All required
+   deterministic CI checks must complete successfully. AI review is advisory by
+   default: verified findings must be fixed, while false positives, findings
+   outside the agreed threat model, and accepted risks require explicit human
+   triage rather than repeated model runs.
 7. Merge through the Git hosting service after the branch is current and every
    required check passes. Prefer squash merge unless project history requires a
    different method. After the hosting service confirms the merge, fetch with
    pruning, verify the merge commit and changed paths on `origin/main`, fast-
    forward the local default branch, and only then delete agent-owned task
    branches and worktrees.
+
+8. When a repository publishes versions, use Semantic Versioning
+   (`MAJOR.MINOR.PATCH`; a `!` breaking change or incompatible API bumps MAJOR,
+   a backward-compatible feature bumps MINOR, a backward-compatible fix bumps
+   PATCH). Create annotated tags (`git tag -a`) on the merged default branch and
+   push them separately. Releases are a deliberate, authorized act: a repository
+   should agree its versioning contract and release cadence before tagging
+   begins.
 
 Direct pushes, force pushes, local merges pushed to the default branch, and
 using `--no-verify` to bypass the server guard are prohibited. Do not weaken or

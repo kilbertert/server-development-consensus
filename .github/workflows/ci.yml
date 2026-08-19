@@ -34,6 +34,9 @@ jobs:
       - name: Server development pre-push tests
         shell: sh
         run: sh tests/test-pre-push.sh
+      - name: Server development commit-msg tests
+        shell: sh
+        run: sh tests/test-commit-msg.sh
       - name: Server development policy audit tests
         shell: bash
         run: bash tests/test-dev-policy-audit.sh

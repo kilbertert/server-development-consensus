@@ -1,0 +1,110 @@
+#!/bin/sh
+set -eu
+
+. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+# Validate the commit message against the server Conventional Commits
+# contract. This is a fail-closed advisory: any local override that opts a
+# repository out must do so explicitly; malformed metadata is never trusted.
+#
+# Implemented in the script body (not the common library) because it is the
+# only policy hook that reads a message file rather than Git state, and
+# keeping it local keeps the release unit's policy surface obvious.
+
+enforce_commit_message_contract() {
+  commit_message_file=${1:-}
+  [ -n "$commit_message_file" ] || {
+    printf '%s\n' 'SERVER POLICY: commit-msg hook requires the commit message file argument.' >&2
+    return 1
+  }
+
+  # Policy override: repositories that opt out of the shared commit message
+  # contract must set an explicit, canonical branch name. This is fail-closed.
+  override=
+  override_status=1
+  if local_override=$(git config --local --get serverPolicy.commitMessageOverride 2>/dev/null); then
+    override=$local_override
+    override_status=0
+  else
+    local_status=$?
+    if [ "$local_status" -eq 1 ]; then
+      if global_override=$(git config --global --get serverPolicy.commitMessageOverride 2>/dev/null); then
+        override=$global_override
+        override_status=0
+      fi
+    elif [ "$local_status" -gt 1 ]; then
+      override_status=$local_status
+    fi
+  fi
+  if [ "$override_status" -eq 0 ]; then
+    if [ "$override" = default-branch-only ]; then
+      current_branch=$(git branch --show-current 2>/dev/null || true)
+      if [ -n "$current_branch" ] && [ "$current_branch" != "$(default_branch_for_remote origin 2>/dev/null || echo '')" ]; then
+        return 0
+      fi
+    else
+      printf '%s\n' 'SERVER POLICY: invalid serverPolicy.commitMessageOverride value; expected "default-branch-only".' >&2
+      return 1
+    fi
+  elif [ "$override_status" -gt 1 ]; then
+    printf '%s\n' 'SERVER POLICY: cannot inspect serverPolicy.commitMessageOverride; commit stopped safely.' >&2
+    return 1
+  fi
+
+  # Skip non-message invocations (e.g. --source, --template) that Git passes
+  # with an empty message file; the default editor and the first line of any
+  # message still go through the check above.
+  if [ ! -s "$commit_message_file" ]; then
+    return 0
+  fi
+
+  first_line=$(sed -n '1p' "$commit_message_file")
+  case $first_line in
+    \#*) return 0 ;;
+  esac
+
+  case $first_line in
+    feat:*|feat!:*|feat\(*\):*|feat!\(*\):*|fix:*|fix!:*|fix\(*\):*|fix!\(*\):*|docs:*|docs!:*|docs\(*\):*|docs!\(*\):*|style:*|style!:*|style\(*\):*|style!\(*\):*|refactor:*|refactor!:*|refactor\(*\):*|refactor!\(*\):*|perf:*|perf!:*|perf\(*\):*|perf!\(*\):*|test:*|test!:*|test\(*\):*|test!\(*\):*|chore:*|chore!:*|chore\(*\):*|chore!\(*\):*|build:*|build!:*|build\(*\):*|build!\(*\):*|ci:*|ci!:*|ci\(*\):*|ci!\(*\):*|revert:*|revert!:*|revert\(*\):*|revert!\(*\):*)
+      ;;
+    *)
+      printf '\n%s\n' 'SERVER POLICY: commit message must use Conventional Commits.' >&2
+      printf '%s\n' 'Expected first line: <type>(<scope>): <subject>' >&2
+      printf '%s\n' 'types: feat fix docs style refactor perf test chore build ci revert' >&2
+      printf '%s\n' 'For example: fix(api): fix timeout on order payment' >&2
+      printf '%s\n' 'To opt a repository out of this check, set serverPolicy.commitMessageOverride=default-branch-only.' >&2
+      return 1
+      ;;
+  esac
+
+  subject=$(printf '%s\n' "$first_line" | sed -e 's/^[a-z]*//' -e 's/^(\([^)]*\))*//' -e 's/^: *//')
+  if [ -z "$subject" ] || printf '%s' "$subject" | grep -q '^[[:space:]]*$'; then
+    printf '\n%s\n' 'SERVER POLICY: commit message is missing a subject after the type prefix.' >&2
+    return 1
+  fi
+
+  return 0
+}
+
+enforce_commit_message_contract "$@" || exit 1
+
+if chained_hook=$(chained_hook_for commit-msg); then
+  if paths_identify_same_file "$0" "$chained_hook"; then
+    printf '%s\n' 'SERVER POLICY: chained commit-msg hook resolves to the managed hook; commit stopped safely.' >&2
+    exit 1
+  else
+    same_status=$?
+    [ "$same_status" -eq 1 ] || {
+      printf '%s\n' 'SERVER POLICY: cannot validate the chained commit-msg hook; commit stopped safely.' >&2
+      exit 1
+    }
+  fi
+  "$chained_hook" "$@"
+else
+  chained_status=$?
+  if [ "$chained_status" -ne 1 ]; then
+    printf '%s\n' 'SERVER POLICY: cannot resolve the chained commit-msg hook; commit stopped safely.' >&2
+    exit 1
+  fi
+fi
+
+exit 0

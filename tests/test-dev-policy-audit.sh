@@ -39,7 +39,8 @@ cp "$base_dir/git-hooks/hook-forwarder" "$hooks/hook-forwarder"
 cp "$base_dir/git-hooks/pre-commit" "$hooks/pre-commit"
 cp "$base_dir/git-hooks/pre-merge-commit" "$hooks/pre-merge-commit"
 cp "$base_dir/git-hooks/pre-push" "$hooks/pre-push"
-chmod +x "$hooks/hook-forwarder" "$hooks/pre-commit" "$hooks/pre-merge-commit" "$hooks/pre-push"
+cp "$base_dir/git-hooks/commit-msg" "$hooks/commit-msg"
+chmod +x "$hooks/hook-forwarder" "$hooks/pre-commit" "$hooks/pre-merge-commit" "$hooks/pre-push" "$hooks/commit-msg"
 
 # shellcheck disable=SC1090
 source "$base_dir/lib/dev-git-common.sh"
@@ -55,13 +56,13 @@ fi
 }
 while IFS= read -r hook; do
   case $hook in
-    pre-commit|pre-merge-commit|pre-push) ;;
+    pre-commit|pre-merge-commit|pre-push|commit-msg) ;;
     *) ln -s hook-forwarder "$hooks/$hook" ;;
   esac
 done < <(git_hook_names)
 (
   cd "$hooks"
-  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push
+  sha256sum hook-forwarder pre-commit pre-merge-commit pre-push commit-msg
 ) >"$policy_dir/managed-hooks.sha256"
 git config --global core.hooksPath "$hooks"
 git config --global init.defaultBranch main
@@ -117,7 +118,7 @@ if HOME=$tmp/other-home "$audit" "$projects" >/dev/null 2>&1; then
 fi
 printf '%s\n' "$repair_output" | grep -q 'failures=0'
 git -C "$projects/repo" switch -c feat/audit >/dev/null
-git -C "$projects/repo" commit --allow-empty -m chained >/dev/null
+git -C "$projects/repo" commit --allow-empty -m 'chore: test chained hook' >/dev/null
 [ "$(cat "$tmp/commit-msg-ran")" = executed ]
 
 second_repair_output=$("$audit" --repair "$projects")

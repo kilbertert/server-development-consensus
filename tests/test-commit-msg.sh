@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+base_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+hook=$base_dir/git-hooks/commit-msg
+tmp=$(mktemp -d)
+trap 'chmod -R u+w "$tmp" 2>/dev/null || true; rm -rf "$tmp"' EXIT
+export HOME=$tmp/home
+export GIT_CONFIG_NOSYSTEM=1
+unset GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT \
+  GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+mkdir -p "$HOME/.local/lib/server-development-consensus"
+cp "$base_dir/lib/dev-git-common.sh" "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+git config --global init.defaultBranch main
+
+git init --initial-branch=main "$tmp/work" >/dev/null
+git -C "$tmp/work" config user.name test
+git -C "$tmp/work" config user.email test@example.com
+git -C "$tmp/work" config serverPolicy.defaultBranch main
+git -C "$tmp/work" commit --allow-empty -m initial >/dev/null
+git -C "$tmp/work" switch -c feat/test >/dev/null
+
+run_check() {
+  msg=$1
+  printf '%s\n' "$msg" >"$tmp/msg"
+  set +e
+  (cd "$tmp/work" && "$hook" "$tmp/msg") >/dev/null 2>&1
+  status=$?
+  set -e
+  return "$status"
+}
+
+run_check 'feat: add login' && run_check 'feat(user): add login' && \
+run_check 'fix: correct timeout' && run_check 'docs: update readme' && \
+run_check 'chore(deps): bump lodash' && run_check 'refactor!: rework api' || {
+  printf '%s\n' 'FAIL valid conventional commit was rejected' >&2
+  exit 1
+}
+
+for bad in 'nonsense' 'Feat: add login' 'feat(api) add login' 'feat:' 'feat' 'fix : x'; do
+  if run_check "$bad"; then
+    printf 'FAIL invalid commit message "%s" was accepted\n' "$bad" >&2
+    exit 1
+  fi
+done
+
+# Comments and empty message files are ignored.
+run_check '# this is a comment' || {
+  printf '%s\n' 'FAIL commented message was rejected' >&2
+  exit 1
+}
+: >"$tmp/msg"
+if ! (cd "$tmp/work" && "$hook" "$tmp/msg") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL empty message file was rejected' >&2
+  exit 1
+fi
+printf '%s\n' 'some message' >"$tmp/msg"
+if run_check ''; then
+  printf '%s\n' 'FAIL blank first line was accepted' >&2
+  exit 1
+fi
+
+# An explicit override opts the repository out of the check.
+git -C "$tmp/work" config serverPolicy.commitMessageOverride default-branch-only
+run_check 'legacy message without type' || {
+  printf '%s\n' 'FAIL explicit override did not opt out' >&2
+  exit 1
+}
+git -C "$tmp/work" config --unset serverPolicy.commitMessageOverride
+
+printf '%s\n' 'commit-msg policy tests passed'

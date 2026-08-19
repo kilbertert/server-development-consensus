@@ -193,7 +193,7 @@ if [[ ! -r $managed_hooks_manifest ]] ||
 fi
 while IFS= read -r hook; do
   case $hook in
-    pre-commit|pre-merge-commit|pre-push)
+    pre-commit|pre-merge-commit|pre-push|commit-msg)
       if [[ ! -f $expected_hooks/$hook || -L $expected_hooks/$hook ||
             ! -x $expected_hooks/$hook ]]; then
         printf 'FAIL managed policy hook is invalid: %s/%s\n' "$expected_hooks" "$hook"

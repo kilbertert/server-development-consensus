@@ -100,6 +100,24 @@ def test_engineering_article_release_contract_is_explicit() -> None:
     assert "Never move another task's uncommitted work" in normalized_codex_instructions
 
 
+def test_acceptance_and_system_test_contract_is_explicit() -> None:
+    policy = " ".join(POLICY.read_text(encoding="utf-8").split())
+    readme = " ".join(README.read_text(encoding="utf-8").split())
+
+    assert "## Acceptance And System-Test Evidence" in policy
+    assert "Gherkin `Feature`, `Rule`, `Scenario`, `Given`, `When`, and `Then`" in policy
+    assert "internal database state is not sufficient as the only `Then` assertion" in policy
+    assert "Each case names an ID, environment, preconditions, test data" in policy
+    assert "agents are replaceable roles" in policy
+    assert "Record traceability from requirement to `Feature`/`Rule`, test case, result, and defect" in policy
+    assert "Mutation testing is required for core business rules" in policy
+    assert "an agent may not silently relax a requirement to make a test pass" in policy
+    assert "A missing, failed, or blocked required case stops the handoff" in policy
+
+    assert "acceptance and system-test contract covers user-visible and cross-system changes" in readme
+    assert "Complexity/coverage and mutation analysis are risk-triggered" in readme
+
+
 def test_worktree_delivery_lifecycle_is_explicit_and_non_destructive() -> None:
     policy = " ".join(POLICY.read_text(encoding="utf-8").split())
     readme = " ".join(README.read_text(encoding="utf-8").split())

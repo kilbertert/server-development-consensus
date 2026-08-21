@@ -52,6 +52,14 @@ canonical blog `main`. Its terminal states distinguish `merged_waiting_deploy`
 from `live`, so a Git merge or local Hugo build cannot be reported as a
 production publication.
 
+The acceptance and system-test contract covers user-visible and cross-system
+changes from requirement through evidence. It uses Gherkin scenarios for
+observable acceptance outcomes, an executable QA plan for system verification,
+and traceable result artifacts. Complexity/coverage and mutation analysis are
+risk-triggered rather than universal gates; agents may fill specification,
+implementation, review, hardening, or QA roles, but the maintained artifacts
+and deterministic results are the contract.
+
 The local enforcement layer is installed at:
 
 - `~/.config/git/hooks/pre-push`

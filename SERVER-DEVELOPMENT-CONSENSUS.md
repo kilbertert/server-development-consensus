@@ -173,6 +173,42 @@ reactivated with `dev-worktree activate PATH`.
   final `origin/<default>` SHA, deterministic check results, changed-path
   verification, and the exact worktrees/branches that were cleaned up.
 
+## Acceptance And System-Test Evidence
+
+- For a user-visible, API, schema, persistence, permission, or cross-system
+  change, the task must define an acceptance contract before implementation.
+  Store it with the change as `acceptance.feature` (or the repository's
+  equivalent) using Gherkin `Feature`, `Rule`, `Scenario`, `Given`, `When`, and
+  `Then`. Scenarios describe observable outcomes for a user or external system;
+  internal database state is not sufficient as the only `Then` assertion.
+  This maps Cucumber's Gherkin semantics to server acceptance work: `Given` is
+  known state, `When` is an action or event, and `Then` asserts an observable
+  result. System testing verifies the integrated system against these specified
+  requirements; it does not replace component or integration tests.
+- The same change must include a `qa-plan.md` (or repository equivalent) when
+  system-level verification is meaningful. Each case names an ID, environment,
+  preconditions, test data, ordered actions, expected observable results, and
+  cleanup. The plan is executable by a person or an automated UI/API runner;
+  "tested manually" is not evidence.
+- The implementer owns the code, unit/component tests, and executable
+  acceptance steps. A separate reviewer or QA runner may execute the same
+  artifacts, but agents are replaceable roles: the artifacts, results, and
+  gates are the governance contract.
+- Record traceability from requirement to `Feature`/`Rule`, test case, result,
+  and defect. A passing result must include the commit or build identity, test
+  environment, timestamp, and retained logs or report artifact. A failed or
+  blocked case must name the reason; it must not be reported as passed.
+- Test scope is risk-based. CRAP/complexity and coverage analysis is required
+  for changed high-risk or branch-heavy code when the repository has a
+  compatible tool. Mutation testing is required for core business rules,
+  authorization/security, money, persistence, or regression-prone code when a
+  practical tool exists. Otherwise record why it was not run and use focused
+  tests or human risk acceptance. Neither metric is a universal quality score.
+- These artifacts do not weaken deterministic CI, Rulesets, human review, or
+  security boundaries. AI-generated specifications and findings are candidates
+  until a human confirms scope and acceptance; an agent may not silently relax
+  a requirement to make a test pass.
+
 ## Pull Request Gate
 
 - Required merge gates are deterministic repository checks: tests, build,
@@ -256,20 +292,29 @@ to make the filesystem appear cleaner.
 For normal work led by Codex or Claude Code:
 
 1. Start on a task branch and inspect the current worktree before editing.
-2. Implement the smallest coherent change and run deterministic local checks.
-3. At a meaningful milestone, run `ocr review --from <default> --to <branch>`
+2. For changes covered by the acceptance contract, produce or update the
+   Gherkin feature and QA plan before implementation. For low-risk internal
+   changes, record the reason these artifacts are not applicable.
+3. Implement the smallest coherent change, add unit/component tests, make the
+   acceptance scenarios executable where applicable, and run deterministic
+   local checks.
+4. Run risk-triggered complexity/coverage or mutation checks and retain their
+   reports, or record the explicit non-applicability reason.
+5. At a meaningful milestone, run `ocr review --from <default> --to <branch>`
    only when an approved local provider is configured; otherwise invoke the
    installed OpenCodeReview delegation skill. Use `--preview` first for a large
    or unfamiliar change. Do not run OCR after every turn.
-4. Triage local findings once. Fix confirmed defects, record accepted risks and
+6. Triage local findings once. Fix confirmed defects, record accepted risks and
    false positives, and do not turn every model suggestion into added complexity.
-5. Commit, push, and open the PR. PR-Agent automatically reviews the PR when it
+7. Commit, push, and open the PR. PR-Agent automatically reviews the PR when it
    is opened, reopened, or ready for review; it does not rerun after every push.
-6. The responsible agent waits for the PR-Agent result, triages findings once,
+8. The responsible agent waits for the PR-Agent result, triages findings once,
    fixes verified defects, and records false positives or accepted risks. After
    a material change, the agent requests one re-review with `/review` and waits
    for it; the human operator does not manually trigger the review loop.
-7. Wait for deterministic CI and merge only through the hosting service after
+9. Execute the QA plan when required and attach its deterministic result
+   artifact. A missing, failed, or blocked required case stops the handoff.
+10. Wait for deterministic CI and merge only through the hosting service after
    all mandatory checks pass. AI review remains advisory and feedback never
    replaces tests, human judgment, or the PR gate.
 

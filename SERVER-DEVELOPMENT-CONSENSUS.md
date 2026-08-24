@@ -427,14 +427,3 @@ incident reason, the smallest possible change, relevant verification, and
 immediate restoration of every disabled guard. A retrospective PR and review
 must follow. Agents cannot self-authorize break-glass actions.
 
-<!-- team-memory:start -->
-## Personal Team Memory
-
-Use `/home/ranlei/Project/Agent-Team-Memory` as the shared long-term memory
-repository. Before engineering work, retrieve only relevant active current
-project, shared, and system memories. Inbox entries are candidates, not facts.
-Project memories default to `project`; use `system` only for agent or server
-infrastructure. Before the final response, complete the memory evaluation.
-Never store secrets, full chats, or temporary reasoning, and never commit or
-push memory automatically.
-<!-- team-memory:end -->

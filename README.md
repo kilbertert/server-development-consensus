@@ -1,5 +1,9 @@
 # Server development consensus deployment
 
+The shared vocabulary for server governance and AFK execution lives in
+[`CONTEXT.md`](CONTEXT.md); the accepted layered-boundary decision is
+[`docs/adr/0001-layered-afk-governance.md`](docs/adr/0001-layered-afk-governance.md).
+
 This repository is the canonical source of the server development governance
 release unit: the consensus policy, the installer, the managed commands, the
 audit units, and the review-sentinel reference implementation. Deploy it only

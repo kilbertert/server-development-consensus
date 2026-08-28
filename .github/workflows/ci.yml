@@ -28,6 +28,9 @@ jobs:
           cache-dependency-path: .github/workflows/ci.yml
       - run: python -m pip install pytest pyyaml tomlkit Flask PyJWT cryptography
       - run: python -m pytest tests/test-ai-review-policy.py
+      - name: AFK contract test
+        shell: bash
+        run: bash tests/test-afk-contract.sh
       - name: Server development worktree tests
         shell: bash
         run: bash tests/test-dev-worktree.sh

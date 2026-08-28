@@ -22,6 +22,12 @@ Feature: Layered consensus and AFK governance
       And the host runner rejects the delivery
       And the GitHub Ruleset rejects any remaining attempt
 
+    Scenario: Container credentials are narrower than host delivery credentials
+      Given a host runner has a delivery token and a separate read-only agent token
+      When an AFK profile creates a Docker sandbox
+      Then only the explicit read-only token is mapped to container GH_TOKEN
+      And AGENT_PAT and host delivery credentials remain outside the container
+
   Rule: Exceptions are bounded and auditable
 
     Scenario: A legitimate AFK implementation difference is recorded

@@ -4,9 +4,7 @@
 
 Verify the layered governance contract between `server-development-consensus`
 and the `afk-bootstrap` execution adapter. This plan covers the policy adapter,
-version compatibility, credential boundary, and structured exceptions; it does
-not claim that the future portable checker is implemented by this documentation
-change.
+version compatibility, credential boundary, and structured exceptions.
 
 ## Cases
 
@@ -26,16 +24,24 @@ change.
 | Three-layer default-branch protection | A container cannot deliver directly to the default branch | GOV-B03 |
 | Bounded exceptions | A legitimate AFK implementation difference is recorded | GOV-B04 |
 
+## Execution Results
+
+Status: passed on `2026-08-28T23:25:32+0800`.
+
+- Consensus contract test passed on merge commit
+  `19652f60f9732ff7f307d9c6f6e4e3acb7663a1a`; CI run
+  [33183183670](https://github.com/kilbertert/server-development-consensus/actions/runs/33183183670)
+  passed.
+- AFK smoke tests passed for Node and Python, including compatible and bounded
+  exception cases and default-branch rejection.
+- Consumer PRs #144, #78, #124, and #62 merged after their deterministic checks
+  passed; final `origin/main` SHAs are recorded in the AFK QA plan.
+
 ## Risk Checks
 
-- Complexity/coverage: not applicable to this documentation-only decision; the
-  future checker is a separate implementation change with its own evidence.
+- Complexity/coverage: not applicable; the checker is a small portable script
+  covered by executable smoke cases.
 - Mutation testing: not applicable; no business rule, authorization code, or
   persistence implementation changes in this decision record.
 
 ## Execution Status
-
-Status: planned. The scenarios are the acceptance contract for the follow-up
-portable checker, compatibility validator, and exception validator. They are
-not reported as passed until those components exist and retain their logs or
-report artifacts.

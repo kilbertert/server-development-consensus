@@ -1,7 +1,12 @@
 #!/bin/sh
 set -eu
 
-. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+hook_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+policy_home=${SERVER_POLICY_HOME:-$HOME}
+case "$hook_dir" in
+  */.config/git/hooks) policy_home=${hook_dir%/.config/git/hooks} ;;
+esac
+. "$policy_home/.local/lib/server-development-consensus/dev-git-common.sh"
 
 remote=${1:-origin}
 push_url=${2:-}

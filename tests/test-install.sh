@@ -72,6 +72,21 @@ cmp "$base_dir/git-hooks/commit-msg" \
   "$HOME/.config/git/hooks/commit-msg"
 [ "$(wc -l <"$HOME/.config/server-development-consensus/managed-hooks.sha256")" = 5 ]
 
+# GitHub Actions temporarily changes HOME while actions/checkout runs. The
+# installed hook must still load the policy library from its managed path.
+git init --bare --initial-branch=main "$tmp/actions-remote.git" >/dev/null
+git init --initial-branch=main "$tmp/actions-work" >/dev/null
+git -C "$tmp/actions-work" config user.name test
+git -C "$tmp/actions-work" config user.email test@example.com
+git -C "$tmp/actions-work" -c core.hooksPath=/dev/null commit --allow-empty -m initial >/dev/null
+git -C "$tmp/actions-work" remote add origin "$tmp/actions-remote.git"
+git -C "$tmp/actions-work" -c core.hooksPath=/dev/null push origin HEAD:main >/dev/null
+mkdir -p "$tmp/actions-home"
+actions_home=$tmp/actions-home
+installed_hooks=$HOME/.config/git/hooks
+HOME="$actions_home" git -C "$tmp/actions-work" \
+  -c core.hooksPath="$installed_hooks" fetch origin
+
 second_output=$("$installer" 2>&1)
 printf '%s\n' "$second_output" | grep -q 'audit complete: failures=0 repaired=0'
 [ "$(git config --global --path --get serverPolicy.globalChainedHooksPath)" = "$HOME/custom-hooks" ]

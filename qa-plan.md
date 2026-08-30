@@ -23,6 +23,7 @@ version compatibility, credential boundary, and structured exceptions.
 | Compatibility blocking | An incompatible AFK template is blocked | GOV-B02 |
 | Three-layer default-branch protection | A container cannot deliver directly to the default branch | GOV-B03 |
 | Bounded exceptions | A legitimate AFK implementation difference is recorded | GOV-B04 |
+| Managed Codex long context | Codex receives 872K/700K while unrelated settings survive | GOV-B05 |
 
 ## Execution Results
 

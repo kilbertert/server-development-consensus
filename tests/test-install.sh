@@ -60,6 +60,15 @@ grep -q '^## Standards-Based Engineering$' "$HOME/Projects/AGENTS.md"
 [ "$(cat "$HOME/.codex/AGENTS.md")" = root-maintained ]
 python3 "$HOME/.local/bin/update-codex-config" --verify "$HOME/.codex/config.toml" \
   "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
+python3 - "$HOME/.codex/config.toml" <<'PY'
+import sys
+import tomlkit
+
+config = tomlkit.parse(open(sys.argv[1], encoding="utf-8").read())
+assert config["model_context_window"] == 872000
+assert config["model_auto_compact_token_limit"] == 700000
+assert config["model"] == "gpt-test"
+PY
 cmp "$base_dir/bin/sync-privileged-policy" "$HOME/.local/bin/sync-privileged-policy"
 cmp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
   "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md"

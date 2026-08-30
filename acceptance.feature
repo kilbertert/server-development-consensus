@@ -28,6 +28,13 @@ Feature: Layered consensus and AFK governance
       Then only the explicit read-only token is mapped to container GH_TOKEN
       And AGENT_PAT and host delivery credentials remain outside the container
 
+    Scenario: Codex uses the managed long-context defaults
+      Given the installed Codex model catalog advertises a maximum context of at least 872000 tokens
+      When the server consensus installer updates the user's Codex configuration
+      Then the global context window is 872000 tokens
+      And automatic compaction is configured at 700000 tokens
+      And unrelated Codex settings remain unchanged
+
   Rule: Exceptions are bounded and auditable
 
     Scenario: A legitimate AFK implementation difference is recorded

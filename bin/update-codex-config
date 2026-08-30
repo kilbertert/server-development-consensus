@@ -24,6 +24,10 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 
+MODEL_CONTEXT_WINDOW = 872_000
+MODEL_AUTO_COMPACT_TOKEN_LIMIT = 700_000
+
+
 def desired_value(instructions: str) -> str:
     return instructions.rstrip() + "\n"
 
@@ -31,18 +35,17 @@ def desired_value(instructions: str) -> str:
 def updated_toml(original: str, instructions: str) -> str:
     document = tomlkit.parse(original) if original.strip() else tomlkit.document()
     value = desired_value(instructions)
-    if "developer_instructions" in document:
-        document["developer_instructions"] = value
-        result = tomlkit.dumps(document)
-    else:
-        prefix = tomlkit.document()
-        prefix["developer_instructions"] = value
-        result = tomlkit.dumps(prefix)
-        if original:
-            result += "\n" + original
+    document["developer_instructions"] = value
+    document["model_context_window"] = MODEL_CONTEXT_WINDOW
+    document["model_auto_compact_token_limit"] = MODEL_AUTO_COMPACT_TOKEN_LIMIT
+    result = tomlkit.dumps(document)
     parsed = tomlkit.parse(result)
     if parsed.get("developer_instructions") != value:
         raise ValueError("updated developer_instructions did not round-trip")
+    if parsed.get("model_context_window") != MODEL_CONTEXT_WINDOW:
+        raise ValueError("model_context_window did not round-trip")
+    if parsed.get("model_auto_compact_token_limit") != MODEL_AUTO_COMPACT_TOKEN_LIMIT:
+        raise ValueError("model_auto_compact_token_limit did not round-trip")
     return result
 
 
@@ -318,6 +321,12 @@ def main() -> None:
         parsed = tomlkit.parse(snapshot.content)
         if parsed.get("developer_instructions") != desired_value(instructions):
             raise ValueError("Codex developer_instructions do not match policy")
+        if parsed.get("model_context_window") != MODEL_CONTEXT_WINDOW:
+            raise ValueError("Codex model_context_window does not match policy")
+        if parsed.get("model_auto_compact_token_limit") != MODEL_AUTO_COMPACT_TOKEN_LIMIT:
+            raise ValueError(
+                "Codex model_auto_compact_token_limit does not match policy"
+            )
         return
 
     if args.check:

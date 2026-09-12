@@ -33,6 +33,36 @@ weaken this policy.
   ACLs, cross-user groups, or recursive cross-account ownership changes as a
   shortcut.
 
+## Workspace Layout
+
+The projects workspace is a curated area, and its top level stays
+predictable so that people and agents can tell active work from history at
+a glance.
+
+- The top level of `/home/claude/Projects` may contain only: canonical
+  checkouts of active projects named after their origin repository; policy
+  and index files maintained by the canonical installer (AGENTS.md,
+  CLAUDE.md, SERVER-DEVELOPMENT-CONSENSUS.md, DEVELOPMENT-PORT-REGISTRY.md,
+  WORKSPACE.md, INDEX.md); and underscore-prefixed functional directories
+  (`_archive/`, `_runners/`).
+- Task worktrees are created with `dev-worktree start`. Its default
+  location is the managed central area `/home/claude/Projects/.worktrees/`;
+  an explicitly given path is honored only inside a repository checkout,
+  where the worktree must be gitignored. Linked worktrees must never appear
+  as visible top-level entries: `dev-worktree start` rejects them, and
+  `dev-worktree audit` plus the daily policy audit report them as
+  violations.
+- Projects follow a restore-then-work archive flow: a project idle for
+  more than 30 days with no service references moves to
+  `_archive/<year>/`; before work resumes it moves back to the top level
+  or is re-cloned from its origin, and development never happens inside
+  `_archive/`.
+- Deployment artifacts (self-hosted runner working directories, standby or
+  deploy checkouts) are not top-level projects. They live under
+  `_runners/` or another dedicated, service-managed location and are
+  referenced by their systemd units; existing top-level deploy checkouts
+  migrate there as part of that service migration.
+
 ## Standards-Based Engineering
 
 - Before defining or changing a public contract, protocol, schema, diagnostic

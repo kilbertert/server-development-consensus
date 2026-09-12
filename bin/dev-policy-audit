@@ -281,6 +281,12 @@ if ! sort -zu "$scan_file" >"$sorted_scan_file"; then
   exit 1
 fi
 
+while IFS= read -r top_worktree; do
+  printf 'WARN top-level task worktree violates Workspace Layout: %s\n' \
+    "$top_worktree"
+done < <(find "$projects_root" -mindepth 1 -maxdepth 1 -type d ! -name '.*' \
+  -exec test -f '{}/.git' \; -print 2>/dev/null)
+
 declare -A audited_worktree_roots=()
 while IFS= read -r -d '' git_path; do
   repo=${git_path%/.git}

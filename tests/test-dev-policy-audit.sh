@@ -209,6 +209,12 @@ config_inventory=$tmp/config-inventory
 find_project_git_configs "$projects" >"$config_inventory"
 tr '\0' '\n' <"$config_inventory" | grep -q "$tmp/external/.git/config"
 
+# Workspace Layout: visible top-level linked worktrees are reported without
+# failing the audit run (hard enforcement lives in dev-worktree start).
+"$audit" "$projects" >"$tmp/top-worktree.out" 2>&1 || true
+grep -q 'WARN top-level task worktree violates Workspace Layout' \
+  "$tmp/top-worktree.out"
+
 git init --bare --initial-branch=main "$tmp/unresolved-origin.git" >/dev/null
 git init --initial-branch=main "$projects/stale-default" >/dev/null
 git -C "$projects/stale-default" config user.name test

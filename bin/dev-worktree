@@ -7,7 +7,7 @@ source "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
 usage() {
   cat >&2 <<'EOF'
 usage:
-  dev-worktree start TYPE DESCRIPTION PATH
+  dev-worktree start TYPE DESCRIPTION [PATH]
   dev-worktree audit [--repo PATH] [--default BRANCH]
   dev-worktree preserve PATH REASON
   dev-worktree activate PATH
@@ -28,6 +28,24 @@ die() {
 
 absolute_path() {
   realpath -m -- "$1"
+}
+
+worktree_location_allowed() {
+  local target=$1
+  local projects_root=$2
+  local managed_area dir
+  managed_area=$(absolute_path "$projects_root/.worktrees")
+  case "$target/" in
+    "$managed_area/"*) return 0 ;;
+  esac
+  dir=$(dirname -- "$target")
+  while [[ $dir == "$projects_root"/* ]]; do
+    if [[ -e $dir/.git ]]; then
+      return 0
+    fi
+    dir=$(dirname -- "$dir")
+  done
+  return 1
 }
 
 require_task_name() {
@@ -217,8 +235,19 @@ audit_worktrees() {
       state=clean
     fi
 
-    printf 'worktree path=%q branch=%q head=%s dirty=%s behind=%s ahead=%s upstream=%q state=%s\n' \
-      "$path" "$branch" "$head" "$dirty" "$behind" "$ahead" "${upstream:-none}" "$state"
+    # Migration: existing top-level worktrees are reported but must not fail
+    # the audit until the service migration relocates them. Only linked
+    # worktrees (".git" is a file) are checked; the canonical checkout itself
+    # belongs at the top level.
+    local location_note=''
+    if [[ -f $path/.git ]] &&
+       ! worktree_location_allowed "$(absolute_path "$path")" \
+         "$(absolute_path "$HOME/Projects")"; then
+      location_note=' location=violation'
+    fi
+
+    printf 'worktree path=%q branch=%q head=%s dirty=%s behind=%s ahead=%s upstream=%q state=%s%s\n' \
+      "$path" "$branch" "$head" "$dirty" "$behind" "$ahead" "${upstream:-none}" "$state" "$location_note"
   done
 
   if [[ $issues -gt 0 ]]; then
@@ -229,21 +258,31 @@ audit_worktrees() {
 }
 
 start_worktree() {
-  [[ $# -eq 3 ]] || usage
+  [[ $# -ge 2 && $# -le 3 ]] || usage
   local type=$1
   local description=$2
-  local requested_path=$3
+  local requested_path=${3:-}
   require_task_name "$type" "$description"
   require_repository
 
   local branch="$type/$description"
   local target projects_root default_branch remote_default
-  target=$(absolute_path "$requested_path")
   projects_root=$(absolute_path "$HOME/Projects")
+  if [[ -z $requested_path ]]; then
+    local repo_name
+    repo_name=$(basename -- "$(git rev-parse --show-toplevel)")
+    target=$(absolute_path "$projects_root/.worktrees/$repo_name-$description")
+  else
+    target=$(absolute_path "$requested_path")
+  fi
   case "$target/" in
     "$projects_root/"*) ;;
     *) die "task worktrees must stay below $projects_root" ;;
   esac
+  if ! worktree_location_allowed "$target" "$projects_root"; then
+    die "task worktrees must live in $projects_root/.worktrees/ or inside a repository checkout (Workspace Layout policy)"
+  fi
+  mkdir -p -- "$(dirname -- "$target")"
   [[ $target != "$(absolute_path "$(git rev-parse --show-toplevel)")" ]] ||
     die 'task worktree path must differ from the current worktree'
   if [[ -e $target ]] && [[ -n $(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null) ]]; then

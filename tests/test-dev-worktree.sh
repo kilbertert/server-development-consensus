@@ -36,15 +36,30 @@ base_oid=$(git -C "$HOME/Projects/repo" rev-parse origin/main)
 
 (
   cd "$HOME/Projects/repo"
-  "$HOME/.local/bin/dev-worktree" start feat lifecycle "$HOME/Projects/repo-lifecycle"
+  "$HOME/.local/bin/dev-worktree" start feat lifecycle
 )
-[ "$(git -C "$HOME/Projects/repo-lifecycle" branch --show-current)" = feat/lifecycle ]
+[ -d "$HOME/Projects/.worktrees/repo-lifecycle" ]
+[ "$(git -C "$HOME/Projects/.worktrees/repo-lifecycle" branch --show-current)" = feat/lifecycle ]
 [ -z "$(git -C "$HOME/Projects/repo" for-each-ref --format='%(upstream:short)' refs/heads/feat/lifecycle)" ]
 [ "$(git -C "$HOME/Projects/repo" config --get branch.feat/lifecycle.serverPolicyBaseOid)" = "$base_oid" ]
 [ "$(git -C "$HOME/Projects/repo" config --get branch.feat/lifecycle.serverPolicyState)" = active ]
 (cd "$HOME/Projects/repo" && "$HOME/.local/bin/dev-worktree" audit) >/dev/null
 
-printf '%s\n' dirty >"$HOME/Projects/repo-lifecycle/shared.txt"
+if (cd "$HOME/Projects/repo" &&
+    "$HOME/.local/bin/dev-worktree" start feat topbad "$HOME/Projects/repo-topbad") \
+  >"$tmp/topbad.out" 2>&1; then
+  printf '%s\n' 'FAIL top-level task worktree path was accepted' >&2
+  exit 1
+fi
+grep -q 'Workspace Layout' "$tmp/topbad.out"
+[ ! -e "$HOME/Projects/repo-topbad" ]
+(
+  cd "$HOME/Projects/repo"
+  "$HOME/.local/bin/dev-worktree" start feat inrepo "$HOME/Projects/repo/.worktrees/feat-inrepo"
+) >/dev/null
+[ "$(git -C "$HOME/Projects/repo/.worktrees/feat-inrepo" branch --show-current)" = feat/inrepo ]
+
+printf '%s\n' dirty >"$HOME/Projects/.worktrees/repo-lifecycle/shared.txt"
 git -C "$HOME/Projects/repo" switch -c fix/competing >/dev/null
 printf '%s\n' competing >"$HOME/Projects/repo/shared.txt"
 git -C "$HOME/Projects/repo" add shared.txt
@@ -89,42 +104,42 @@ grep -q 'state=uncommitted_only_behind' "$tmp/audit-behind.out"
 (
   cd "$HOME/Projects/repo"
   "$HOME/.local/bin/dev-worktree" preserve \
-    "$HOME/Projects/repo-lifecycle" 'user-owned paused work'
+    "$HOME/Projects/.worktrees/repo-lifecycle" 'user-owned paused work'
   "$HOME/.local/bin/dev-worktree" audit
 ) >/dev/null
 (
   cd "$HOME/Projects/repo"
-  "$HOME/.local/bin/dev-worktree" activate "$HOME/Projects/repo-lifecycle"
+  "$HOME/.local/bin/dev-worktree" activate "$HOME/Projects/.worktrees/repo-lifecycle"
 ) >/dev/null
 
-git -C "$HOME/Projects/repo-lifecycle" restore shared.txt
-printf '%s\n' delivered >"$HOME/Projects/repo-lifecycle/feature.txt"
-git -C "$HOME/Projects/repo-lifecycle" add feature.txt
-git -C "$HOME/Projects/repo-lifecycle" commit -m feature >/dev/null
-git -C "$HOME/Projects/repo-lifecycle" push origin HEAD:refs/heads/feat/lifecycle >/dev/null
+git -C "$HOME/Projects/.worktrees/repo-lifecycle" restore shared.txt
+printf '%s\n' delivered >"$HOME/Projects/.worktrees/repo-lifecycle/feature.txt"
+git -C "$HOME/Projects/.worktrees/repo-lifecycle" add feature.txt
+git -C "$HOME/Projects/.worktrees/repo-lifecycle" commit -m feature >/dev/null
+git -C "$HOME/Projects/.worktrees/repo-lifecycle" push origin HEAD:refs/heads/feat/lifecycle >/dev/null
 git -C "$tmp/seed" fetch origin feat/lifecycle >/dev/null
 git -C "$tmp/seed" cherry-pick origin/feat/lifecycle >/dev/null
 git -C "$tmp/seed" push origin main >/dev/null
 git -C "$HOME/Projects/repo" fetch --prune origin >/dev/null
 (
   cd "$HOME/Projects/repo"
-  "$HOME/.local/bin/dev-worktree" retire "$HOME/Projects/repo-lifecycle"
+  "$HOME/.local/bin/dev-worktree" retire "$HOME/Projects/.worktrees/repo-lifecycle"
 ) >/dev/null
-[ ! -e "$HOME/Projects/repo-lifecycle" ]
+[ ! -e "$HOME/Projects/.worktrees/repo-lifecycle" ]
 ! git -C "$HOME/Projects/repo" show-ref --verify --quiet refs/heads/feat/lifecycle
 
 (
   cd "$HOME/Projects/repo"
-  "$HOME/.local/bin/dev-worktree" start feat squash "$HOME/Projects/repo-squash"
+  "$HOME/.local/bin/dev-worktree" start feat squash
 ) >/dev/null
-printf '%s\n' one >"$HOME/Projects/repo-squash/squash-one.txt"
-git -C "$HOME/Projects/repo-squash" add squash-one.txt
-git -C "$HOME/Projects/repo-squash" commit -m squash-one >/dev/null
-printf '%s\n' two >"$HOME/Projects/repo-squash/squash-two.txt"
-git -C "$HOME/Projects/repo-squash" add squash-two.txt
-git -C "$HOME/Projects/repo-squash" commit -m squash-two >/dev/null
-squash_head=$(git -C "$HOME/Projects/repo-squash" rev-parse HEAD)
-git -C "$HOME/Projects/repo-squash" push origin HEAD:refs/heads/feat/squash >/dev/null
+printf '%s\n' one >"$HOME/Projects/.worktrees/repo-squash/squash-one.txt"
+git -C "$HOME/Projects/.worktrees/repo-squash" add squash-one.txt
+git -C "$HOME/Projects/.worktrees/repo-squash" commit -m squash-one >/dev/null
+printf '%s\n' two >"$HOME/Projects/.worktrees/repo-squash/squash-two.txt"
+git -C "$HOME/Projects/.worktrees/repo-squash" add squash-two.txt
+git -C "$HOME/Projects/.worktrees/repo-squash" commit -m squash-two >/dev/null
+squash_head=$(git -C "$HOME/Projects/.worktrees/repo-squash" rev-parse HEAD)
+git -C "$HOME/Projects/.worktrees/repo-squash" push origin HEAD:refs/heads/feat/squash >/dev/null
 git -C "$tmp/seed" fetch origin feat/squash >/dev/null
 git -C "$tmp/seed" merge --squash origin/feat/squash >/dev/null
 git -C "$tmp/seed" commit -m squash-merge >/dev/null
@@ -139,7 +154,7 @@ EOF
 chmod +x "$HOME/.local/bin/gh"
 retire_output=$(
   cd "$HOME/Projects/repo" &&
-    "$HOME/.local/bin/dev-worktree" retire "$HOME/Projects/repo-squash"
+    "$HOME/.local/bin/dev-worktree" retire "$HOME/Projects/.worktrees/repo-squash"
 )
 grep -q 'verification=pr#42' <<<"$retire_output"
 grep -q "merge=$squash_merge" <<<"$retire_output"
@@ -147,7 +162,7 @@ grep -q "merge=$squash_merge" <<<"$retire_output"
 rm "$HOME/.local/bin/gh"
 
 git -C "$HOME/Projects/repo" worktree add -b fix/tracks-default \
-  "$HOME/Projects/repo-tracks-default" origin/main >/dev/null
+  "$HOME/Projects/.worktrees/repo-tracks-default" origin/main >/dev/null
 if (cd "$HOME/Projects/repo" && "$HOME/.local/bin/dev-worktree" audit) \
   >"$tmp/audit-tracking.out" 2>&1; then
   printf '%s\n' 'FAIL task worktree tracking origin/main passed audit' >&2

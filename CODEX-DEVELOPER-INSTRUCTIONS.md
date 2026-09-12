@@ -31,8 +31,16 @@ The repository root is a delivery surface. Before editing and before handoff,
 report its path, current branch, `git status --short --branch`, `git worktree
 list`, and `git branch -vv`. A task worktree is not the canonical checkout
 unless its handoff path is explicitly recorded. Create isolated tasks with
-`dev-worktree start TYPE DESCRIPTION PATH`; it records the current origin base
-and does not track the default branch. Run `dev-worktree audit` before handoff
+`dev-worktree start TYPE DESCRIPTION [PATH]`; it records the current origin base
+and does not track the default branch. Task worktrees live in the managed
+central area `~/Projects/.worktrees/` by default; an explicit path is honored
+only inside a repository checkout, and visible top-level paths are rejected.
+The Projects top level holds only canonical checkouts named after their origin
+repository, installer-maintained policy and index files, and
+underscore-prefixed functional directories (`_archive/`, `_runners/`). Idle
+projects archive to `_archive/<year>/` and move back to the top level before
+work resumes; deployment artifacts such as runner directories live under
+`_runners/`. Run `dev-worktree audit` before handoff
 and `dev-worktree retire PATH` only after integration is verified. Use
 `dev-worktree preserve PATH REASON` for intentionally paused user work; this
 does not bypass the pre-push overlap guard. The guard rejects a push whose

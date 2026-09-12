@@ -24,6 +24,8 @@ Add one row in ascending port order before starting a new fixed service.
 
 | Port | Protocol | Bind address | Project/service | Owner | Purpose | Lifecycle |
 | ---: | --- | --- | --- | --- | --- | --- |
+| 11422 | TCP | 0.0.0.0 | paper-hub.service | claude | paper-hub development HTTP endpoint via FRP | active |
+| 11880 | TCP | 127.0.0.1 | auto-test observation dashboard (easy dashboard --port) | claude | Auto-Test read-only observation plane; FRP-tunneled to auto-test.ranlei.work | active |
 
 ## Existing Exceptions
 

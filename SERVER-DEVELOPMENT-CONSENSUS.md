@@ -158,7 +158,7 @@ and one declared default branch. Agents must report the canonical path, current
 branch, `git status --short --branch`, `git worktree list`, and `git branch -vv`
 before editing and before final handoff.
 
-Use `dev-worktree start TYPE DESCRIPTION PATH` for a new isolated task
+Use `dev-worktree start TYPE DESCRIPTION [PATH]` for a new isolated task
 worktree. It creates the branch from the fetched `origin/<default>` with no
 upstream to the default branch and records its base, owner, path, and lifecycle
 state. Run `dev-worktree audit` before handoff and `dev-worktree retire PATH`

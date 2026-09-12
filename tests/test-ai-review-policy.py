@@ -124,7 +124,7 @@ def test_worktree_delivery_lifecycle_is_explicit_and_non_destructive() -> None:
     codex_instructions = " ".join(CODEX_INSTRUCTIONS.read_text(encoding="utf-8").split())
 
     assert "## Git And Worktree Delivery Invariants" in policy
-    assert "dev-worktree start TYPE DESCRIPTION PATH" in policy
+    assert "dev-worktree start TYPE DESCRIPTION [PATH]" in policy
     assert "dev-worktree audit" in policy
     assert "dev-worktree retire PATH" in policy
     assert "preserve marker documents ownership but does not bypass an actual overlap" in policy
@@ -133,7 +133,7 @@ def test_worktree_delivery_lifecycle_is_explicit_and_non_destructive() -> None:
     assert "committed paths overlap uncommitted paths in another worktree" in readme
     assert "None of these commands automatically delete dirty work or a remote branch" in readme
 
-    assert "Create isolated tasks with `dev-worktree start TYPE DESCRIPTION PATH`" in codex_instructions
+    assert "Create isolated tasks with `dev-worktree start TYPE DESCRIPTION [PATH]`" in codex_instructions
     assert "this does not bypass the pre-push overlap guard" in codex_instructions
     assert "daily audit reports stale lifecycle states without deleting them" in codex_instructions
 

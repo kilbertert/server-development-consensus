@@ -234,6 +234,74 @@ if git -C "$projects/stale-default" config --get serverPolicy.defaultBranch \
 fi
 rm -rf "$projects/stale-default"
 
+# Stale task branches -----------------------------------------------------------
+# dev-worktree audit only walks registered worktrees, so a branch created in the
+# canonical checkout outlives its merge: squash merges hide it from
+# `git branch --merged`, and retire() never deletes a remote branch.
+stale_repo=$projects/stale-repo
+git init --bare --initial-branch=main "$tmp/stale-origin.git" >/dev/null
+git init --initial-branch=main "$stale_repo" >/dev/null
+git -C "$stale_repo" config user.name test
+git -C "$stale_repo" config user.email test@example.com
+git -C "$stale_repo" remote add origin "$tmp/stale-origin.git"
+git -C "$stale_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m base >/dev/null
+git -C "$stale_repo" -c core.hooksPath=/dev/null push -u origin main >/dev/null 2>&1
+git -C "$stale_repo" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+git -C "$stale_repo" config serverPolicy.defaultBranch main
+
+# Integrated: the same patch already landed on main under a different commit,
+# which is what squash merge produces.
+git -C "$stale_repo" checkout -b feat/integrated >/dev/null 2>&1
+printf '%s\n' work >"$stale_repo/feature.txt"
+git -C "$stale_repo" add feature.txt
+git -C "$stale_repo" -c core.hooksPath=/dev/null \
+  commit -m 'feat: integrated work' >/dev/null
+git -C "$stale_repo" -c core.hooksPath=/dev/null push -u origin feat/integrated \
+  >/dev/null 2>&1
+git -C "$stale_repo" checkout main >/dev/null 2>&1
+printf '%s\n' work >"$stale_repo/feature.txt"
+git -C "$stale_repo" add feature.txt
+git -C "$stale_repo" -c core.hooksPath=/dev/null \
+  commit -m 'feat: integrated work (squashed)' >/dev/null
+git -C "$stale_repo" -c core.hooksPath=/dev/null push origin main >/dev/null 2>&1
+
+# Upstream gone: pushed, then deleted on the remote.
+git -C "$stale_repo" checkout -b feat/gone >/dev/null 2>&1
+git -C "$stale_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m 'feat: gone work' >/dev/null
+git -C "$stale_repo" -c core.hooksPath=/dev/null push -u origin feat/gone \
+  >/dev/null 2>&1
+git -C "$stale_repo" checkout main >/dev/null 2>&1
+git -C "$stale_repo" -c core.hooksPath=/dev/null push origin --delete feat/gone \
+  >/dev/null 2>&1
+git -C "$stale_repo" fetch --prune >/dev/null 2>&1
+
+# Leftover branches are reported without failing the run: deleting unmerged
+# work automatically is the outcome this audit exists to prevent.
+"$audit" "$projects" >"$tmp/stale-branches.out" 2>&1 || true
+grep -q "WARN repo=$stale_repo branch=feat/integrated state=integrated_not_retired" \
+  "$tmp/stale-branches.out"
+grep -q "WARN repo=$stale_repo branch=feat/gone state=upstream_gone" \
+  "$tmp/stale-branches.out"
+grep -q 'stale_branches=2' "$tmp/stale-branches.out"
+
+# A branch still checked out in a registered worktree belongs to dev-worktree,
+# even when its patches are already integrated.  Point it at the integrated
+# commit so it is patch-equivalent to origin/main: this scan must still skip it,
+# otherwise every active task worktree would be reported as stale.
+git -C "$stale_repo" worktree add -b feat/wip "$tmp/stale-wt" feat/integrated \
+  >/dev/null
+"$audit" "$projects" >"$tmp/stale-worktree.out" 2>&1 || true
+grep -q 'stale_branches=2' "$tmp/stale-worktree.out"
+if grep -q "state=.*repo=$stale_repo branch=feat/wip\|branch=feat/wip state=" \
+  "$tmp/stale-worktree.out"; then
+  printf '%s\n' 'FAIL branch checked out in a worktree was reported stale' >&2
+  exit 1
+fi
+git -C "$stale_repo" worktree remove --force "$tmp/stale-wt" >/dev/null 2>&1
+rm -rf "$stale_repo"
+
 git init --initial-branch=main "$projects/broken" >/dev/null
 printf '%s\n' '[broken' >"$projects/broken/.git/config"
 if "$audit" "$projects" >"$tmp/broken.out" 2>&1; then

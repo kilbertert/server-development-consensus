@@ -20,6 +20,7 @@ codex_updater=$policy_home/.local/bin/update-codex-config
 worktree_tool=$policy_home/.local/bin/dev-worktree
 failures=0
 repaired=0
+stale_branches=0
 scan_file=
 sorted_scan_file=
 trap 'rm -f "${scan_file:-}" "${sorted_scan_file:-}"' EXIT
@@ -81,6 +82,50 @@ restore_config() {
   else
     "${cmd[@]}" --unset-all "$key" >/dev/null 2>&1 || true
   fi
+}
+
+# Report task branches that were left behind after integration.
+#
+# `dev-worktree audit` only walks registered worktrees (`git worktree list`), so a
+# branch created directly in the canonical checkout is invisible to it -- and
+# `dev-worktree retire` never deletes a remote branch.  Without this scan the
+# local half of "delete the agent-owned task branch after merge" is never
+# enforced, and squash merges hide the loss from `git branch --merged`.
+#
+# Detection is content-based, mirroring branch_has_integrated_commits in
+# dev-worktree: `git cherry` reports every commit as `-` when the branch's
+# patches are all present in the default branch.  Silently discarding work is
+# the failure mode this audit exists to prevent, so an excursion beyond the
+# integration guardrails is reported as a finding, never repaired.
+audit_stale_branches() {
+  local repo=$1 default_branch=$2
+  local default_ref branch tracking checks worktree_list integrated=0 gone_count=0
+  default_ref=$(git -C "$repo" for-each-ref --format='%(refname:short)' \
+    "refs/remotes/origin/$default_branch" 2>/dev/null)
+  [[ -n $default_ref ]] || return 0
+  worktree_list=$(git -C "$repo" worktree list --porcelain 2>/dev/null |
+    awk '/^branch /{sub("refs/heads/", "", $2); print $2}')
+  while IFS= read -r branch; do
+    [[ -n $branch && $branch != "$default_branch" ]] || continue
+    if [[ -n $worktree_list ]] && grep -qxF "$branch" <<<"$worktree_list"; then
+      continue
+    fi
+    tracking=$(git -C "$repo" for-each-ref --format='%(upstream:track)' \
+      "refs/heads/$branch" 2>/dev/null)
+    if [[ $tracking == *'[gone]'* ]]; then
+      printf 'WARN repo=%s branch=%s state=upstream_gone\n' "$repo" "$branch"
+      gone_count=$((gone_count + 1))
+      continue
+    fi
+    checks=$(git -C "$repo" cherry "$default_ref" "$branch" 2>/dev/null) || continue
+    if [[ -n $checks ]] && ! grep -q '^+' <<<"$checks"; then
+      printf 'WARN repo=%s branch=%s state=integrated_not_retired\n' \
+        "$repo" "$branch"
+      integrated=$((integrated + 1))
+    fi
+  done < <(git -C "$repo" for-each-ref --format='%(refname:short)' \
+    refs/heads 2>/dev/null)
+  stale_branches=$((stale_branches + integrated + gone_count))
 }
 
 resolve_repo_hooks_path() {
@@ -393,6 +438,10 @@ while IFS= read -r -d '' git_path; do
     fi
   fi
 
+  if [[ $default_status -eq 0 ]]; then
+    audit_stale_branches "$repo" "$default_branch"
+  fi
+
   common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
   if [[ -n $common_dir && -z ${audited_worktree_roots[$common_dir]+present} ]]; then
     audited_worktree_roots[$common_dir]=true
@@ -426,5 +475,6 @@ while IFS= read -r -d '' git_path; do
     "$repo" "${branch:-detached}" "${configured_default:-unknown}" "$dirty" "$chain_state"
 done <"$sorted_scan_file"
 
-printf 'audit complete: failures=%d repaired=%d\n' "$failures" "$repaired"
+printf 'audit complete: failures=%d repaired=%d stale_branches=%d\n' \
+  "$failures" "$repaired" "$stale_branches"
 [[ $failures -eq 0 ]]

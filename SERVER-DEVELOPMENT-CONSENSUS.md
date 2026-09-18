@@ -17,8 +17,59 @@ weaken this policy.
   not use it for development or change the account without an explicit service
   migration.
 
+## Host Fleet And Multi-Host Development
+
+The fleet is not a single machine. Every host that an agent may reach, deploy
+to, or reason about has exactly one declared role, one owner, and one
+documented access path. The role model and its rules live in this policy; the
+concrete inventory (addresses, access methods, and where credentials are kept)
+is internal operating record and stays in the private operations record, never
+in this public repository.
+
+Host roles:
+
+- **development host** — the interactive host this policy describes:
+  `/home/claude/Projects`, the `claude` account, `systemctl --user` units, and
+  the development port registry. One active development host is the norm; a
+  second one is a deliberate split of work, not an accident of convenience.
+- **project production host** — runs the deployable service of exactly one
+  project for real users. It is not a development environment, and it does not
+  carry a second project's work without an explicit decision.
+- **shared service host** — backs one or more projects with a database, queue,
+  proxy, or comparable dependency.
+- **runner host** — hosts CI runners and deployment working directories.
+
+Rules:
+
+- A host joins the fleet through an explicit, recorded decision that names its
+  role, owner, purpose, and lifecycle, and that adds it to the private
+  operations inventory. A host without a declared role is not covered by this
+  policy, and agent work is not allowed on it.
+- Production hosts are deployed to, not developed on: no source checkout under
+  a user workspace, no interactive agent session, no editing of running code.
+  Changes reach them only as an artifact built from a merged revision of the
+  protected default branch.
+- Services on a production host run under the host's service manager as a
+  dedicated, non-login system identity, never as the interactive development
+  account and never as an unmanaged foreground process.
+- Internal service ports on a production host bind to loopback and are
+  declared with that host's role. The development port registry governs the
+  development host, not the fleet.
+- Only a service's public entry point may bind a non-loopback address. Each
+  such exposure — firewall rule, cloud security group, reverse proxy, TLS
+  termination — is an explicit security decision recorded with the host.
+- Until a new production host passes the project's acceptance checks, the
+  previous host and the previous deployment stay available as the rollback
+  path. A migration never makes the old host unrecoverable in the same step.
+- Changing a host's role, moving a public entry point, and retiring a host are
+  deliberate changes: they carry the same evidence and review requirements as a
+  code change and are never the side effect of a deployment command.
+
 ## Files And Runtimes
 
+- This section describes the development host. A project production host
+  uses the service layout declared with that project, under the fleet rules
+  in `Host Fleet And Multi-Host Development`.
 - Create and maintain projects only below `/home/claude/Projects`.
 - `/home/ranlei/Project` and related `/home/ranlei/*` paths are compatibility
   symlinks. Do not create new work there, replace them, or remove them until

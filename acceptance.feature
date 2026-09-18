@@ -42,3 +42,29 @@ Feature: Layered consensus and AFK governance
       When an owner submits a structured exception
       Then the exception names the invariant, reason, scope, compensating control, owner, approval, and expiry
       And it cannot waive account boundaries, secret isolation, or merge gates
+
+  Rule: Repository class decides which rules a repository is subject to
+
+    Scenario: An externally governed repository keeps its own delivery process
+      Given a repository is classified as externally governed
+      When a developer commits a non-conventional message and pushes the default branch to that repository's own remote
+      Then the server commit convention and default-branch guard do not reject the operation
+      And the repository's own hooks receive the original hook input
+
+    Scenario: Host boundaries still apply to an externally governed repository
+      Given a repository is classified as externally governed
+      When a task worktree for it is created outside the workspace worktree location
+      Then the worktree location rule still reports the violation
+      And the account boundary, secret isolation, port registry, and host rules remain in force
+
+    Scenario: An unrecorded repository class stays server-managed
+      Given a repository records no repository class
+      When a developer attempts an operation that violates the server contract
+      Then the operation is rejected by the server-managed rules
+      And the repository is never exempted by default
+
+    Scenario: An unreadable or invalid repository class fails closed
+      Given a repository records an unreadable or invalid repository class
+      When a commit, merge, or push is attempted
+      Then the operation stops with a repository class error
+      And the repository is never silently exempted

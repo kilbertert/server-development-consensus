@@ -68,4 +68,22 @@ run_check 'legacy message without type' || {
 }
 git -C "$tmp/work" config --unset serverPolicy.commitMessageOverride
 
+# An externally governed repository keeps its own commit convention, and an
+# unreadable or invalid class stops the commit instead of exempting it.
+git -C "$tmp/work" config serverPolicy.repositoryClass external
+run_check 'legacy message without type' || {
+  printf '%s\n' 'FAIL externally governed repository enforced Conventional Commits' >&2
+  exit 1
+}
+git -C "$tmp/work" config serverPolicy.repositoryClass conventional
+if run_check 'feat: add login'; then
+  printf '%s\n' 'FAIL invalid repository class was silently exempted' >&2
+  exit 1
+fi
+git -C "$tmp/work" config --unset serverPolicy.repositoryClass
+if run_check 'legacy message without type'; then
+  printf '%s\n' 'FAIL commit contract did not resume after the class was cleared' >&2
+  exit 1
+fi
+
 printf '%s\n' 'commit-msg policy tests passed'

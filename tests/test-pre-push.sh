@@ -68,6 +68,28 @@ printf '%s\n' "$feature_update" |
   exit 1
 }
 
+# An externally governed repository keeps its own delivery process: the server
+# default-branch guard is skipped, the project hook still receives the original
+# arguments and stdin, and an unreadable class stops the push instead of
+# exempting it.
+git -C "$tmp/work" config serverPolicy.repositoryClass external
+rm -f "$tmp/chained.args" "$tmp/chained.stdin"
+printf '%s\n' "$default_update" |
+  (cd "$tmp/work" && "$hook" origin "$tmp/remote.git")
+[ "$(sed -n '1p' "$tmp/chained.args")" = origin ]
+[ "$(sed -n '2p' "$tmp/chained.args")" = "$tmp/remote.git" ]
+[ "$(cat "$tmp/chained.stdin")" = "$default_update" ] || {
+  printf '%s\n' 'FAIL externally governed push did not reach the project hook with its input' >&2
+  exit 1
+}
+git -C "$tmp/work" config serverPolicy.repositoryClass external-governed
+if printf '%s\n' "$default_update" |
+   (cd "$tmp/work" && "$hook" origin "$tmp/remote.git") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL invalid repository class was silently exempted' >&2
+  exit 1
+fi
+git -C "$tmp/work" config --unset serverPolicy.repositoryClass
+
 git -C "$tmp/work" worktree add --no-track -b feat/dirty-sibling \
   "$tmp/dirty-sibling" origin/main >/dev/null
 printf '%s\n' dirty >"$tmp/dirty-sibling/overlap.txt"

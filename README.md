@@ -87,6 +87,19 @@ repositories that GitHub Free cannot protect remotely. Local hooks can be
 bypassed with low-level Git options, so they complement rather than replace
 remote Rulesets. Policy prohibits bypassing either layer.
 
+Every repository in the workspace has a repository class. A server-managed
+repository — the default — owns its delivery process here, so the full policy
+applies. An externally governed repository belongs to another organization's
+review, merge, and release process: it keeps its own commit convention,
+hooks, and workflow, and the managed hooks forward to them instead of
+enforcing the server delivery contract. The class is a local marker on the
+checkout, never committed and never part of the repository; the host owner
+records the classification and its owning organization in the private
+operations inventory. The account boundary, secret isolation, workspace
+layout, worktree location, port registry, and host rules apply to every
+repository regardless of class, and an unknown class is treated as
+server-managed.
+
 The managed `commit-msg` hook enforces Conventional Commits
 (`<type>(<scope>): <subject>`, types `feat fix docs style refactor perf test
 chore build ci revert`, optional `!` for breaking changes and an optional

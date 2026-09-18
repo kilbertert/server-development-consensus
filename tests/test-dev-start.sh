@@ -192,4 +192,21 @@ fi
 [ "$(git -C "$tmp/collision" branch --show-current)" = main ]
 ! git -C "$tmp/collision" show-ref --verify --quiet refs/heads/feat/existing
 
+# An externally governed repository keeps its own workflow, so the server task
+# lifecycle refuses to start there, and an unreadable class fails closed.
+git -C "$tmp/clean" config serverPolicy.repositoryClass external
+if (cd "$tmp/clean" && "$HOME/.local/bin/dev-start" feat external-flow) \
+  >"$tmp/external.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-start ran in an externally governed repository' >&2
+  exit 1
+fi
+grep -q 'externally governed' "$tmp/external.out"
+git -C "$tmp/clean" config serverPolicy.repositoryClass server-managed
+if (cd "$tmp/clean" && "$HOME/.local/bin/dev-start" feat invalid-class) \
+  >"$tmp/invalid-class.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-start accepted an invalid repository class' >&2
+  exit 1
+fi
+grep -q 'cannot determine the repository class' "$tmp/invalid-class.out"
+
 printf '%s\n' 'dev-start workflow tests passed'

@@ -302,6 +302,47 @@ fi
 git -C "$stale_repo" worktree remove --force "$tmp/stale-wt" >/dev/null 2>&1
 rm -rf "$stale_repo"
 
+# Repository class ---------------------------------------------------------------
+# An externally governed repository keeps its own delivery process: the audit
+# neither fails it nor rewrites its hook configuration or delivery metadata,
+# while an unreadable class is a finding.
+external_repo=$projects/company-repo
+external_hooks=$tmp/company-project-hooks
+mkdir -p "$external_hooks"
+git init --initial-branch=main "$external_repo" >/dev/null
+git -C "$external_repo" config user.name test
+git -C "$external_repo" config user.email test@example.com
+git -C "$external_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m external >/dev/null
+git -C "$external_repo" worktree add --detach "$tmp/company-detached" >/dev/null
+git -C "$external_repo" config serverPolicy.repositoryClass external
+git -C "$external_repo" config serverPolicy.defaultBranch company-default
+git -C "$external_repo" config core.hooksPath "$external_hooks"
+"$audit" "$projects" >"$tmp/external-class.out" 2>&1 || true
+grep -q "repo $external_repo branch=main default=company-default .* class=external" \
+  "$tmp/external-class.out"
+if grep -q "FAIL $external_repo " "$tmp/external-class.out"; then
+  cat "$tmp/external-class.out" >&2
+  printf '%s\n' 'FAIL externally governed repository failed the policy audit' >&2
+  exit 1
+fi
+"$audit" --repair "$projects" >"$tmp/external-class-repair.out" 2>&1 || true
+if grep -q "FAIL $external_repo " "$tmp/external-class-repair.out"; then
+  cat "$tmp/external-class-repair.out" >&2
+  printf '%s\n' 'FAIL externally governed repository failed the repair audit' >&2
+  exit 1
+fi
+[ "$(git -C "$external_repo" config --get core.hooksPath)" = "$external_hooks" ]
+[ "$(git -C "$external_repo" config --get serverPolicy.defaultBranch)" = company-default ]
+git -C "$external_repo" config serverPolicy.repositoryClass company-managed
+if "$audit" "$projects" >"$tmp/external-class-invalid.out" 2>&1; then
+  printf '%s\n' 'FAIL invalid repository class was accepted' >&2
+  exit 1
+fi
+grep -q "FAIL $external_repo repository class is invalid: company-managed" \
+  "$tmp/external-class-invalid.out"
+rm -rf "$external_repo"
+
 git init --initial-branch=main "$projects/broken" >/dev/null
 printf '%s\n' '[broken' >"$projects/broken/.git/config"
 if "$audit" "$projects" >"$tmp/broken.out" 2>&1; then

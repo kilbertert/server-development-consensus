@@ -20,6 +20,16 @@ case $# in
 esac
 
 require_repository
+# Externally governed repositories deliver through their own process; this
+# command only knows the server's GitHub flow and must not act in them.
+repository_class_value=$(repository_class) || {
+  printf '%s\n' 'error: cannot determine the repository class' >&2
+  exit 2
+}
+if [ "$repository_class_value" = external ]; then
+  printf '%s\n' 'error: externally governed repositories keep their own delivery process; dev-pr does not apply' >&2
+  exit 2
+fi
 command -v gh >/dev/null 2>&1 || {
   printf '%s\n' 'error: gh is required' >&2
   exit 2

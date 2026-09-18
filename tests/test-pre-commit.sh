@@ -87,4 +87,28 @@ if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
   exit 1
 fi
 
+# An externally governed repository keeps its own default-branch process: the
+# server guard is skipped while the project hook still runs, and an unreadable
+# or invalid class stops the commit instead of exempting it.
+git -C "$tmp/work" switch main >/dev/null
+git -C "$tmp/work" config serverPolicy.chainedHooksPath .project-hooks
+printf '#!/bin/sh\nprintf chained >"%s"\n' "$tmp/chained-marker" \
+  >"$tmp/work/.project-hooks/pre-commit"
+chmod +x "$tmp/work/.project-hooks/pre-commit"
+git -C "$tmp/work" config serverPolicy.repositoryClass external
+rm -f "$tmp/chained-marker"
+if ! (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL default-branch commit was blocked in an externally governed repository' >&2
+  exit 1
+fi
+[ "$(cat "$tmp/chained-marker")" = chained ] || {
+  printf '%s\n' 'FAIL project pre-commit hook did not run for an externally governed repository' >&2
+  exit 1
+}
+git -C "$tmp/work" config serverPolicy.repositoryClass project
+if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL invalid repository class was silently exempted' >&2
+  exit 1
+fi
+
 printf '%s\n' 'pre-commit policy tests passed'

@@ -9,6 +9,55 @@ is_valid_branch_name() (
   [ "$normalized" = "$1" ]
 )
 
+# Repository class. A repository whose delivery process is owned by another
+# organization is marked `external` in its own local configuration; the server
+# policy then keeps only the rules that describe this host. The marker lives in
+# the repository, so the policy needs no host list, and the default is
+# `managed` so an unreadable or unknown value can never widen an exemption.
+repository_class() (
+  repository_class_value=managed
+  if configured_class=$(git config --local --get serverPolicy.repositoryClass 2>/dev/null); then
+    repository_class_value=$configured_class
+  else
+    repository_class_status=$?
+    [ "$repository_class_status" -eq 1 ] || return 2
+  fi
+  case $repository_class_value in
+    managed|external) printf '%s\n' "$repository_class_value" ;;
+    *) return 2 ;;
+  esac
+)
+
+# Run the repository's own chained hook and hand it control. Used by externally
+# governed repositories, which keep their own delivery process and hooks.
+forward_to_chained_hook() {
+  forward_hook_name=$1
+  shift
+  if chained_hook=$(chained_hook_for "$forward_hook_name"); then
+    if paths_identify_same_file "$0" "$chained_hook"; then
+      printf 'error: chained %s hook resolves to the managed hook; operation stopped safely.\n' \
+        "$forward_hook_name" >&2
+      return 1
+    else
+      same_status=$?
+      [ "$same_status" -eq 1 ] || {
+        printf 'error: cannot validate the chained %s hook; operation stopped safely.\n' \
+          "$forward_hook_name" >&2
+        return 1
+      }
+    fi
+    exec "$chained_hook" "$@"
+  else
+    chained_status=$?
+    [ "$chained_status" -eq 1 ] || {
+      printf 'error: cannot resolve the chained %s hook; operation stopped safely.\n' \
+        "$forward_hook_name" >&2
+      return 1
+    }
+  fi
+  return 0
+}
+
 git_hook_names() {
   printf '%s\n' \
     applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit \

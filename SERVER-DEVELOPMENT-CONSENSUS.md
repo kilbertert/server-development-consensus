@@ -65,6 +65,61 @@ Rules:
   deliberate changes: they carry the same evidence and review requirements as a
   code change and are never the side effect of a deployment command.
 
+## Repository Classes
+
+This policy describes how work is delivered *on this host*. It applies in full
+only to repositories whose delivery process this host owns; a repository whose
+process belongs to another organization keeps its own rules. Every repository
+in the workspace has exactly one class:
+
+- **server-managed repository** — the default class. The host workspace owns
+  the task branch, the pull request, deterministic CI, and the protected
+  default branch, so every rule in this policy applies.
+- **externally governed repository** — a repository whose review, merge, and
+  release process another organization owns. The host owner classifies it when
+  it enters the workspace and records the classification, with its owning
+  organization and purpose, in the private operations inventory. The
+  classification is a local marker on that checkout; it is never committed and
+  never travels with the repository.
+
+An externally governed repository is exempt from the rules that describe how
+*this host* delivers code:
+
+- the protected-default-branch local guard, the task-branch workflow, and the
+  pull-request gate;
+- the Conventional Commits contract and the commit-time default-branch policy;
+- the server task lifecycle commands and the delivery bookkeeping they record;
+- the server-side audit of that repository's delivery branches and worktrees.
+
+The host stops maintaining its own delivery metadata in an externally governed
+repository, but it does not rewrite what is already present. Those keys can
+still point at the repository's own hook chain or at a paused worktree, and
+erasing them would break a process this host does not own.
+
+Exemption is not a security boundary moving. Everything that describes *this
+host*, *this account*, and *this workspace* still applies to every repository
+regardless of class, and is never waived by the class marker:
+
+- the account boundary and secret isolation;
+- workspace layout, including where a task worktree may live;
+- the development port registry and the listener and exposure rules;
+- the host fleet rules and every rule about changing host state.
+
+The class decides scope, not priority. It cannot exempt a server-managed
+repository from a security invariant, cannot relax the account boundary, and
+cannot reclassify work that this host is already delivering. Nor does it make
+another organization's process subordinate: an outside review process is a
+reason to be more careful, not less. This host must not overwrite, weaken,
+silently repair, or take over a process it does not own, and it must not read
+its own delivery metadata into a repository it does not own.
+
+The AFK compatibility contract and the invariants it publishes describe
+server-managed repositories. Classifying a repository is a scope declaration
+made by the host owner, never a structured exception chosen by a project:
+an unknown or unreadable class is treated as server-managed, so an exemption
+can never widen by accident. Changing a repository's class carries the same
+recorded decision, evidence, and review requirements as changing a host role.
+
 ## Files And Runtimes
 
 - This section describes the development host. A project production host
@@ -507,4 +562,3 @@ path. It requires explicit human approval in the current task, a recorded
 incident reason, the smallest possible change, relevant verification, and
 immediate restoration of every disabled guard. A retrospective PR and review
 must follow. Agents cannot self-authorize break-glass actions.
-

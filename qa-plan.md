@@ -4,7 +4,8 @@
 
 Verify the layered governance contract between `server-development-consensus`
 and the `afk-bootstrap` execution adapter. This plan covers the policy adapter,
-version compatibility, credential boundary, and structured exceptions.
+version compatibility, credential boundary, structured exceptions, and the
+repository scope that decides which of those rules a repository is subject to.
 
 ## Cases
 
@@ -15,6 +16,10 @@ version compatibility, credential boundary, and structured exceptions.
 | GOV-B03 | Docker agent plus host runner | Container, host wrapper, and GitHub Ruleset are available | Attempted `git push origin main` | Execute the push path at each boundary | Container check, host wrapper, and Ruleset each reject the operation | Remove temporary branch |
 | GOV-B04 | AFK consumer repository | Exception validator is enabled | One valid and one expired structured exception | Run the exception check | Valid implementation exception is accepted; expired or security-boundary exception blocks delivery | Remove temporary exception records |
 | GOV-B05 | Installer test fixture home | `tomlkit` is installed and `~/.codex/config.toml` carries unrelated settings | A config with existing `model`, `projects`, and approval settings | Run the installer Codex config update, then its `--verify` path | `model_context_window` is 872000 and `model_auto_compact_token_limit` is 700000, while unrelated settings and comments survive | Remove the fixture home |
+| GOV-B06 | Test fixture repository classified externally governed | The managed hooks are installed and the repository has its own chained hook | Non-conventional commit message; default-branch commit; default-branch push over the repository's own remote | Run `commit-msg`, `pre-commit`, `pre-merge-commit`, and `pre-push` in the fixture | Every managed contract is skipped, the repository's own hook still runs, and the pushed hook receives the original arguments and stdin | Remove the fixture repository |
+| GOV-B07 | Test fixture repository classified externally governed | A task worktree exists outside the workspace worktree location | A linked worktree placed outside the projects workspace | Run `dev-worktree audit` and `dev-policy-audit` | The worktree location violation is still reported, while server delivery lifecycle and bookkeeping findings are not raised for the external repository | Remove the fixture repository |
+| GOV-B08 | Test fixture repositories with an absent or invalid class value | The managed hooks are installed | One repository with no class recorded, one with an unsupported value | Run the managed hooks and `dev-start` in each fixture | The unset fixture keeps the server-managed rules in force; the invalid fixture stops every operation with a repository class error | Remove the fixture repositories |
+| GOV-B09 | Test fixture repository classified externally governed | The repository carries a local `core.hooksPath` and server delivery metadata | A local hooks path that is not the managed one, plus `serverPolicy.defaultBranch` and `branch.*.serverPolicy*` keys | Run `dev-policy-audit` and then `dev-policy-audit --repair` | Neither run fails the repository, and neither rewrites its hook configuration or its existing delivery metadata | Remove the fixture repository |
 
 ## Traceability
 
@@ -25,6 +30,10 @@ version compatibility, credential boundary, and structured exceptions.
 | Three-layer default-branch protection | A container cannot deliver directly to the default branch | GOV-B03 |
 | Bounded exceptions | A legitimate AFK implementation difference is recorded | GOV-B04 |
 | Managed Codex long context | Codex receives 872K/700K while unrelated settings survive | GOV-B05 |
+| External delivery scope | An externally governed repository keeps its own delivery process | GOV-B06 |
+| Host boundaries still apply | Host boundaries still apply to an externally governed repository | GOV-B07 |
+| Class fails closed | An unrecorded repository class stays server-managed; an unreadable or invalid repository class fails closed | GOV-B08 |
+| Delivery metadata not maintained | An externally governed repository keeps its own delivery process | GOV-B09 |
 
 ## Execution Results
 

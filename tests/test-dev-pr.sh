@@ -207,4 +207,16 @@ if (cd "$tmp/valid" && "$HOME/.local/bin/dev-pr" --base other) >/dev/null 2>&1; 
 fi
 assert_no_gh_calls
 
+# An externally governed repository delivers through its own process, so this
+# GitHub-only command must refuse before it touches the network.
+: >"$GH_CALLS"
+git -C "$tmp/valid" config serverPolicy.repositoryClass external
+if (cd "$tmp/valid" && "$HOME/.local/bin/dev-pr") >"$tmp/external-pr.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-pr ran in an externally governed repository' >&2
+  exit 1
+fi
+grep -q 'externally governed' "$tmp/external-pr.out"
+assert_no_gh_calls
+git -C "$tmp/valid" config --unset serverPolicy.repositoryClass
+
 printf '%s\n' 'dev-pr workflow tests passed'

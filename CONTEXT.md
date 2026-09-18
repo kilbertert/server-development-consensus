@@ -26,6 +26,18 @@ _Avoid_: database box, infra host
 A condition that must hold across every execution plane, such as account boundaries, protected-branch delivery, or secret isolation.
 _Avoid_: best practice, suggestion
 
+**Repository class**:
+The declared owner of a repository's delivery process: `server-managed` when this host's workspace owns the task branch, pull request, and merge flow, or `externally governed` when another organization does. It decides which parts of the policy apply and never waives the account boundary or secret isolation.
+_Avoid_: repo type, trust level
+
+**Server-managed repository**:
+A repository in the workspace whose delivery process this host owns, so the full consensus policy applies. This is the default class.
+_Avoid_: our repository, internal project
+
+**Externally governed repository**:
+A repository whose review, merge, and release process belongs to another organization. It keeps its own commit convention, hooks, and delivery workflow; this host still enforces the account boundary, secret isolation, worktree location, ports, and host rules.
+_Avoid_: third-party repository, vendor project
+
 **Server governance baseline**:
 The authoritative, non-decreasing policy published by `server-development-consensus` for all projects, sessions, runners, and tools.
 _Avoid_: global defaults, shared guidelines

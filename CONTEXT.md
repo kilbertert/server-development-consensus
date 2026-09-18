@@ -4,6 +4,24 @@ This context defines the shared language for server-wide development governance 
 
 ## Governance
 
+## Host Fleet
+
+**Host fleet**:
+The set of hosts with a declared role, owner, and access path that this policy governs. It starts with the interactive development host and grows only through recorded decisions.
+_Avoid_: server list, infrastructure inventory
+
+**Development host**:
+The interactive host where project source, the `claude` account, user services, and the port registry live. It is the only host where agents develop.
+_Avoid_: dev box, workspace server
+
+**Project production host**:
+A host that runs exactly one project's deployable service for real users and is deployed to rather than developed on.
+_Avoid_: prod server, live machine
+
+**Shared service host**:
+A host that backs one or more projects with a database, queue, proxy, or comparable dependency rather than an application of its own.
+_Avoid_: database box, infra host
+
 **Governance invariant**:
 A condition that must hold across every execution plane, such as account boundaries, protected-branch delivery, or secret isolation.
 _Avoid_: best practice, suggestion

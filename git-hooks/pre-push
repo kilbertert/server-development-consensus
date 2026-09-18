@@ -10,6 +10,19 @@ esac
 
 remote=${1:-origin}
 push_url=${2:-}
+
+# Externally governed repositories keep their own delivery process, so the
+# server guard is skipped and control passes to their own hook with stdin
+# untouched. An unreadable class stops the push instead of silently exempting.
+repository_class_value=$(repository_class) || {
+  printf '%s\n' 'SERVER POLICY: cannot determine the repository class; push stopped safely.' >&2
+  exit 1
+}
+if [ "$repository_class_value" = external ]; then
+  forward_to_chained_hook pre-push "$remote" "$push_url" || exit 1
+  exit 0
+fi
+
 input_file=$(mktemp)
 trap 'rm -f "$input_file"' EXIT
 cat >"$input_file"

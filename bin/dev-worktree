@@ -26,6 +26,18 @@ die() {
   exit 2
 }
 
+# The server task lifecycle describes how this host delivers code. Repositories
+# whose delivery process is owned by another organization keep their own
+# workflow, so the lifecycle commands refuse to run in them.
+require_managed_repository() {
+  local class
+  class=$(repository_class) ||
+    die 'cannot determine the repository class; run dev-policy-audit --repair'
+  if [[ $class == external ]]; then
+    die 'externally governed repositories keep their own workflow; the server task lifecycle does not apply'
+  fi
+}
+
 absolute_path() {
   realpath -m -- "$1"
 }
@@ -181,6 +193,23 @@ branch_has_verified_merged_pr() {
   git merge-base --is-ancestor "$verified_pr_merge_oid" "$default_ref"
 }
 
+# A linked worktree placed outside the workspace worktree location is reported
+# for every repository class: the location rule describes this host, not the
+# repository's delivery process.
+#
+# Migration: existing top-level worktrees are reported but must not fail the
+# audit until the service migration relocates them. Only linked worktrees
+# (".git" is a file) are checked; the canonical checkout itself belongs at the
+# top level.
+worktree_location_note() {
+  local path=$1
+  if [[ -f $path/.git ]] &&
+     ! worktree_location_allowed "$(absolute_path "$path")" \
+       "$(absolute_path "$HOME/Projects")"; then
+    printf ' location=violation'
+  fi
+}
+
 audit_worktrees() {
   local default_branch=$1
   local default_ref
@@ -189,6 +218,11 @@ audit_worktrees() {
   load_worktrees
 
   local issues=0
+  local repository_class_value counts_lifecycle_issues=true
+  repository_class_value=$(repository_class) || repository_class_value=managed
+  if [[ $repository_class_value == external ]]; then
+    counts_lifecycle_issues=false
+  fi
   local index path head branch dirty upstream tracking behind ahead state
   local base_oid lifecycle_state preserve_reason
   for index in "${!worktree_paths[@]}"; do
@@ -196,8 +230,11 @@ audit_worktrees() {
     head=${worktree_heads[$index]}
     branch=${worktree_branches[$index]}
     if [[ $branch == '(detached)' || -z $branch ]]; then
-      printf 'worktree path=%q branch=detached state=detached\n' "$path"
-      issues=$((issues + 1))
+      printf 'worktree path=%q branch=detached state=detached%s\n' \
+        "$path" "$(worktree_location_note "$path")"
+      if $counts_lifecycle_issues; then
+        issues=$((issues + 1))
+      fi
       continue
     fi
 
@@ -215,36 +252,36 @@ audit_worktrees() {
       state=default
     elif [[ $upstream == "origin/$default_branch" ]]; then
       state=tracks_default
-      issues=$((issues + 1))
+      if $counts_lifecycle_issues; then
+        issues=$((issues + 1))
+      fi
     elif [[ $tracking == *'[gone]'* ]]; then
       state=upstream_gone
-      issues=$((issues + 1))
+      if $counts_lifecycle_issues; then
+        issues=$((issues + 1))
+      fi
     elif [[ $lifecycle_state == preserved && -n $preserve_reason ]]; then
       state=preserved
     elif [[ $dirty -gt 0 && $ahead -eq 0 && $behind -gt 0 ]]; then
       state=uncommitted_only_behind
-      issues=$((issues + 1))
+      if $counts_lifecycle_issues; then
+        issues=$((issues + 1))
+      fi
     elif branch_has_integrated_commits "$branch" "$default_ref" "$base_oid"; then
       if [[ $dirty -gt 0 ]]; then
         state=dirty_after_integration
       else
         state=integrated_not_retired
       fi
-      issues=$((issues + 1))
+      if $counts_lifecycle_issues; then
+        issues=$((issues + 1))
+      fi
     elif [[ $dirty -eq 0 ]]; then
       state=clean
     fi
 
-    # Migration: existing top-level worktrees are reported but must not fail
-    # the audit until the service migration relocates them. Only linked
-    # worktrees (".git" is a file) are checked; the canonical checkout itself
-    # belongs at the top level.
-    local location_note=''
-    if [[ -f $path/.git ]] &&
-       ! worktree_location_allowed "$(absolute_path "$path")" \
-         "$(absolute_path "$HOME/Projects")"; then
-      location_note=' location=violation'
-    fi
+    local location_note
+    location_note=$(worktree_location_note "$path")
 
     printf 'worktree path=%q branch=%q head=%s dirty=%s behind=%s ahead=%s upstream=%q state=%s%s\n' \
       "$path" "$branch" "$head" "$dirty" "$behind" "$ahead" "${upstream:-none}" "$state" "$location_note"
@@ -264,6 +301,7 @@ start_worktree() {
   local requested_path=${3:-}
   require_task_name "$type" "$description"
   require_repository
+  require_managed_repository
 
   local branch="$type/$description"
   local target projects_root default_branch remote_default
@@ -329,6 +367,7 @@ set_lifecycle_state() {
   local requested_path=$2
   local reason=${3:-}
   require_repository
+  require_managed_repository
   load_worktrees
   local index
   index=$(worktree_index_for_path "$requested_path") ||
@@ -354,6 +393,7 @@ set_lifecycle_state() {
 retire_worktree() {
   [[ $# -eq 1 ]] || usage
   require_repository
+  require_managed_repository
   local requested_path=$1
   local target current default_branch default_ref
   target=$(absolute_path "$requested_path")

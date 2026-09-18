@@ -343,6 +343,26 @@ while IFS= read -r -d '' git_path; do
   fi
   dirty=$(printf '%s\n' "$status_output" | awk 'NF { count++ } END { print count + 0 }')
 
+  # Repository class. Externally governed repositories keep only the rules that
+  # describe this host, so the delivery metadata below is neither inspected nor
+  # repaired for them. An unreadable or invalid class is a finding, never an
+  # implicit exemption.
+  repo_class=$(git -C "$repo" config --local --get serverPolicy.repositoryClass 2>/dev/null) || {
+    repo_class_status=$?
+    if [[ $repo_class_status -eq 1 ]]; then
+      repo_class=managed
+    else
+      printf 'FAIL %s cannot inspect repository class\n' "$repo"
+      failures=$((failures + 1))
+      continue
+    fi
+  }
+  if [[ $repo_class != managed && $repo_class != external ]]; then
+    printf 'FAIL %s repository class is invalid: %s\n' "$repo" "$repo_class"
+    failures=$((failures + 1))
+    continue
+  fi
+
   local_hooks=$(git -C "$repo" config --local --path --get core.hooksPath 2>/dev/null)
   local_hooks_status=$?
   chained_hooks=$(git -C "$repo" config --local --path --get serverPolicy.chainedHooksPath 2>/dev/null)
@@ -359,7 +379,7 @@ while IFS= read -r -d '' git_path; do
   if [[ -n $local_hooks ]] && hooks_paths_are_same "$repo" "$local_hooks" "$expected_hooks"; then
     local_hooks_are_managed=true
   fi
-  if [[ -n $local_hooks ]] && ! $local_hooks_are_managed; then
+  if [[ $repo_class == managed ]] && [[ -n $local_hooks ]] && ! $local_hooks_are_managed; then
     if $repair && $expected_hooks_complete; then
       if ! hooks_path_is_forwardable "$repo" "$local_hooks"; then
         printf 'FAIL %s cannot safely forward hooks from %s\n' "$repo" "$local_hooks"
@@ -406,7 +426,7 @@ while IFS= read -r -d '' git_path; do
   elif [[ $configured_status -ne 0 ]]; then
     configured_default=
   fi
-  if [[ $origin_status -eq 0 && $default_status -ne 0 ]]; then
+  if [[ $repo_class == managed ]] && [[ $origin_status -eq 0 && $default_status -ne 0 ]]; then
     if $repair && [[ $configured_status -eq 0 ]]; then
       if git -C "$repo" config --local --unset-all serverPolicy.defaultBranch; then
         configured_default=
@@ -422,7 +442,7 @@ while IFS= read -r -d '' git_path; do
     printf 'FAIL %s cannot inspect origin remote\n' "$repo"
     failures=$((failures + 1))
   fi
-  if [[ $default_status -eq 0 && $configured_default != "$default_branch" ]]; then
+  if [[ $repo_class == managed ]] && [[ $default_status -eq 0 && $configured_default != "$default_branch" ]]; then
     if $repair; then
       if git -C "$repo" config --local serverPolicy.defaultBranch "$default_branch"; then
         configured_default=$default_branch
@@ -438,7 +458,7 @@ while IFS= read -r -d '' git_path; do
     fi
   fi
 
-  if [[ $default_status -eq 0 ]]; then
+  if [[ $repo_class == managed && $default_status -eq 0 ]]; then
     audit_stale_branches "$repo" "$default_branch"
   fi
 
@@ -471,8 +491,9 @@ while IFS= read -r -d '' git_path; do
     fi
   fi
 
-  printf 'repo %s branch=%s default=%s dirty=%s chain=%s\n' \
-    "$repo" "${branch:-detached}" "${configured_default:-unknown}" "$dirty" "$chain_state"
+  printf 'repo %s branch=%s default=%s dirty=%s chain=%s class=%s\n' \
+    "$repo" "${branch:-detached}" "${configured_default:-unknown}" "$dirty" \
+    "$chain_state" "$repo_class"
 done <"$sorted_scan_file"
 
 printf 'audit complete: failures=%d repaired=%d stale_branches=%d\n' \

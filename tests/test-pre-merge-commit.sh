@@ -46,4 +46,24 @@ chmod +x "$tmp/work/.project-hooks/pre-merge-commit"
 (cd "$tmp/work" && "$hook")
 [ "$(cat "$tmp/chained-marker")" = chained ]
 
+# An externally governed repository keeps its own merge process: the server
+# guard is skipped while the project hook still runs, and an unreadable or
+# invalid class stops the merge instead of exempting it.
+git -C "$tmp/work" switch main >/dev/null
+git -C "$tmp/work" config serverPolicy.repositoryClass external
+rm -f "$tmp/chained-marker"
+if ! (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL default-branch merge was blocked in an externally governed repository' >&2
+  exit 1
+fi
+[ "$(cat "$tmp/chained-marker")" = chained ] || {
+  printf '%s\n' 'FAIL project pre-merge-commit hook did not run for an externally governed repository' >&2
+  exit 1
+}
+git -C "$tmp/work" config serverPolicy.repositoryClass external-governed
+if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL invalid repository class was silently exempted' >&2
+  exit 1
+fi
+
 printf '%s\n' 'pre-merge-commit policy tests passed'

@@ -170,4 +170,30 @@ if (cd "$HOME/Projects/repo" && "$HOME/.local/bin/dev-worktree" audit) \
 fi
 grep -q 'state=tracks_default' "$tmp/audit-tracking.out"
 
+# An externally governed repository keeps its own delivery process: the server
+# task lifecycle refuses to act on it and the delivery audit no longer fails
+# it, while the workspace worktree location rule still reports it.
+git -C "$HOME/Projects/repo" worktree add --detach "$tmp/outside" origin/main \
+  >/dev/null
+git -C "$HOME/Projects/repo" config serverPolicy.repositoryClass external
+external_audit=$(
+  cd "$HOME/Projects/repo" && "$HOME/.local/bin/dev-worktree" audit
+)
+grep -q 'state=tracks_default' <<<"$external_audit"
+grep -q 'location=violation' <<<"$external_audit"
+if (cd "$HOME/Projects/repo" &&
+    "$HOME/.local/bin/dev-worktree" start feat external) >"$tmp/external-start.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-worktree start ran in an externally governed repository' >&2
+  exit 1
+fi
+grep -q 'externally governed' "$tmp/external-start.out"
+if (cd "$HOME/Projects/repo" &&
+    "$HOME/.local/bin/dev-worktree" retire "$HOME/Projects/.worktrees/repo-tracks-default") \
+  >"$tmp/external-retire.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-worktree retire ran in an externally governed repository' >&2
+  exit 1
+fi
+grep -q 'externally governed' "$tmp/external-retire.out"
+git -C "$HOME/Projects/repo" config --unset serverPolicy.repositoryClass
+
 printf '%s\n' 'dev-worktree lifecycle tests passed'

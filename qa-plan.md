@@ -59,6 +59,19 @@ Review Sentinel unit and installer tests. `test-install.sh` and
 unrelated settings survive. The authoritative result is this change's
 `Governance release unit` CI run.
 
+### GOV-B06 - GOV-B09 - repository class
+
+Passed locally on `2026-09-18T22:00:46+08:00` on the `claude` development host.
+`tests/test-commit-msg.sh`, `tests/test-pre-commit.sh`,
+`tests/test-pre-merge-commit.sh`, and `tests/test-pre-push.sh` cover the hook
+scope and the project-hook forwarding; `tests/test-dev-worktree.sh`,
+`tests/test-dev-policy-audit.sh`, `tests/test-dev-start.sh`, and
+`tests/test-dev-pr.sh` cover the task lifecycle, the audit exemptions, and the
+GitHub-only command. The repository's full local check set passed on commit
+`ed760d4`. The authoritative result is this change's `Governance release unit`
+CI run:
+[35353503061](https://github.com/kilbertert/server-development-consensus/actions/runs/35353503061).
+
 ## Risk Checks
 
 - Complexity/coverage: not applicable; the checker is a small portable script

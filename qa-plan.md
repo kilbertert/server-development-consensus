@@ -14,6 +14,7 @@ version compatibility, credential boundary, and structured exceptions.
 | GOV-B02 | AFK consumer repository | CI has the compatibility validator | Current consensus outside the declared SemVer range | Run the implementation/delivery check | Check fails with both versions and no push is attempted | Restore test metadata |
 | GOV-B03 | Docker agent plus host runner | Container, host wrapper, and GitHub Ruleset are available | Attempted `git push origin main` | Execute the push path at each boundary | Container check, host wrapper, and Ruleset each reject the operation | Remove temporary branch |
 | GOV-B04 | AFK consumer repository | Exception validator is enabled | One valid and one expired structured exception | Run the exception check | Valid implementation exception is accepted; expired or security-boundary exception blocks delivery | Remove temporary exception records |
+| GOV-B05 | Installer test fixture home | `tomlkit` is installed and `~/.codex/config.toml` carries unrelated settings | A config with existing `model`, `projects`, and approval settings | Run the installer Codex config update, then its `--verify` path | `model_context_window` is 872000 and `model_auto_compact_token_limit` is 700000, while unrelated settings and comments survive | Remove the fixture home |
 
 ## Traceability
 
@@ -23,6 +24,7 @@ version compatibility, credential boundary, and structured exceptions.
 | Compatibility blocking | An incompatible AFK template is blocked | GOV-B02 |
 | Three-layer default-branch protection | A container cannot deliver directly to the default branch | GOV-B03 |
 | Bounded exceptions | A legitimate AFK implementation difference is recorded | GOV-B04 |
+| Managed Codex long context | Codex receives 872K/700K while unrelated settings survive | GOV-B05 |
 
 ## Execution Results
 
@@ -36,6 +38,17 @@ Status: passed on `2026-08-28T23:25:32+0800`.
   exception cases and default-branch rejection.
 - Consumer PRs #144, #78, #124, and #62 merged after their deterministic checks
   passed; final `origin/main` SHAs are recorded in the AFK QA plan.
+
+### GOV-B05 - managed Codex long context
+
+Passed locally on `2026-09-18T20:38:01+08:00` on the `claude` development host. The repository's full
+CI check set was run on this branch: `tests/test-ai-review-policy.py`,
+`test-afk-contract.sh`, `test-dev-worktree.sh`, `test-pre-push.sh`,
+`test-commit-msg.sh`, `test-dev-policy-audit.sh`, `test-install.sh`, and the
+Review Sentinel unit and installer tests. `test-install.sh` and
+`test-update-codex-config.sh` assert the 872000/700000 defaults and that
+unrelated settings survive. The authoritative result is this change's
+`Governance release unit` CI run.
 
 ## Risk Checks
 

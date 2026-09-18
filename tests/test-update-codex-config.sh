@@ -25,6 +25,8 @@ import tomlkit
 data = tomlkit.parse(Path(sys.argv[1]).read_text())
 assert data["model"] == "gpt-test"
 assert data["developer_instructions"] == "new workflow policy\nsecond line\n"
+assert data["model_context_window"] == 872000
+assert data["model_auto_compact_token_limit"] == 700000
 assert data["projects"]["/work"]["trust_level"] == "trusted"
 PY
 
@@ -43,6 +45,8 @@ import tomlkit
 
 data = tomlkit.parse(Path(sys.argv[1]).read_text())
 assert data["developer_instructions"] == "new workflow policy\nsecond line\n"
+assert data["model_context_window"] == 872000
+assert data["model_auto_compact_token_limit"] == 700000
 assert data["approval_policy"] == "on-request"
 PY
 
@@ -72,6 +76,8 @@ import tomlkit
 
 data = tomlkit.parse(Path(sys.argv[1]).read_text())
 assert data["developer_instructions"] == "new workflow policy\nsecond line\ncontains \"\"\" and literal triple quotes: '''\n"
+assert data["model_context_window"] == 872000
+assert data["model_auto_compact_token_limit"] == 700000
 assert data["projects"]["/table-only"]["trust_level"] == "trusted"
 assert os.getxattr(sys.argv[1], "user.server-policy-test") == b"preserved"
 PY

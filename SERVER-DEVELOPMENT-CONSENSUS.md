@@ -17,8 +17,59 @@ weaken this policy.
   not use it for development or change the account without an explicit service
   migration.
 
+## Host Fleet And Multi-Host Development
+
+The fleet is not a single machine. Every host that an agent may reach, deploy
+to, or reason about has exactly one declared role, one owner, and one
+documented access path. The role model and its rules live in this policy; the
+concrete inventory (addresses, access methods, and where credentials are kept)
+is internal operating record and stays in the private operations record, never
+in this public repository.
+
+Host roles:
+
+- **development host** — the interactive host this policy describes:
+  `/home/claude/Projects`, the `claude` account, `systemctl --user` units, and
+  the development port registry. One active development host is the norm; a
+  second one is a deliberate split of work, not an accident of convenience.
+- **project production host** — runs the deployable service of exactly one
+  project for real users. It is not a development environment, and it does not
+  carry a second project's work without an explicit decision.
+- **shared service host** — backs one or more projects with a database, queue,
+  proxy, or comparable dependency.
+- **runner host** — hosts CI runners and deployment working directories.
+
+Rules:
+
+- A host joins the fleet through an explicit, recorded decision that names its
+  role, owner, purpose, and lifecycle, and that adds it to the private
+  operations inventory. A host without a declared role is not covered by this
+  policy, and agent work is not allowed on it.
+- Production hosts are deployed to, not developed on: no source checkout under
+  a user workspace, no interactive agent session, no editing of running code.
+  Changes reach them only as an artifact built from a merged revision of the
+  protected default branch.
+- Services on a production host run under the host's service manager as a
+  dedicated, non-login system identity, never as the interactive development
+  account and never as an unmanaged foreground process.
+- Internal service ports on a production host bind to loopback and are
+  declared with that host's role. The development port registry governs the
+  development host, not the fleet.
+- Only a service's public entry point may bind a non-loopback address. Each
+  such exposure — firewall rule, cloud security group, reverse proxy, TLS
+  termination — is an explicit security decision recorded with the host.
+- Until a new production host passes the project's acceptance checks, the
+  previous host and the previous deployment stay available as the rollback
+  path. A migration never makes the old host unrecoverable in the same step.
+- Changing a host's role, moving a public entry point, and retiring a host are
+  deliberate changes: they carry the same evidence and review requirements as a
+  code change and are never the side effect of a deployment command.
+
 ## Files And Runtimes
 
+- This section describes the development host. A project production host
+  uses the service layout declared with that project, under the fleet rules
+  in `Host Fleet And Multi-Host Development`.
 - Create and maintain projects only below `/home/claude/Projects`.
 - `/home/ranlei/Project` and related `/home/ranlei/*` paths are compatibility
   symlinks. Do not create new work there, replace them, or remove them until
@@ -32,6 +83,36 @@ weaken this policy.
 - Keep new developer-owned files private by default (`umask 027`). Do not use
   ACLs, cross-user groups, or recursive cross-account ownership changes as a
   shortcut.
+
+## Workspace Layout
+
+The projects workspace is a curated area, and its top level stays
+predictable so that people and agents can tell active work from history at
+a glance.
+
+- The top level of `/home/claude/Projects` may contain only: canonical
+  checkouts of active projects named after their origin repository; policy
+  and index files maintained by the canonical installer (AGENTS.md,
+  CLAUDE.md, SERVER-DEVELOPMENT-CONSENSUS.md, DEVELOPMENT-PORT-REGISTRY.md,
+  WORKSPACE.md, INDEX.md); and underscore-prefixed functional directories
+  (`_archive/`, `_runners/`).
+- Task worktrees are created with `dev-worktree start`. Its default
+  location is the managed central area `/home/claude/Projects/.worktrees/`;
+  an explicitly given path is honored only inside a repository checkout,
+  where the worktree must be gitignored. Linked worktrees must never appear
+  as visible top-level entries: `dev-worktree start` rejects them, and
+  `dev-worktree audit` plus the daily policy audit report them as
+  violations.
+- Projects follow a restore-then-work archive flow: a project idle for
+  more than 30 days with no service references moves to
+  `_archive/<year>/`; before work resumes it moves back to the top level
+  or is re-cloned from its origin, and development never happens inside
+  `_archive/`.
+- Deployment artifacts (self-hosted runner working directories, standby or
+  deploy checkouts) are not top-level projects. They live under
+  `_runners/` or another dedicated, service-managed location and are
+  referenced by their systemd units; existing top-level deploy checkouts
+  migrate there as part of that service migration.
 
 ## Standards-Based Engineering
 
@@ -128,7 +209,7 @@ and one declared default branch. Agents must report the canonical path, current
 branch, `git status --short --branch`, `git worktree list`, and `git branch -vv`
 before editing and before final handoff.
 
-Use `dev-worktree start TYPE DESCRIPTION PATH` for a new isolated task
+Use `dev-worktree start TYPE DESCRIPTION [PATH]` for a new isolated task
 worktree. It creates the branch from the fetched `origin/<default>` with no
 upstream to the default branch and records its base, owner, path, and lifecycle
 state. Run `dev-worktree audit` before handoff and `dev-worktree retire PATH`

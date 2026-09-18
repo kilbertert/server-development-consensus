@@ -155,7 +155,7 @@ and annotated tags on the merged default branch; releases are an explicit,
 authorized act. PRs should stay focused (normally under ~500-800 lines) and
 use a lightweight PR template (`changes`/`tests`/`checklist`) when provided.
 
-For isolated task work, use `dev-worktree start TYPE DESCRIPTION PATH`. The
+For isolated task work, use `dev-worktree start TYPE DESCRIPTION [PATH]`. The
 command fetches the remote default branch, creates a no-track task branch from
 that exact commit, and records local lifecycle metadata. `dev-worktree audit`
 reports every sibling worktree and fails on stale delivery states;

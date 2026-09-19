@@ -1,13 +1,15 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Multi-Host Development Model
 
-This spec fixes the model that the `Host Fleet And Multi-Host Development`
-section only sketched. It defines what a service host is, how a service
-identity is separated from a development identity, when a service moves
-between hosts, what "moved" means, and where these rules are enforced.
+This spec fixed the model that the `Host Fleet And Multi-Host Development`
+section only sketched. Those rules are now in the baseline, so this document
+is the rationale behind them and the record of what was deliberately left out
+rather than a second source of rules. It defines what a service host is, how a
+service identity is separated from a development identity, when a service
+moves between hosts, what "moved" means, and where these rules are enforced.
 
 The concrete fleet inventory — addresses, access methods, account names, and
 where credentials are kept — is internal operating record and stays in the
@@ -369,6 +371,7 @@ not reached, and each item names its own trigger.
 
 **Where the concrete plan lives.** The inventory, the per-service migration
 checklist, the credential relocation order, and the addresses are written in
-the private operations record, not here. If this spec and that record
-disagree about a *rule*, this spec wins; if they disagree about an
-*inventory fact*, the record wins.
+the private operations record, not here. If this spec and the baseline
+disagree about a *rule*, the baseline wins; this document carries no rule of
+its own. If the spec and the record disagree about an *inventory fact*, the
+record wins.

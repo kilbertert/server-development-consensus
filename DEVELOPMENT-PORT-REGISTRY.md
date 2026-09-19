@@ -24,7 +24,6 @@ Add one row in ascending port order before starting a new fixed service.
 
 | Port | Protocol | Bind address | Project/service | Owner | Purpose | Lifecycle |
 | ---: | --- | --- | --- | --- | --- | --- |
-| 11880 | TCP | 127.0.0.1 | auto-test observation dashboard (easy dashboard --port) | claude | Auto-Test read-only observation plane; FRP-tunneled to auto-test.ranlei.work | active |
 | 12101 | TCP | 127.0.0.1 | healthcare verification instance / application | claude | Baseline verification instance for the healthcare project (HTTP) | active |
 | 12106 | TCP | 127.0.0.1 | healthcare verification instance / relational database | claude | Desensitized copy of the production health database | active |
 | 12107 | TCP | 127.0.0.1 | healthcare verification instance / cache | claude | Cache for the healthcare verification instance | active |

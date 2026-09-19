@@ -18,6 +18,26 @@ _Avoid_: dev box, workspace server
 A host that runs exactly one project's deployable service for real users and is deployed to rather than developed on.
 _Avoid_: prod server, live machine
 
+**Service host**:
+A host that carries more than one project's deployable services for real users, each isolated under its own project-scoped service identity.
+_Avoid_: prod server, app server, service server
+
+**Service identity**:
+The non-login system account that runs exactly one project's processes on a service host; its scope is one project, never one process and never the whole host.
+_Avoid_: app user, shared service account
+
+**Development plane**:
+The private overlay network that carries machine-to-machine access between the development host and hosts running agent or CI work; joining it is a recorded decision, not a consequence of fleet membership.
+_Avoid_: VPN, internal network
+
+**Service plane**:
+Public-key-only SSH to service hosts with the cloud firewall restricted to known sources — the plane a service host belongs to instead of the development plane.
+_Avoid_: public access, internet-facing
+
+**Migration contract**:
+The conditions that must hold before a service counts as moved: versioned deployment assets, an executable acceptance check with a recorded result, parallel running, and separately switched traffic and retired instance.
+_Avoid_: deployment plan, cutover plan
+
 **Shared service host**:
 A host that backs one or more projects with a database, queue, proxy, or comparable dependency rather than an application of its own.
 _Avoid_: database box, infra host

@@ -35,9 +35,19 @@ Host roles:
 - **project production host** — runs the deployable service of exactly one
   project for real users. It is not a development environment, and it does not
   carry a second project's work without an explicit decision.
+- **service host** — carries the deployable services of more than one project
+  for real users, each isolated from the others under its own project-scoped
+  service identity. It is the role a host takes when the operator's direction
+  is that services live on service hosts and the development host develops. A
+  host that gains a second project changes role from `project production host`
+  to `service host`; that change is recorded, never drifted into.
 - **shared service host** — backs one or more projects with a database, queue,
   proxy, or comparable dependency.
 - **runner host** — hosts CI runners and deployment working directories.
+
+`project production host` and `service host` are both **service hosts**: they
+serve real users rather than develop, and every rule below that says "service
+host" applies to both.
 
 Rules:
 
@@ -45,25 +55,102 @@ Rules:
   role, owner, purpose, and lifecycle, and that adds it to the private
   operations inventory. A host without a declared role is not covered by this
   policy, and agent work is not allowed on it.
-- Production hosts are deployed to, not developed on: no source checkout under
-  a user workspace, no interactive agent session, no editing of running code.
+- **The development host carries no service reachable from outside the
+  development plane.** It terminates no public entry point, and it binds no
+  non-loopback address in order to serve a real user. A service found doing so
+  is debt to be worked off under the migration rules below, not an exception to
+  this one. This is what makes the two kinds of host mutually exclusive rather
+  than merely different in emphasis.
+- Service hosts are deployed to, not developed on: no source checkout under a
+  user workspace, no interactive agent session, no editing of running code.
   Changes reach them only as an artifact built from a merged revision of the
   protected default branch.
-- Services on a production host run under the host's service manager as a
-  dedicated, non-login system identity, never as the interactive development
-  account and never as an unmanaged foreground process.
-- Internal service ports on a production host bind to loopback and are
-  declared with that host's role. The development port registry governs the
-  development host, not the fleet.
+- **A service identity has the scope of one project** — not one process, and
+  not the whole host. A project's processes share one identity; two projects
+  never do. The identity is a system account with no login shell, no password,
+  no sudo, and no shared group membership, with a home under that project's
+  service root; it runs the project's processes under the host's service
+  manager, never as the interactive development account and never as an
+  unmanaged foreground process. Sharing one identity across projects makes
+  every credential file that ownership and mode protect readable by every
+  service on the host, so a single defect in one project yields every other
+  project's production credentials with no privilege escalation and no lateral
+  movement. A host's service identity count therefore follows its project
+  count.
+- Internal service ports on a service host bind to loopback and are declared
+  with that host's role. Each host owns the registry of the fixed ports it
+  allocates, and those pools are disjoint: a port number means the same thing on
+  every host, and no two hosts can silently collide. The development port
+  registry governs the development host, not the fleet. A port inherited from a
+  host being migrated away from may be kept as a recorded exception; a new
+  service never copies such an exception.
 - Only a service's public entry point may bind a non-loopback address. Each
   such exposure — firewall rule, cloud security group, reverse proxy, TLS
   termination — is an explicit security decision recorded with the host.
-- Until a new production host passes the project's acceptance checks, the
+- **Changing an exposure is decided from observed traffic, never from which
+  ports are listening.** A service bound to a non-loopback address is not proof
+  that anything uses it, and a service with nothing listening is not proof that
+  it is dead: an on-demand service behind a permanent entry point looks exactly
+  like an abandoned one. Before an exposure is closed, an entry point is moved,
+  or a service is retired, its actual use is observed and the observation is
+  recorded. Where observing it is not possible, the service is treated as in
+  use.
+- **Every host belongs to exactly one trust plane.** The *development plane* is
+  a private overlay carrying machine-to-machine access between the development
+  host and the hosts that run agent or CI work; joining it is a recorded
+  decision, not something fleet membership implies. The *service plane* is
+  public SSH with public key authentication only, with the cloud firewall
+  restricted to known sources. A service host does not join the development
+  plane, because that would make production reachability depend on a
+  third-party control plane and a personal account. Password authentication is
+  disabled on every host, and every management interface binds loopback or the
+  private plane.
+- **The governance release unit is installed where agents and review run.** It
+  is installed on the development host and on runner hosts that adjudicate
+  review; a service host receives only its projects' deployment artifacts.
+  Installing rules that constrain agent sessions on a host that runs no agent
+  session adds attack surface without adding control.
+- **Migration is a contract, not an improvisation.** A service moves to a
+  service host only when all of these hold: its deployment assets are versioned
+  in the project repository; it has an executable acceptance check whose result
+  is recorded with the build identity, environment, and timestamp; the previous
+  deployment keeps running until the new one passes that check; and switching
+  traffic and retiring the previous instance are two separate steps, so the
+  rollback path is never lost in the step that proves the new path. Moving a
+  public entry point is one deliberate, canaried change, never a side effect of
+  moving a service.
+- **Migration is triggered by work, not by a schedule.** A new service is
+  deployed to a service host directly; an existing service moves when it is
+  next changed. The first batch is the set of services that bind a non-loopback
+  address with no tunnel in front of them: they have neither a reason to be on
+  the development host nor a recorded exposure decision. No batch table is kept
+  after that, because a list that is not derived from a criterion goes stale.
+- **Access material lives in one encrypted inventory held outside version
+  control**, encrypted to a key the operator alone holds. It records hosts,
+  roles, owners, access paths, data-source pointers, entry-point secrets, and,
+  for each project, where its environment file lives; it holds secrets
+  themselves only where no indirection is possible. The map of the fleet is not
+  published alongside the rules for it. Plaintext credentials are migrated
+  entry by entry as the service they belong to is touched, never in one sweep
+  that breaks every dependent at once.
+- **CI runners are part of the development host role and stay there.** Runners
+  are consumers of the development flow, not user-facing services, and a
+  service host's restricted egress makes it a poor runner host. Converting them
+  to one-job-per-runner instances is deferred.
+- Until a new service host passes the project's acceptance checks, the
   previous host and the previous deployment stay available as the rollback
   path. A migration never makes the old host unrecoverable in the same step.
 - Changing a host's role, moving a public entry point, and retiring a host are
   deliberate changes: they carry the same evidence and review requirements as a
   code change and are never the side effect of a deployment command.
+
+**Enforcement.** Most of this section is a convention: it is enforced by
+review, not by automation. The checks that do exist — port registry presence
+and integrity, workspace and worktree lifecycle, the installer's managed
+copies, and the managed Git hooks — are the only rules here that fail on their
+own. A rule in this section without a check is still binding, but nothing will
+stop a violation, so the operator is the control. Treating a convention as
+automation is the failure this paragraph exists to prevent.
 
 ## Repository Classes
 

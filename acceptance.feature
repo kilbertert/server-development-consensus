@@ -68,3 +68,26 @@ Feature: Layered consensus and AFK governance
       When a commit, merge, or push is attempted
       Then the operation stops with a repository class error
       And the repository is never silently exempted
+
+  Rule: A service host carries services, and the development host carries none
+
+    Scenario: The service host model is present in every installed policy copy
+      Given the consensus source declares a `service host` role and the migration contract
+      When the canonical installer deploys the release unit
+      Then every installed policy copy contains that role and that contract
+      And no installed copy differs from the canonical source
+      And the policy audit reports no drift
+
+    Scenario: A service identity is scoped to one project
+      Given a service host runs one project's processes
+      When its service identity is inspected
+      Then it is a system account with no login shell, no password, no sudo, and no shared group
+      And its environment file is readable by that identity and by no other service identity
+      And no project's credential is reachable by a process belonging to a different project
+
+    Scenario: A move is not complete when the new deployment starts serving
+      Given a service is being moved to a service host
+      When the new deployment passes its acceptance check and takes traffic
+      Then switching traffic and retiring the previous instance are separate steps
+      And the previous deployment stays available until the switch is verified
+      And the exposure was closed from observed traffic rather than from which ports were listening

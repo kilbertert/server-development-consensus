@@ -20,6 +20,9 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B07 | Test fixture repository classified externally governed | A task worktree exists outside the workspace worktree location | A linked worktree placed outside the projects workspace | Run `dev-worktree audit` and `dev-policy-audit` | The worktree location violation is still reported, while server delivery lifecycle and bookkeeping findings are not raised for the external repository | Remove the fixture repository |
 | GOV-B08 | Test fixture repositories with an absent or invalid class value | The managed hooks are installed | One repository with no class recorded, one with an unsupported value | Run the managed hooks and `dev-start` in each fixture | The unset fixture keeps the server-managed rules in force; the invalid fixture stops every operation with a repository class error | Remove the fixture repositories |
 | GOV-B09 | Test fixture repository classified externally governed | The repository carries a local `core.hooksPath` and server delivery metadata | A local hooks path that is not the managed one, plus `serverPolicy.defaultBranch` and `branch.*.serverPolicy*` keys | Run `dev-policy-audit` and then `dev-policy-audit --repair` | Neither run fails the repository, and neither rewrites its hook configuration or its existing delivery metadata | Remove the fixture repository |
+| GOV-B10 | Installer test fixture home | A checkout of the consensus source carrying the `service host` role and the migration contract | The revised canonical source | Run the canonical installer, then the policy audit | That role and that contract appear in the canonical installed copy and in every project-level policy copy; no copy drifts from the canonical source; the version contract check passes | Remove the fixture home |
+| GOV-B11 | Pilot service host carrying exactly one project | The host is reachable and the project's service is running | The project's service identity and its environment file | Inspect the identity, the environment file's ownership and mode, and the host's non-loopback listeners | The identity has no login shell, no password, no sudo and no shared group; the environment file is readable by that identity and root only; the service listens on loopback; the only non-loopback listeners are SSH and the intended public entry point | None (read-only) |
+| GOV-B12 | Service host and development host | A service selected for its first migration under the contract | The service's repository, its acceptance check, and its previous deployment | Move the service, switch traffic, then retire the previous instance as a separate step | Deployment assets are versioned in the repository; the acceptance result is recorded with build identity, environment and timestamp; the previous deployment keeps running until acceptance passes; traffic switch and retirement are separate steps; the exposure decision cites an observed-traffic record | Retire the previous instance only after the switch is verified |
 
 ## Traceability
 
@@ -34,10 +37,18 @@ repository scope that decides which of those rules a repository is subject to.
 | Host boundaries still apply | Host boundaries still apply to an externally governed repository | GOV-B07 |
 | Class fails closed | An unrecorded repository class stays server-managed; an unreadable or invalid repository class fails closed | GOV-B08 |
 | Delivery metadata not maintained | An externally governed repository keeps its own delivery process | GOV-B09 |
+| Service host model installed | The service host model is present in every installed policy copy | GOV-B10 |
+| Service identity scope | A service identity is scoped to one project | GOV-B11 |
+| Migration contract | A move is not complete when the new deployment starts serving | GOV-B12 |
 
 ## Execution Results
 
 Status: passed on `2026-08-28T23:25:32+0800`.
+
+GOV-B10 through GOV-B12 were added with the `service host` model and have not
+been executed yet. GOV-B12 becomes executable when the first service is moved
+under the migration contract; until a case has a recorded result, it is not
+evidence and must not be reported as passed.
 
 - Consensus contract test passed on merge commit
   `19652f60f9732ff7f307d9c6f6e4e3acb7663a1a`; CI run

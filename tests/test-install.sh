@@ -111,6 +111,10 @@ chmod +x "$HOME/.config/git/hooks/pre-commit"
 custom_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
 [ -x "$HOME/.local/bin/dev-worktree" ]
 cmp "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
+[ -x "$HOME/.local/bin/dev-host" ]
+cmp "$base_dir/bin/dev-host" "$HOME/.local/bin/dev-host"
+[ -x "$HOME/.local/bin/hash-tree.sh" ]
+cmp "$base_dir/bin/hash-tree.sh" "$HOME/.local/bin/hash-tree.sh"
 [ "$custom_chain" != "$HOME/.config/git/hooks" ]
 grep -q 'CUSTOM_HOOK_MARKER' "$custom_chain/pre-commit"
 [ ! -e "$custom_chain/pre-push" ]

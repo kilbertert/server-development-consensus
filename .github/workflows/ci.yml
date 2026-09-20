@@ -43,6 +43,9 @@ jobs:
       - name: Server development policy audit tests
         shell: bash
         run: bash tests/test-dev-policy-audit.sh
+      - name: Server development dev-host tests
+        shell: bash
+        run: bash tests/test-dev-host.sh
       - name: Server development installer tests
         shell: sh
         run: sh tests/test-install.sh

@@ -91,3 +91,11 @@ CI run:
   persistence implementation changes in this decision record.
 
 ## Execution Status
+| DH-B01 | Real target with a recorded host key | A project declaration resolves to a recorded host; the recorded key is deliberately wrong | Any read against that target | Run the read | Refused with a host-identity failure; no command output; the host is not contacted | None |
+| DH-B02 | Real or fixture service-class target | Target role is service-class | A file written without `--artifact-sha256` | Run the write | Refused; the message states the artifact identity is the release condition; nothing is transferred | None |
+| DH-B03 | Fixture service-class target | Target role is service-class | A file whose artifact hash does not match the declared one | Run the write with a mismatched artifact identity | Refused; the message reports the actual hash | None |
+| DH-B04 | Fixture host recorded with a non-SSH access method | Host record marks access as `rdp` or equivalent | Any operation | Run the operation | Refused as unsupported without attempting a connection | None |
+| DH-B05 | Fixture declaration | Target names a host absent from the private record | Any operation | Run the operation | Refused; the host is not contacted | None |
+| DH-B06 | Fixture declaration | Declaration file is unreadable or not valid TOML | Any operation | Run the operation | Treated as absent and refused, never silently allowed | Restore the declaration |
+| DH-B07 | Real target on a service host | Deployment steps from the project runbook | A built artifact with a known SHA-256 | Follow backup → transfer → verify → restart | Transfer refused without artifact identity and accepted with it; per-file SHA-256 comparison produced by the tooling rather than by hand | Remove temporary files on the target |
+

@@ -144,6 +144,46 @@ Rules:
   deliberate changes: they carry the same evidence and review requirements as a
   code change and are never the side effect of a deployment command.
 
+- **A host's role is recorded in exactly one machine-readable place.** The
+  concrete inventory lives, as always, in the private operations record; what
+  this rule adds is that it is machine-readable rather than prose, so that a
+  tool can answer "which host am I on and what may it do" without a human
+  reading a table. Two records naming the same host's role is the failure this
+  avoids: they drift, and a reader cannot tell which one is current. The
+  narrative half of a private record — exposure inventories, ingress chains,
+  change and rollback ledgers, credentials locations — stays prose, because a
+  machine-readable file cannot carry the reasoning that makes those useful.
+
+- **A project declares which hosts it reaches, and that declaration is
+  reviewed.** The declaration names targets by logical name and carries the
+  paths that matter; addresses, fingerprints, and credentials stay in the
+  private record. The split is what lets the declaration live in the project
+  repository — reviewed in the same pull request as the change that needs it —
+  without publishing a map of the fleet. A project whose repository another
+  organization governs keeps both halves outside version control.
+
+- **Reaching a host is a fixed operation, not a fresh script.** The form — how
+  to run a command, read a file, copy an artifact — is uniform across hosts;
+  only what happens after arrival belongs to the project. This is what the
+  declaration buys: the three things `ssh` config cannot answer — what a host
+  is, where things belong on it, and what success looks like — become readable
+  instead of being re-derived by hand each time.
+
+- **Identity is asserted before anything reaches a host.** A host whose key
+  does not match its record is unreachable, not merely suspect. A host absent
+  from the record is unreachable as well: an unrecorded machine is not
+  guessed at. This is the same fail-closed shape as an unreadable repository
+  class, and it is the rule that turns "I deployed to the wrong machine" from
+  a thing discovered afterwards into a thing that could not happen.
+
+- **Reaching a service host is not the same as changing one.** Running a
+  command or writing a file on a host that serves users is gated: the written
+  artifact must be identified, and reading is unrestricted. A tool that makes
+  hand-editing production convenient erodes this section rather than serving
+  it. The gate's purpose is to make the discouraged path require a deliberate
+  act, not to make it impossible — the rule it enforces is the one above,
+  that changes reach service hosts as artifacts built from a merged revision.
+
 **Enforcement.** Most of this section is a convention: it is enforced by
 review, not by automation. The checks that do exist — port registry presence
 and integrity, workspace and worktree lifecycle, the installer's managed

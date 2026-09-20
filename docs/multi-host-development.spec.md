@@ -136,6 +136,16 @@ already installed.**
 23. As an agent, I want a machine-readable statement of which host I am on
     and what that host is allowed to do, so that I can refuse work that
     belongs on a different host instead of guessing.
+
+    *Implemented 2026-09-20.* The statement is the host half of a
+    `dev-host`-read declaration: a registry outside version control holding
+    each host's role, trust plane, owner, access method, and host public key,
+    one record per host. The project half names targets by logical name and
+    lives in the project repository. The rules this produced are in the
+    baseline, `Host Fleet And Multi-Host Development`; this note records that
+    the story is satisfied, not a second source of rules. It is a convention,
+    not a check — the policy audit does not yet inspect the registry, so
+    nothing fails on its own if a host stops being recorded.
 24. As an agent, I want service hosts to be declared off-limits for
     development, so that I do not edit running code because it was the
     convenient place to fix it.

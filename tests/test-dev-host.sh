@@ -202,6 +202,15 @@ untouched "T4b"
 echo
 echo "== 未登记 / 声明不可读 -> fail-closed =="
 
+# T4c 已退役目标的拒绝理由必须是"状态",不是"缺公钥" ——
+#      更根本、更可操作的原因要先说话,否则用户被指向错误方向。
+reset_log
+if grep -q '记录状态' "$tmp/err"; then
+  ok "T4c 退役目标的拒绝理由为生命周期状态"
+else
+  bad "T4c 退役目标未给出状态理由:$(head -1 "$tmp/err")"
+fi
+
 # T5 未登记主机
 reset_log
 rc_is 65 "T5 未登记主机应报错" -- "$DEV_HOST" read nonexistent /x

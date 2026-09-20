@@ -119,9 +119,20 @@ def resolve(target):
         fail('主机 %s 未登记于 %s' % (hostname, registry_path()))
     if not h.get('role'):
         fail('主机 %s 未记录角色,按未登记处理' % hostname)
-    # 只有 SSH 目标才要求主机公钥;非 SSH 目标(如 rdp)由 load_target 拒绝,
-    # 这里若先报"缺公钥"会把真正的原因盖掉。
-    if (h.get('access') or 'ssh') == 'ssh' and not h.get('hostkey'):
+    # 判定顺序:先访问方式,再生命周期,最后才是身份断言所需材料。
+    # 更根本、更可操作的原因先说话 —— 否则一个已退役或非 ssh 的目标
+    # 会收到"缺主机公钥"这种不相干的理由,把真正的原因盖掉。
+    if (h.get('access') or 'ssh') != 'ssh':
+        sys.stderr.write(
+            'dev-host: 拒绝 — %s 的访问方式为 %s,本工具不覆盖,不尝试连接\n'
+            % (hostname, h['access']))
+        sys.exit(77)
+    if (h.get('status') or 'active') != 'active':
+        sys.stderr.write(
+            'dev-host: 拒绝 — %s 的记录状态为 %s,不是活动目标\n'
+            % (hostname, h['status']))
+        sys.exit(77)
+    if not h.get('hostkey'):
         fail('主机 %s 未记录主机公钥,无法做身份断言' % hostname)
     out = {
         'TARGET': target,
@@ -171,15 +182,8 @@ load_target() {
   _out=$(cfg resolve "$1") || exit $?
   eval "$_out"
 
-  # 先判访问方式,再判状态:前者是"本工具根本不覆盖",后者是"生命周期已结束"。
-  # 访问方式更根本,也更可操作,先说话。
-  case ${TARGET_ACCESS:-ssh} in
-    ssh) ;;
-    *) deny "$1 的访问方式为 ${TARGET_ACCESS},本工具不覆盖,不尝试连接" ;;
-  esac
-
-  [ "${TARGET_STATUS:-active}" = "active" ] || \
-    deny "$1 的记录状态为 ${TARGET_STATUS},不是活动目标"
+  # 访问方式与生命周期状态已在 resolve 中判定(那里能给出更准确的理由,
+  # 且先于"缺公钥"检查)。此处不再重复,避免两处判定漂移。
 }
 
 is_service_role() {

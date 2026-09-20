@@ -201,8 +201,24 @@ branch_has_verified_merged_pr() {
 # audit until the service migration relocates them. Only linked worktrees
 # (".git" is a file) are checked; the canonical checkout itself belongs at the
 # top level.
+# A self-hosted runner checks code out detached, in its own working directory,
+# for the duration of a job. That is the runner doing its job, not a lifecycle
+# violation: the checkout goes back to a branch when the job ends. Auditing it
+# as a violation made the installer fail at random, depending on whether a job
+# happened to be running. Runner roots are the `_runners/` functional directory
+# and any directory named `_work` beneath it.
+runner_checkout_path() {
+  local target=$1
+  case "$target/" in
+    "$(absolute_path "$HOME/Projects")/_runners/"*) return 0 ;;
+    */_work/*) return 0 ;;
+  esac
+  return 1
+}
+
 worktree_location_note() {
   local path=$1
+  runner_checkout_path "$(absolute_path "$path")" && return 0
   if [[ -f $path/.git ]] &&
      ! worktree_location_allowed "$(absolute_path "$path")" \
        "$(absolute_path "$HOME/Projects")"; then
@@ -230,6 +246,10 @@ audit_worktrees() {
     head=${worktree_heads[$index]}
     branch=${worktree_branches[$index]}
     if [[ $branch == '(detached)' || -z $branch ]]; then
+      if runner_checkout_path "$(absolute_path "$path")"; then
+        printf 'ok worktree path=%q branch=detached state=runner-checkout\n' "$path"
+        continue
+      fi
       printf 'worktree path=%q branch=detached state=detached%s\n' \
         "$path" "$(worktree_location_note "$path")"
       if $counts_lifecycle_issues; then

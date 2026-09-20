@@ -196,4 +196,37 @@ fi
 grep -q 'externally governed' "$tmp/external-retire.out"
 git -C "$HOME/Projects/repo" config --unset serverPolicy.repositoryClass
 
+
+# A self-hosted runner checks code out detached under its own `_work` directory
+# for the duration of a job. That must audit as a runner checkout, not as a
+# lifecycle violation: otherwise the policy audit fails at random whenever a
+# job happens to be running.
+runner_root="$HOME/Projects/_runners/example-runner"
+runner_repo="$runner_root/_work/example/example"
+mkdir -p "$runner_repo"
+git init --initial-branch=main "$runner_repo" >/dev/null
+git -C "$runner_repo" config user.name test
+git -C "$runner_repo" config user.email test@example.com
+printf '%s\n' runner >"$runner_repo/file.txt"
+git -C "$runner_repo" add file.txt
+git -C "$runner_repo" commit -m runner >/dev/null
+git -C "$runner_repo" checkout --detach >/dev/null 2>&1
+
+if ! "$HOME/.local/bin/dev-worktree" audit --repo "$runner_repo" --default main \
+     >"$tmp/runner-checkout.out" 2>&1; then
+  printf '%s\n' 'FAIL detached runner checkout failed the audit' >&2
+  cat "$tmp/runner-checkout.out" >&2
+  exit 1
+fi
+if ! grep -q 'state=runner-checkout' "$tmp/runner-checkout.out"; then
+  printf '%s\n' 'FAIL detached runner checkout was not recognised as a runner checkout' >&2
+  cat "$tmp/runner-checkout.out" >&2
+  exit 1
+fi
+if ! grep -q 'worktree audit passed' "$tmp/runner-checkout.out"; then
+  printf '%s\n' 'FAIL runner checkout audit did not pass' >&2
+  cat "$tmp/runner-checkout.out" >&2
+  exit 1
+fi
+
 printf '%s\n' 'dev-worktree lifecycle tests passed'

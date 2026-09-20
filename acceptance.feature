@@ -91,3 +91,32 @@ Feature: Layered consensus and AFK governance
       Then switching traffic and retiring the previous instance are separate steps
       And the previous deployment stays available until the switch is verified
       And the exposure was closed from observed traffic rather than from which ports were listening
+
+  Rule: Reaching another host is a fixed, gated operation
+
+    Scenario: A host whose recorded key does not match is unreachable
+      Given a project declares a target that resolves to a recorded host
+      And the recorded host public key is not the one the host presents
+      When any operation is attempted against that target
+      Then the operation is refused before it reaches the host
+      And the refusal names the identity failure rather than a command error
+
+    Scenario: A service host refuses an unidentifiable write
+      Given a target is recorded with a service-class role
+      When a file is written without an artifact identity
+      Then the write is refused
+      And the refusal states what would make it acceptable
+      And nothing is transferred
+
+    Scenario: An unrecorded host is not guessed at
+      Given a target names a host absent from the private record
+      When any operation is attempted against it
+      Then the operation is refused
+      And the host is not contacted
+
+    Scenario: A declaration cannot carry an address into a public repository
+      Given a project declares the hosts it reaches
+      When the declaration is reviewed
+      Then it names targets by logical name only
+      And addresses, fingerprints, and credentials live outside version control
+

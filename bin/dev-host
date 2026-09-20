@@ -1,0 +1,458 @@
+#!/bin/sh
+# dev-host — 够到另一台机器,并把东西搬过去。
+#
+# 声明分两半(同一份 schema):
+#   主机侧(库外 600)   $DEV_HOST_REGISTRY 或 ~/.config/dev-host/hosts.toml
+#        角色 / 信任平面 / 归属 / 访问方式 / 主机公钥
+#   项目侧(进仓库 640) $DEV_HOST_PROJECT 或从 cwd 向上找 .dev-host.toml
+#        本项目用哪些逻辑目标、各自的路径
+#
+# 角色只记在主机侧一处(规格 US #45)。**地址不记录**:由 `ssh -G <alias>` 从
+# ~/.ssh/config 取 —— 避免制造第二个可能与之矛盾的真值来源。
+#
+# 未登记的主机 = 不可用。声明不可读/不可解析 = 视为不存在(fail-closed)。
+#
+# 退出码:0 成功 / 64 用法 / 65 声明问题或未登记主机 / 124 超时
+#         77 拒绝(指纹不符、写入门槛、例外目标)
+#         exec 子命令在成功路径上透传远端退出码
+#
+# ponytail: find 只用远端 `find`,未实现 rg/fd→临时 helper→SFTP 降级链。
+#           本机队所有 Linux 目标都有 find;等真出现没有 find 的主机再加。
+
+set -eu
+
+PROG=dev-host
+
+usage_err() { printf '%s: %s\n' "$PROG" "$1" >&2; usage >&2; exit 64; }
+die()       { printf '%s: %s\n' "$PROG" "$1" >&2; exit 65; }
+deny()      { printf '%s: 拒绝 — %s\n' "$PROG" "$1" >&2; exit 77; }
+
+usage() {
+  cat <<'EOF'
+注意: exec 复用 ssh 的 argv 语义 —— 参数以空格拼接后交给远端 shell 重新解析。
+      需要 shell 语法(管道、重定向、引号)时,传**一个已引用好的**参数:
+        dev-host exec box -- "sh -c 'echo OUT; echo ERR >&2'"
+
+usage:
+  dev-host exec  TARGET [--allow-service-exec] [--timeout SEC] -- CMD [ARG...]
+  dev-host read  TARGET PATH
+  dev-host write TARGET PATH [--if-sha256 HEX] [--artifact-sha256 HEX]   # 内容取自 stdin
+  dev-host ls    TARGET [PATH]
+  dev-host cp    TARGET SRC --dest DEST [--artifact-sha256 HEX]
+  dev-host find  TARGET PATTERN [--path P] [--newer DAYS]
+  dev-host hosts
+  dev-host show  TARGET
+
+退出码: 0 成功 / 64 用法 / 65 声明问题 / 77 拒绝 / 124 超时
+EOF
+}
+
+DEFAULT_TIMEOUT=60
+MAX_READ_BYTES=1048576   # 1 MiB;超出则截断并提示
+
+# ---------- 声明解析(python3 stdlib tomllib,只读) ----------
+
+cfg() {
+  python3 - "$@" <<'PY'
+import os, shlex, sys, tomllib
+
+cmd = sys.argv[1]
+
+def q(v):
+    if isinstance(v, bool):
+        v = 'true' if v else 'false'
+    return shlex.quote(str(v))
+
+def registry_path():
+    p = os.environ.get('DEV_HOST_REGISTRY')
+    if p:
+        return p
+    xdg = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
+    return os.path.join(xdg, 'dev-host', 'hosts.toml')
+
+def load(path):
+    # 不可读或不可解析 -> 视为不存在
+    try:
+        with open(path, 'rb') as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+
+def project_path():
+    p = os.environ.get('DEV_HOST_PROJECT')
+    if p:
+        return p if os.path.exists(p) else None
+    d = os.getcwd()
+    while True:
+        c = os.path.join(d, '.dev-host.toml')
+        if os.path.exists(c):
+            return c
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+def fail(msg):
+    sys.stderr.write('dev-host: %s\n' % msg)
+    sys.exit(65)
+
+def resolve(target):
+    pf = project_path()
+    if pf is None:
+        fail('当前目录向上没有 .dev-host.toml,未登记目标 %s' % target)
+    d = load(pf)
+    if d is None:
+        fail('项目声明不可读或不可解析:%s' % pf)
+    entry = None
+    for t in (d.get('targets') or []):
+        if t.get('name') == target:
+            entry = t
+            break
+    if entry is None:
+        fail('项目声明 %s 中没有目标 %s' % (pf, target))
+    hostname = entry.get('host') or target
+    reg = load(registry_path())
+    if reg is None:
+        fail('主机清单不可读或不存在:%s(未登记的主机不可用)' % registry_path())
+    h = (reg.get('hosts') or {}).get(hostname)
+    if not isinstance(h, dict):
+        fail('主机 %s 未登记于 %s' % (hostname, registry_path()))
+    if not h.get('role'):
+        fail('主机 %s 未记录角色,按未登记处理' % hostname)
+    # 只有 SSH 目标才要求主机公钥;非 SSH 目标(如 rdp)由 load_target 拒绝,
+    # 这里若先报"缺公钥"会把真正的原因盖掉。
+    if (h.get('access') or 'ssh') == 'ssh' and not h.get('hostkey'):
+        fail('主机 %s 未记录主机公钥,无法做身份断言' % hostname)
+    out = {
+        'TARGET': target,
+        'TARGET_HOST': hostname,
+        'TARGET_ROLE': h.get('role', ''),
+        'TARGET_PLANE': h.get('plane', ''),
+        'TARGET_OWNER': h.get('owner', ''),
+        'TARGET_ACCESS': h.get('access', 'ssh'),
+        'TARGET_STATUS': h.get('status', 'active'),
+        'TARGET_SSH_ALIAS': h.get('ssh_alias') or hostname,
+        'TARGET_HOSTKEY': h.get('hostkey', ''),
+        'TARGET_DESC': entry.get('description') or h.get('description') or '',
+        'TARGET_PROJECT_FILE': pf,
+    }
+    for k, v in (entry.get('paths') or {}).items():
+        out['PATH_' + str(k).upper()] = v
+    for k, v in sorted(out.items()):
+        sys.stdout.write('%s=%s\n' % (k, q(v)))
+
+def hostlist():
+    reg = load(registry_path())
+    if reg is None:
+        fail('主机清单不可读或不存在:%s' % registry_path())
+    hosts = reg.get('hosts') or {}
+    if not hosts:
+        sys.stdout.write('(空)\n')
+        return
+    for name in sorted(hosts):
+        h = hosts[name] or {}
+        sys.stdout.write('%-24s %-24s %-10s %-10s %s\n' % (
+            name, h.get('role', '?'), h.get('plane', '?'),
+            h.get('status', 'active'), h.get('owner', '')))
+
+if cmd == 'resolve':
+    resolve(sys.argv[2])
+elif cmd == 'list':
+    hostlist()
+else:
+    sys.stderr.write('dev-host: 内部错误:未知 cfg 命令 %s\n' % cmd)
+    sys.exit(70)
+PY
+}
+
+# ---------- 目标装载与门槛 ----------
+
+load_target() {
+  _out=$(cfg resolve "$1") || exit $?
+  eval "$_out"
+
+  # 先判访问方式,再判状态:前者是"本工具根本不覆盖",后者是"生命周期已结束"。
+  # 访问方式更根本,也更可操作,先说话。
+  case ${TARGET_ACCESS:-ssh} in
+    ssh) ;;
+    *) deny "$1 的访问方式为 ${TARGET_ACCESS},本工具不覆盖,不尝试连接" ;;
+  esac
+
+  [ "${TARGET_STATUS:-active}" = "active" ] || \
+    deny "$1 的记录状态为 ${TARGET_STATUS},不是活动目标"
+}
+
+is_service_role() {
+  case ${TARGET_ROLE:-} in
+    project-production-host|service-host|shared-service-host) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# 身份断言:把已登记的主机公钥写进临时 known_hosts,交给 ssh 做校验。
+# 只写本地临时文件,不向目标机写任何东西。
+prepare_known_hosts() {
+  _kh=$(mktemp -d)
+  KNOWN_HOSTS_DIR=$_kh
+  _h=$(ssh -G "${TARGET_SSH_ALIAS}" 2>/dev/null | awk '$1=="hostname"{print $2; exit}')
+  _p=$(ssh -G "${TARGET_SSH_ALIAS}" 2>/dev/null | awk '$1=="port"{print $2; exit}')
+  [ -n "$_h" ] || { rmdir "$_kh" 2>/dev/null || true; die "无法从 ssh 配置解析 ${TARGET_SSH_ALIAS} 的地址(ssh -G)"; }
+  _p=${_p:-22}
+  if [ "$_p" = "22" ]; then _hn=$_h; else _hn="[$_h]:$_p"; fi
+  : > "$_kh/known_hosts"
+  printf '%s\n' "$TARGET_HOSTKEY" | while IFS= read -r _line; do
+    [ -n "$_line" ] || continue
+    printf '%s %s\n' "$_hn" "$_line"
+  done >> "$_kh/known_hosts"
+  chmod 600 "$_kh/known_hosts"
+  KNOWN_HOSTS=$_kh/known_hosts
+}
+
+run_ssh() {
+  ssh -o BatchMode=yes \
+      -o StrictHostKeyChecking=yes \
+      -o GlobalKnownHostsFile=/dev/null \
+      -o UserKnownHostsFile="$KNOWN_HOSTS" \
+      "$@"
+}
+
+run_scp() {
+  scp -q -o BatchMode=yes \
+      -o StrictHostKeyChecking=yes \
+      -o GlobalKnownHostsFile=/dev/null \
+      -o UserKnownHostsFile="$KNOWN_HOSTS" \
+      "$@"
+}
+
+# exec 的执行体(含超时、真实退出码)
+do_remote() {
+  _t=$1; shift
+  _rc=0
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$_t" ssh -o BatchMode=yes \
+        -o StrictHostKeyChecking=yes \
+        -o GlobalKnownHostsFile=/dev/null \
+        -o UserKnownHostsFile="$KNOWN_HOSTS" \
+        "$@" || _rc=$?
+  else
+    ssh -o BatchMode=yes \
+        -o StrictHostKeyChecking=yes \
+        -o GlobalKnownHostsFile=/dev/null \
+        -o UserKnownHostsFile="$KNOWN_HOSTS" \
+        "$@" || _rc=$?
+  fi
+  return $_rc
+}
+
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+sha256_of_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+KNOWN_HOSTS_DIR=
+cleanup() {
+  [ -n "$KNOWN_HOSTS_DIR" ] && rm -rf "$KNOWN_HOSTS_DIR" 2>/dev/null || true
+  return 0
+}
+trap cleanup EXIT HUP INT TERM
+
+# ---------- 子命令 ----------
+
+cmd_hosts() {
+  cfg list
+}
+
+cmd_show() {
+  [ $# -ge 1 ] || usage_err "show 需要一个 TARGET"
+  load_target "$1"
+  printf 'target      %s\n' "$TARGET"
+  printf 'host        %s\n' "$TARGET_HOST"
+  printf 'ssh alias   %s\n' "$TARGET_SSH_ALIAS"
+  printf 'role        %s\n' "$TARGET_ROLE"
+  printf 'plane       %s\n' "$TARGET_PLANE"
+  printf 'owner       %s\n' "$TARGET_OWNER"
+  printf 'access      %s\n' "$TARGET_ACCESS"
+  printf 'status      %s\n' "$TARGET_STATUS"
+  printf 'writable    %s\n' "$(is_service_role && echo 'no (需产物身份)' || echo 'yes')"
+  printf 'fingerprint '
+  printf '%s\n' "$TARGET_HOSTKEY" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || echo '(无法计算)'
+  env | grep '^PATH_' | sort | sed 's/^/path        /' || true
+}
+
+cmd_exec() {
+  [ $# -ge 2 ] || usage_err "exec 需要 TARGET 与 -- CMD"
+  target=$1; shift
+  allow_service=0
+  timeout_sec=$DEFAULT_TIMEOUT
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --allow-service-exec) allow_service=1; shift ;;
+      --timeout) [ $# -ge 2 ] || usage_err "--timeout 需要参数"; timeout_sec=$2; shift 2 ;;
+      --) shift; break ;;
+      *) usage_err "exec 的未知参数:$1" ;;
+    esac
+  done
+  [ $# -ge 1 ] || usage_err "exec 缺少要执行的命令"
+
+  load_target "$target"
+  if is_service_role && [ "$allow_service" -ne 1 ]; then
+    deny "$target 是服务类主机($TARGET_ROLE)。执行命令请显式加 --allow-service-exec;仅读取请用 read/ls/find"
+  fi
+
+  prepare_known_hosts
+  do_remote "$timeout_sec" "$TARGET_SSH_ALIAS" "$@"
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    printf '%s: 超时(%ss)\n' "$PROG" "$timeout_sec" >&2
+  fi
+  return $rc
+}
+
+cmd_read() {
+  [ $# -ge 2 ] || usage_err "read 需要 TARGET 与 PATH"
+  target=$1; path=$2
+  load_target "$target"
+  prepare_known_hosts
+  # 读操作不加门槛
+  do_remote "$DEFAULT_TIMEOUT" "$TARGET_SSH_ALIAS" \
+    "head -c $MAX_READ_BYTES -- $(shq "$path")"
+}
+
+cmd_ls() {
+  [ $# -ge 1 ] || usage_err "ls 需要 TARGET"
+  target=$1; path=${2:-.}
+  load_target "$target"
+  prepare_known_hosts
+  do_remote "$DEFAULT_TIMEOUT" "$TARGET_SSH_ALIAS" "ls -la -- $(shq "$path")"
+}
+
+cmd_find() {
+  [ $# -ge 2 ] || usage_err "find 需要 TARGET 与 PATTERN"
+  target=$1; pattern=$2; shift 2
+  fpath=.
+  newer=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --path) [ $# -ge 2 ] || usage_err "--path 需要参数"; fpath=$2; shift 2 ;;
+      --newer) [ $# -ge 2 ] || usage_err "--newer 需要参数"; newer=$2; shift 2 ;;
+      *) usage_err "find 的未知参数:$1" ;;
+    esac
+  done
+  load_target "$target"
+  prepare_known_hosts
+  if [ -n "$newer" ]; then
+    remote="find $(shq "$fpath") -name $(shq "$pattern") -newermt $(shq "$newer days ago") -print"
+  else
+    remote="find $(shq "$fpath") -name $(shq "$pattern") -print"
+  fi
+  do_remote "$DEFAULT_TIMEOUT" "$TARGET_SSH_ALIAS" "$remote"
+}
+
+gate_write() {
+  # $1 = 说明, $2 = artifact sha(可为空)
+  _artifact=${2:-}
+  if is_service_role; then
+    if [ -z "$_artifact" ]; then
+      deny "$TARGET 是服务类主机($TARGET_ROLE),$1 被拒。放行条件:给出产物身份 --artifact-sha256 <hex>(策略:变更只能作为产物到达服务主机)"
+    fi
+  fi
+}
+
+cmd_write() {
+  [ $# -ge 2 ] || usage_err "write 需要 TARGET 与 PATH"
+  target=$1; path=$2; shift 2
+  if_sha=
+  artifact=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --if-sha256) [ $# -ge 2 ] || usage_err "--if-sha256 需要参数"; if_sha=$2; shift 2 ;;
+      --artifact-sha256) [ $# -ge 2 ] || usage_err "--artifact-sha256 需要参数"; artifact=$2; shift 2 ;;
+      *) usage_err "write 的未知参数:$1" ;;
+    esac
+  done
+
+  load_target "$target"
+  gate_write "写入 $path" "$artifact"
+
+  payload=$(mktemp)
+  cat > "$payload"
+  actual=$(sha256_of_file "$payload")
+
+  # 产物身份 = 载荷自身的 sha256,不符拒绝
+  if [ -n "$artifact" ] && [ "$artifact" != "$actual" ]; then
+    rm -f "$payload"
+    deny "产物身份不符:声明 $artifact,载荷实际 $actual"
+  fi
+
+  prepare_known_hosts
+
+  # 前置条件:远端当前内容必须等于 --if-sha256
+  if [ -n "$if_sha" ]; then
+    current=$(do_remote "$DEFAULT_TIMEOUT" "$TARGET_SSH_ALIAS" \
+      "sha256sum -- $(shq "$path") 2>/dev/null | awk '{print \$1}'" || true)
+    if [ "$current" != "$if_sha" ]; then
+      rm -f "$payload"
+      deny "前置条件失败:$path 当前为 '${current:-不存在}',期望 $if_sha。请重新读取后重试"
+    fi
+  fi
+
+  _rc=0
+  run_scp "$payload" "$TARGET_SSH_ALIAS:$path" || _rc=$?
+  rm -f "$payload"
+  return $_rc
+}
+
+cmd_cp() {
+  [ $# -ge 1 ] || usage_err "cp 需要 TARGET"
+  target=$1; shift
+  src=
+  dest=
+  artifact=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --dest) [ $# -ge 2 ] || usage_err "--dest 需要参数"; dest=$2; shift 2 ;;
+      --artifact-sha256) [ $# -ge 2 ] || usage_err "--artifact-sha256 需要参数"; artifact=$2; shift 2 ;;
+      -*) usage_err "cp 的未知参数:$1" ;;
+      *) src=$1; shift ;;
+    esac
+  done
+  [ -n "$src" ] || usage_err "cp 需要 SRC"
+  [ -n "$dest" ] || usage_err "cp 需要 --dest DEST"
+  [ -f "$src" ] || die "本地文件不存在:$src"
+
+  load_target "$target"
+  gate_write "上传 $src" "$artifact"
+
+  actual=$(sha256_of_file "$src")
+  if [ -n "$artifact" ] && [ "$artifact" != "$actual" ]; then
+    deny "产物身份不符:声明 $artifact,本地文件实际 $actual"
+  fi
+
+  prepare_known_hosts
+  _rc=0
+  run_scp "$src" "$TARGET_SSH_ALIAS:$dest" || _rc=$?
+  return $_rc
+}
+
+# ---------- 入口 ----------
+
+[ $# -ge 1 ] || usage_err "缺少命令"
+cmd=$1; shift
+
+case $cmd in
+  exec)  cmd_exec  "$@" ;;
+  read)  cmd_read  "$@" ;;
+  write) cmd_write "$@" ;;
+  ls)    cmd_ls    "$@" ;;
+  cp)    cmd_cp    "$@" ;;
+  find)  cmd_find  "$@" ;;
+  hosts) cmd_hosts "$@" ;;
+  show)  cmd_show  "$@" ;;
+  -h|--help|help) usage ;;
+  *) usage_err "未知命令:$cmd" ;;
+esac

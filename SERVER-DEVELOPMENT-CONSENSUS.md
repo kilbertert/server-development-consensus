@@ -581,9 +581,10 @@ For normal work led by Codex or Claude Code:
    push.
 8. The responsible agent waits for the Devin Review result, triages findings
    once, fixes verified defects, and records false positives or accepted risks.
-   Auto-fix may have pushed a commit to the task branch, so fetch and rebase on
-   the remote task branch before continuing; never force-push it. After a
-   material change, the agent requests one re-review with `/devin review` and
+   Auto-fix may have pushed a commit to the task branch, so commit or stash your
+   own work first, then fetch and rebase on the remote task branch; never
+   force-push it, and never discard uncommitted work to make a rebase run. After
+   a material change, the agent requests one re-review with `/devin review` and
    waits for it; the human operator does not manually trigger the review loop.
 9. Execute the QA plan when required and attach its deterministic result
    artifact. A missing, failed, or blocked required case stops the handoff.

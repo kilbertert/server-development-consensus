@@ -110,8 +110,8 @@ branches during migration).
 
 AI review is deliberately separate from the deterministic merge gate. The
 server's three-layer architecture is explicit: **OpenCodeReview CLI +
-delegation** for local development; **PR-Agent** for automatic GitHub PR review;
-and **CI/Ruleset** as the only mandatory quality
+delegation** for local development; **Devin Review** for automatic GitHub PR
+review; and **CI/Ruleset** as the only mandatory quality
 gate. The default development-time review uses local OpenCodeReview: `ocr review`
 inspects a workspace, commit, or branch range as the `claude` user when an
 approved local provider is configured, while the agent integrations use
@@ -120,13 +120,17 @@ a coherent implementation milestone, but must not run after every edit, agent
 turn, or push. It does not use a GitHub Action and does not depend on an OCR
 gateway.
 
-PR-Agent automatically reviews the initial ready PR when it is opened, reopened,
-or marked ready for review. It does not rerun after every push. The responsible
-agent waits for the review, triages findings once, fixes verified defects, and
-records false positives or accepted risks. After a material change, the agent
-requests one re-review with `/review`; the human operator does not manually
-drive the normal review loop. PR-Agent remains advisory, while CI and Rulesets
-remain the only mandatory merge gates.
+Devin Review automatically reviews the initial ready PR when it is opened,
+reopened, or marked ready for review. It does not rerun after every push. The
+responsible agent waits for the review, triages findings once, fixes verified
+defects, and records false positives or accepted risks. Auto-fix may push a fix
+commit to the task branch, so the agent fetches and rebases on the remote task
+branch before continuing, and never force-pushes it. After a material change,
+the agent requests one re-review with `/devin review`; the human operator does
+not manually drive the normal review loop. Devin Review remains advisory, while
+CI and Rulesets remain the only mandatory merge gates. CodeRabbit is the
+rollback path for this layer: it is stood down through its GitHub App
+installation rather than by deleting its configuration.
 
 ClawSweeper is a different system: a self-hosted GitHub PR/issue review queue
 that can publish one durable evidence and merge-readiness report. The
@@ -152,9 +156,9 @@ fills the allowlist and secret files. It does not copy ClawSweeper's worker
 fleet, Cloudflare state, repair, push, close, or automerge infrastructure.
 
 The retired OpenCodeReview workflow is not part of this architecture and must
-not be re-enabled. A local OCR pass, one automatic PR-Agent review, and at most
-one agent-requested re-review after a material change are the default budget for
-one logical milestone.
+not be re-enabled. A local OCR pass, one automatic Devin Review, and at most one
+agent-requested re-review after a material change are the default budget for one
+logical milestone.
 
 Repositories that configure a local `core.hooksPath` are migrated by storing
 the old path in `serverPolicy.chainedHooksPath` and using the global wrappers.

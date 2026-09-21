@@ -25,6 +25,12 @@ private and is not enrolled; it is not a reason to weaken the phase.
    - `genesis-health` — `中英文双语完整版个人体检报告.pdf`, plus third-party
      product material (`郅臻堂*`, `铠迩康*`).
    - `sports-ability` — student physical-test and face-recognition data.
+   - `AI-Ops` — a client's production topology: real production IPs, an Aliyun
+     RDS endpoint, client domains, database, table, Redis stream and ACL names,
+     and tenant identifiers, at HEAD and throughout history. This repository is
+     public today, so this is a live disclosure whose history cannot be
+     recalled: assess it as a recorded exposure with the client rather than as a
+     pre-publication cleanup.
    - Action: drop from the working tree, purge from history
      (`git filter-repo` or BFG), force-push the rewritten history, and keep the
      data in private storage outside the repository. A repository where the
@@ -46,8 +52,14 @@ private and is not enrolled; it is not a reason to weaken the phase.
 1. **Enrolled repositories by observed PR traffic, not by inventory.** Traffic
    in the retired reviewer's logs: `AI-Ops` (44), `sports-ability` (28),
    `server-development-consensus` (20), `newenergy-ai-article-platform` (20),
-   `ds408-visualizer` (6), `genesis-evidence` (2). Enroll that set; the
-   remaining repositories have no review traffic and are added when they do.
+   `ds408-visualizer` (6), `genesis-evidence` (2). The enrolled set is `AI-Ops`,
+   `Auto_Test`, `server-development-consensus` and `genesis-evidence`.
+   `sports-ability` is deliberately not enrolled: it stays private, so the
+   open-source tier does not apply, and enrolling it would send minors' sports
+   and genetic data, a live relay credential and client identifiers to a third
+   party. It keeps CodeRabbit until it clears Phase 0 or is reviewed manually.
+   `newenergy-ai-article-platform` and `ds408-visualizer` are added when their
+   next pull request arrives.
 2. **Trigger mode** stays `When the PR is ready` (reviews on open or
    draft-to-ready; does not re-run per push).
 3. **`Per-PR on-demand spend limit`** — currently `No limit`; set a cap.
@@ -57,9 +69,11 @@ private and is not enrolled; it is not a reason to weaken the phase.
 5. **`REVIEW.md` per enrolled repository.** Note that Devin also reads
    `AGENTS.md`, so each repository's existing governance text is fed to the
    reviewer; confirm that is intended before adding review-specific rules.
-6. **Auto-fix** stays off until the replacement is observed working. If enabled,
-   use `Settings > Customization > Pull requests > Responding to bots` →
-   `Selected only` → `devin-ai-integration[bot]`, never `All bots`.
+6. **Auto-fix** is enabled by operator decision, configured as
+   `Settings > Customization > Pull requests > Responding to bots` →
+   `Selected only` → `devin-ai-integration[bot]`, never `All bots`. Because it
+   may push a commit to a task branch, the responsible agent rebases on the
+   remote task branch before continuing and never force-pushes it.
 7. **Verify.** Open a pull request that changes one line of a README, confirm a
    `devin-ai-integration[bot]` review appears, and confirm no other reviewer
    comments.
@@ -71,9 +85,13 @@ private and is not enrolled; it is not a reason to weaken the phase.
    automation depended on it: the installer `bin/`, `lib/` and `policy/`
    directories, the port registry, and the policy audit contain no reference to
    the unit or port 8766.
-2. **CodeRabbit** — the announced sole reviewer cannot coexist with it. Limit or
-   remove the GitHub App installation, then remove the 11 `.coderabbit.yaml`
-   files. This changes
+2. **CodeRabbit** — the announced sole reviewer cannot coexist with it on the
+   enrolled repositories. Stand it down there by dropping those repositories
+   from the GitHub App installation, which is reversible in one act, and leave
+   every `.coderabbit.yaml` file in place for rollback. Disabling the governance
+   repository's own file in this change is the exception, because it is the
+   repository whose test asserts the old arrangement. The remaining
+   repositories keep CodeRabbit until the checkpoint below is met. This changes
    `tests/test-ai-review-policy.py::test_legacy_coderabbit_config_remains_non_incremental`,
    which currently asserts the files exist with `auto_review: enabled`,
    `drafts: "false"`, `auto_incremental_review: "false"` and
@@ -125,3 +143,8 @@ the retained artifact.
   private and became public; verify against the Usage page rather than assuming.
 - Which of the 16 private repositories publish, per Phase 0 outcome.
 - When the retired reviewers are deleted rather than left disabled.
+- The checkpoint that decides whether the remaining repositories are stood down
+  the same way: count the Devin Review findings the operator actually fixed,
+  compare it with CodeRabbit's output on the repositories that kept it, and
+  revert regardless of that count if reports degrade into an explanatory
+  misreport storm.

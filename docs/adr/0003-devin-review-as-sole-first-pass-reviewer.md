@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Devin Review as the Sole First-Pass PR Reviewer
@@ -29,9 +29,18 @@ Devin Review becomes the server's sole first-pass PR reviewer. PR-Agent is
 retired rather than repaired: its only remaining differentiator was that source
 code stayed inside the development plane, and the owner has directed that
 repositories be published, which removes that boundary deliberately rather than
-by accident. CodeRabbit is stood down in the same change so that exactly one
-reviewer holds the slot, because two reviewers on one pull request double the
-triage cost without widening coverage.
+by accident. CodeRabbit is stood down on the enrolled repositories so that
+exactly one reviewer holds the slot, because two reviewers on one pull request
+double the triage cost without widening coverage. It is removed there by
+dropping those repositories from the GitHub App installation (one reversible
+act) while every configuration file stays in place; the remaining repositories
+keep it until the checkpoint recorded in the migration plan is met.
+
+`sports-ability` is outside the enrolled set. It stays private, so the
+open-source tier does not apply to it, and enrolling it would send minors'
+sports and genetic data, a live relay credential and client identifiers to a
+third party. It keeps CodeRabbit until it clears the publication preconditions
+or is reviewed manually.
 
 Repository publication is a recorded decision, not a side effect of the tool
 choice. Every repository may be published, but publication is gated on a
@@ -44,7 +53,10 @@ Review.
 Repositories are enrolled for review by observed pull-request traffic, not by
 inventory size. Review budgets stay advisory: Devin Review findings are
 candidates, CI and the Ruleset remain the only mandatory merge gates, and the
-per-PR spend limit caps automated review spend.
+per-PR spend limit caps automated review spend. Auto-fix is enabled, with
+`devin-ai-integration[bot]` as the only allowlisted bot, so a fix commit may
+arrive on the task branch and the responsible agent rebases on it rather than
+rewriting it.
 
 ## Consequences
 

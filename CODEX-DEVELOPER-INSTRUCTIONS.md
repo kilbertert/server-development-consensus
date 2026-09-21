@@ -59,26 +59,28 @@ branch checked out, use the hosting merge API or UI after the gates pass instead
 of moving or resetting that worktree.
 
 The server's three review layers are fixed: **OpenCodeReview CLI +
-delegation** for local development; **PR-Agent** for automatic GitHub PR review;
-and **CI/Ruleset** as the only mandatory quality
+delegation** for local development; **Devin Review** for automatic GitHub PR
+review; and **CI/Ruleset** as the only mandatory quality
 gate. At a meaningful implementation milestone, run local `ocr review` against
 the workspace, commit, or task branch only with an approved local provider;
 otherwise invoke OpenCodeReview's delegation mode as a bounded second opinion.
 Do not run it after every edit, agent turn, or push. Triage its findings once:
 fix verified defects, explicitly record false positives or accepted risks, and
 do not turn speculative model suggestions into an open-ended repair loop.
-PR-Agent automatically reviews a PR when it is opened, reopened, or marked ready
-for review. It does not rerun after every push. The responsible agent waits for
-the result, triages it once, fixes verified defects, and records false positives
-or accepted risks. After a material change, the agent requests one re-review
-with `/review`; never require the human operator to trigger the normal review
-loop manually.
+Devin Review automatically reviews a PR when it is opened, reopened, or marked
+ready for review. It does not rerun after every push. The responsible agent
+waits for the result, triages it once, fixes verified defects, and records false
+positives or accepted risks. When auto-fix is enabled it may push a fix commit
+to the task branch: fetch and rebase on the remote task branch before
+continuing, and never force-push it. After a material change, the agent requests
+one re-review with `/devin review`; never require the human operator to trigger
+the normal review loop manually.
 A self-hosted ClawSweeper-like service, if adopted, is a separate PR/issue
 evidence reviewer with its own least-privilege GitHub App and queue; installing
 the public App alone is insufficient. It may receive only an explicitly allowed
 PR/repository context, never TEAM-MEMORY, host configuration, logs, or
 credentials; public comments need human approval after redaction. Neither
-PR-Agent nor OCR may be a required merge check. The OpenCodeReview
+Devin Review nor OCR may be a required merge check. The OpenCodeReview
 GitHub Action is retired and must not be re-enabled.
 The self-hosted `review-sentinel/` service remains disabled until it has a
 dedicated Codex executable/home and separately managed App credentials; never

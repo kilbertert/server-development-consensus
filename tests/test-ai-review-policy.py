@@ -22,10 +22,10 @@ def test_open_code_review_github_action_is_not_installed() -> None:
     assert not any("open-code-review" in path.read_text(encoding="utf-8") for path in workflows.glob("*.y*ml"))
 
 
-def test_legacy_coderabbit_config_remains_non_incremental() -> None:
+def test_retired_coderabbit_config_is_preserved_but_disabled() -> None:
     config = load_yaml(CODERABBIT)
     auto_review = config["reviews"]["auto_review"]
-    assert auto_review["enabled"] == "true"
+    assert auto_review["enabled"] == "false"
     assert auto_review["drafts"] == "false"
     assert auto_review["auto_incremental_review"] == "false"
     assert auto_review["labels"] == ["review-ready"]
@@ -44,16 +44,19 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "Run it with an approved local provider, or use its delegation mode" in normalized_policy
     assert "OpenCodeReview's GitHub Action is not part of the server architecture" in normalized_policy
     assert "ClawSweeper is a separate GitHub PR/issue queue and evidence reviewer" in normalized_policy
-    assert "PR-Agent automatically reviews the PR" in normalized_policy
+    assert "Devin Review automatically reviews the PR" in normalized_policy
     assert "opened, reopened, or ready for review" in normalized_policy
     assert "does not rerun after every push" in normalized_policy
     assert "the agent requests one re-review" in normalized_policy
+    assert "one re-review with `/devin review`" in normalized_policy
+    assert "fetch and rebase on the remote task branch" in normalized_policy
+    assert "CodeRabbit is the rollback path" in normalized_policy
     assert "AI review remains advisory" in normalized_policy
     assert "never TEAM-MEMORY, host configuration, logs, or credentials" in normalized_policy
     assert "needs human approval before publication" in normalized_policy
 
     assert "server's three-layer architecture is explicit" in normalized_readme
-    assert "PR-Agent automatically reviews the initial ready PR" in normalized_readme
+    assert "Devin Review automatically reviews the initial ready PR" in normalized_readme
     assert "CI and Rulesets remain the only mandatory merge gates" in normalized_readme
     assert "It does not use a GitHub Action and does not depend on an OCR gateway" in normalized_readme
     assert "delegation mode when one is not" in normalized_readme
@@ -67,11 +70,19 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
 
     assert "run local `ocr review`" in normalized_codex_instructions
     assert "otherwise invoke OpenCodeReview's delegation mode" in normalized_codex_instructions
-    assert "PR-Agent automatically reviews a PR" in normalized_codex_instructions
+    assert "Devin Review automatically reviews a PR" in normalized_codex_instructions
     assert "the agent requests one re-review" in normalized_codex_instructions
+    assert "fetch and rebase on the remote task branch" in normalized_codex_instructions
     assert "do not turn speculative model suggestions into an open-ended repair loop" in normalized_codex_instructions
     assert "public comments need human approval after redaction" in normalized_codex_instructions
-    assert "Neither PR-Agent nor OCR may be a required merge check" in normalized_codex_instructions
+    assert "Neither Devin Review nor OCR may be a required merge check" in normalized_codex_instructions
+
+    # The retired reviewer must not survive as a named layer in any governance
+    # document: a policy that names a component that no longer runs is the
+    # defect this assertion exists to prevent.
+    assert "PR-Agent" not in normalized_policy
+    assert "PR-Agent" not in normalized_readme
+    assert "PR-Agent" not in normalized_codex_instructions
 
 
 def test_engineering_article_release_contract_is_explicit() -> None:

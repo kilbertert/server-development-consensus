@@ -23,6 +23,10 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B10 | Installer test fixture home | A checkout of the consensus source carrying the `service host` role and the migration contract | The revised canonical source | Run the canonical installer, then the policy audit | That role and that contract appear in the canonical installed copy and in every project-level policy copy; no copy drifts from the canonical source; the version contract check passes | Remove the fixture home |
 | GOV-B11 | Pilot service host carrying exactly one project | The host is reachable and the project's service is running | The project's service identity and its environment file | Inspect the identity, the environment file's ownership and mode, and the host's non-loopback listeners | The identity has no login shell, no password, no sudo and no shared group; the environment file is readable by that identity and root only; the service listens on loopback; the only non-loopback listeners are SSH and the intended public entry point | None (read-only) |
 | GOV-B12 | Service host and development host | A service selected for its first migration under the contract | The service's repository, its acceptance check, and its previous deployment | Move the service, switch traffic, then retire the previous instance as a separate step | Deployment assets are versioned in the repository; the acceptance result is recorded with build identity, environment and timestamp; the previous deployment keeps running until acceptance passes; traffic switch and retirement are separate steps; the exposure decision cites an observed-traffic record | Retire the previous instance only after the switch is verified |
+| GOV-B13 | Enrolled repository with an observed PR-traffic record | Devin Review holds the automatic review layer and the repository is enrolled | A pull request opened, then a draft marked ready | Open the pull request, then mark the draft ready | Exactly one Devin Review appears on the ready head; no other automated reviewer comments | None (review artifact retained) |
+| GOV-B14 | Enrolled repository | PR-Agent is disabled and CodeRabbit is stood down for this repository | A pull request opened | Open the pull request | No PR-Agent or CodeRabbit comment appears; the PR-Agent unit, virtualenv and credential directory remain on disk; the CodeRabbit configuration remains in the repository but inactive | None (read-only) |
+| GOV-B15 | Any repository with findings on an open pull request | Devin Review findings exist on the head | The required merge gates | Evaluate the gates | Findings are advisory candidates needing human confirmation; deterministic CI and the Ruleset alone decide the merge | None (read-only) |
+| GOV-B16 | Task branch with auto-fix enabled | A fix commit has been pushed to the remote task branch by auto-fix | A local worktree with uncommitted work on the same branch | Fetch and rebase on the remote task branch, then push | The rebase applies without force-push and the pre-push guard reports no overlap violation | Remove the temporary branch |
 
 ## Traceability
 
@@ -40,6 +44,10 @@ repository scope that decides which of those rules a repository is subject to.
 | Service host model installed | The service host model is present in every installed policy copy | GOV-B10 |
 | Service identity scope | A service identity is scoped to one project | GOV-B11 |
 | Migration contract | A move is not complete when the new deployment starts serving | GOV-B12 |
+| One first-pass reviewer | An enrolled repository receives one automated review | GOV-B13 |
+| Retired reviewers stand down | A retired reviewer is stood down rather than deleted | GOV-B14 |
+| Review remains advisory | Automated review is never a merge gate | GOV-B15 |
+| Auto-fix integration | An auto-fix commit does not strand the task branch | GOV-B16 |
 
 ## Execution Results
 
@@ -49,6 +57,12 @@ GOV-B10 through GOV-B12 were added with the `service host` model and have not
 been executed yet. GOV-B12 becomes executable when the first service is moved
 under the migration contract; until a case has a recorded result, it is not
 evidence and must not be reported as passed.
+
+GOV-B13 through GOV-B16 were added with the Devin Review migration and have not
+been executed yet. GOV-B13 and GOV-B14 become executable on the first pull
+request raised on an enrolled repository after the migration; GOV-B16 requires
+auto-fix to have pushed a commit to a task branch. Until a case has a recorded
+result, it is not evidence and must not be reported as passed.
 
 - Consensus contract test passed on merge commit
   `19652f60f9732ff7f307d9c6f6e4e3acb7663a1a`; CI run
@@ -98,4 +112,3 @@ CI run:
 | DH-B05 | Fixture declaration | Target names a host absent from the private record | Any operation | Run the operation | Refused; the host is not contacted | None |
 | DH-B06 | Fixture declaration | Declaration file is unreadable or not valid TOML | Any operation | Run the operation | Treated as absent and refused, never silently allowed | Restore the declaration |
 | DH-B07 | Real target on a service host | Deployment steps from the project runbook | A built artifact with a known SHA-256 | Follow backup → transfer → verify → restart | Transfer refused without artifact identity and accepted with it; per-file SHA-256 comparison produced by the tooling rather than by hand | Remove temporary files on the target |
-

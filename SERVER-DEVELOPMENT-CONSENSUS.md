@@ -481,7 +481,7 @@ reactivated with `dev-worktree activate PATH`.
      review during the development loop, preferably through delegation so the
      newly opened review context drives the inspection. It does not use a
      GitHub Action and does not depend on an OCR gateway.
-  2. **PR-Agent PR review**: the server's self-hosted GitHub App automatically
+  2. **Devin Review**: the server's Devin Review connection automatically
      reviews a PR when it is opened, reopened, or marked ready for review.
   3. **CI/Ruleset**: deterministic CI and the hosting service's Ruleset are the
      only mandatory quality and merge gates. AI output never becomes an
@@ -493,11 +493,16 @@ reactivated with `dev-worktree activate PATH`.
     or use its delegation mode when no provider is configured. It is advisory
     and must be run at a meaningful milestone, not after every edit or every
     agent turn. It must not invoke the GitHub Action.
-  - PR-Agent is the server's automatic PR advisory reviewer. It reviews the
+  - Devin Review is the server's automatic PR advisory reviewer. It reviews the
     initial ready PR, does not rerun after every push, and never replaces
-    deterministic CI or human triage. After a material change made in response
-    to verified findings, the responsible agent requests one re-review with
-    `/review`; the human operator is not expected to trigger it manually.
+    deterministic CI or human triage. When auto-fix is enabled it may push a fix
+    commit to the task branch, so the responsible agent rebases on the remote
+    task branch before continuing. After a material change made in response to
+    verified findings, the responsible agent requests one re-review with
+    `/devin review`; the human operator is not expected to trigger it manually.
+    CodeRabbit is the rollback path for this layer. It is stood down through the
+    GitHub App installation rather than by deleting its configuration, so
+    restoring it is a deliberate, recorded act.
   - ClawSweeper is a separate GitHub PR/issue queue and evidence reviewer. The
     OpenClaw-hosted instance is not a public service for third-party
     repositories; using it for this server requires a separately deployed and
@@ -512,14 +517,16 @@ reactivated with `dev-worktree activate PATH`.
     disabled until a separately created GitHub App and a dedicated Codex home
     are configured. It must not reuse the interactive `~/.codex` home or a
     credential-embedding wrapper; its App permissions exclude contents write,
-    workflows, administration, merge, push, and autofix operations.
+    workflows, administration, merge, push, and autofix operations. With Devin
+    Review holding the automatic review layer it stays disabled rather than
+    being brought into service.
 - OpenCodeReview's GitHub Action is not part of the server architecture and must
   not be installed or triggered for normal development. Existing legacy action
   files are migration debt and should be removed through focused PRs. The
   `review-ready` label must not trigger OpenCodeReview.
 - AI findings are review candidates, not authoritative verdicts. A human must
-  confirm severity and applicability. A local OCR pass, one automatic PR-Agent
-  review, and at most one re-review are the default budgets for a logical
+  confirm severity and applicability. A local OCR pass, one automatic Devin
+  Review, and at most one re-review are the default budgets for a logical
   milestone; the re-review is allowed after a material change or explicit human
   request. Stop when review cost,
   latency, or noise exceeds likely value.
@@ -569,12 +576,15 @@ For normal work led by Codex or Claude Code:
    or unfamiliar change. Do not run OCR after every turn.
 6. Triage local findings once. Fix confirmed defects, record accepted risks and
    false positives, and do not turn every model suggestion into added complexity.
-7. Commit, push, and open the PR. PR-Agent automatically reviews the PR when it
-   is opened, reopened, or ready for review; it does not rerun after every push.
-8. The responsible agent waits for the PR-Agent result, triages findings once,
-   fixes verified defects, and records false positives or accepted risks. After
-   a material change, the agent requests one re-review with `/review` and waits
-   for it; the human operator does not manually trigger the review loop.
+7. Commit, push, and open the PR. Devin Review automatically reviews the PR when
+   it is opened, reopened, or ready for review; it does not rerun after every
+   push.
+8. The responsible agent waits for the Devin Review result, triages findings
+   once, fixes verified defects, and records false positives or accepted risks.
+   Auto-fix may have pushed a commit to the task branch, so fetch and rebase on
+   the remote task branch before continuing; never force-push it. After a
+   material change, the agent requests one re-review with `/devin review` and
+   waits for it; the human operator does not manually trigger the review loop.
 9. Execute the QA plan when required and attach its deterministic result
    artifact. A missing, failed, or blocked required case stops the handoff.
 10. Wait for deterministic CI and merge only through the hosting service after

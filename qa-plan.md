@@ -110,13 +110,23 @@ check, so CI and the Ruleset decided the merge while the findings stayed
 candidates for a human.
 
 One finding was resolved: the conflict between this plan and `qa-plan.md` was
-fixed in this change. The second is **open**, not triaged: the fork gate on
-`AI-Ops` is a real limitation, it was neither fixed nor recorded as a false
-positive or an accepted risk, and its remedy is the operator's decision. The
-record names it that way rather than reporting a closed triage.
+fixed in this change. The second was triaged and its remedy applied: the fork
+gate on `AI-Ops` was a real limitation, the remedy was to move `verify` back to
+a GitHub-hosted runner, and `kilbertert/AI-Ops#351` did exactly that (merged as
+`48773b7`, `verify` passing on `ubuntu-latest`).
+
+Triage here rests on configuration evidence, not on an observed fork pull
+request: the guard is deleted from the workflow, `verify` runs on
+`ubuntu-latest`, the required check list is unchanged, and the three workflows
+that stay on the self-hosted runner produce no pull-request check. This is
+enough to say the fork path no longer reaches a required gate; it is not an
+observation that forks now pass, and the difference is recorded rather than
+smoothed over.
 
 Not yet observed, recorded rather than implied:
 
+- No fork pull request has been raised against `AI-Ops` since the gate was
+  removed, so the fork path is closed by configuration only.
 - The draft-to-ready trigger path in `GOV-B13`: both pull requests were raised
   ready, so the case is passed on its ready-on-open path only.
 - The no-CodeRabbit half of `GOV-B14` on `Auto_Test` and `genesis-evidence`: no

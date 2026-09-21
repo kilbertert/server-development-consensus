@@ -110,10 +110,12 @@ check, so CI and the Ruleset decided the merge while the findings stayed
 candidates for a human.
 
 One finding was resolved: the conflict between this plan and `qa-plan.md` was
-fixed in this change. The second is **open**, not triaged: the fork gate on
-`AI-Ops` is a real limitation, it was neither fixed nor recorded as a false
-positive or an accepted risk, and its remedy is the operator's decision. The
-record names it that way rather than reporting a closed triage.
+fixed in this change. The second was triaged and fixed: the fork gate on
+`AI-Ops` was a real limitation, its remedy was to move `verify` back to a
+GitHub-hosted runner, and `kilbertert/AI-Ops#351` did exactly that (merged as
+`48773b7`, `verify` passing on `ubuntu-latest`). The three workflows that stay
+on the self-hosted runner produce no pull-request check, so no fork pull request
+reaches a required gate.
 
 Not yet observed, recorded rather than implied:
 

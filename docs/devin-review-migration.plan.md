@@ -91,11 +91,12 @@ private and is not enrolled; it is not a reason to weaken the phase.
    every `.coderabbit.yaml` file in place for rollback. Disabling the governance
    repository's own file in this change is the exception, because it is the
    repository whose test asserts the old arrangement. The remaining
-   repositories keep CodeRabbit until the checkpoint below is met. This changes
-   `tests/test-ai-review-policy.py::test_legacy_coderabbit_config_remains_non_incremental`,
-   which currently asserts the files exist with `auto_review: enabled`,
-   `drafts: "false"`, `auto_incremental_review: "false"` and
-   `labels: ["review-ready"]`.
+   repositories keep CodeRabbit until they are enrolled, which the installation
+   selection reflects rather than a checkpoint. This flipped the governance
+   repository's assertion in `tests/test-ai-review-policy.py` to
+   `test_retired_coderabbit_config_is_preserved_but_disabled`, which now
+   requires `auto_review: enabled: false` while `drafts`,
+   `auto_incremental_review` and `labels: ["review-ready"]` stay as they were.
 3. **`review-sentinel`** — unchanged. It is disabled, and its files and tests
    stay in place; deleting them is a separate decision.
 4. **`ocr review`** — retained as the local, pre-PR development tool. It is not
@@ -103,16 +104,28 @@ private and is not enrolled; it is not a reason to weaken the phase.
 
 ## Phase 3 — Governance change (task branch to pull request)
 
+The migration is one governance change delivered in one pull request:
+[pull request
+#31](https://github.com/kilbertert/server-development-consensus/pull/31) as
+squash commit `ee1062b`. Two follow-ups carried what it should have included —
+the QA record for the first two cases and the `VERSION` bump `1.8.0` that #31
+omitted, in [pull request
+#32](https://github.com/kilbertert/server-development-consensus/pull/32), and the
+correction to the table below in pull request #33. The split is recorded rather
+than tidied away, because it is a defect in how the change was delivered and not
+the shape the phase asks for.
+
 One change, one pull request, deterministic CI. `test-ai-review-policy.py` is
 fail-closed: changing the documentation without changing the assertions fails CI,
 and vice versa.
 
 | File | Change |
 | --- | --- |
-| `SERVER-DEVELOPMENT-CONSENSUS.md` | three-layer architecture (PR-Agent layer); review budgets; Development Review Sequence steps 7 and 8 |
-| `README.md` | three PR-Agent statements including `Neither PR-Agent nor OCR may be a required merge check` |
-| `CODEX-DEVELOPER-INSTRUCTIONS.md` | three PR-Agent statements |
-| `tests/test-ai-review-policy.py` | 8 assertions in `test_review_roles_and_budget_are_explicit_across_governance_files`, plus `test_legacy_coderabbit_config_remains_non_incremental` |
+| `SERVER-DEVELOPMENT-CONSENSUS.md` | three-layer architecture with `Devin Review` in the automatic layer; review budgets; `/devin review` and the auto-fix rebase rule; Development Review Sequence steps 7 and 8 |
+| `README.md` | three review-layer statements including `Devin Review remains advisory` |
+| `CODEX-DEVELOPER-INSTRUCTIONS.md` | three review-layer statements including `Neither Devin Review nor OCR may be a required merge check` |
+| `tests/test-ai-review-policy.py` | 8 rewritten assertions in `test_review_roles_and_budget_are_explicit_across_governance_files`, the fail-closed `PR-Agent` absence assertions, and `test_retired_coderabbit_config_is_preserved_but_disabled` |
+| `.coderabbit.yaml` | the governance repository's own file flipped to `auto_review: enabled: false` |
 | `docs/adr/0003-*` | this decision (promote `proposed` to `accepted` on merge) |
 | `acceptance.feature` | observable scenarios: a PR to an enrolled repository receives exactly one Devin Review; no second reviewer posts; findings remain advisory and never a required check |
 | `qa-plan.md` | executable case with ID, environment, preconditions, ordered actions, observable results and cleanup |
@@ -143,8 +156,10 @@ the retained artifact.
   private and became public; verify against the Usage page rather than assuming.
 - Which of the 16 private repositories publish, per Phase 0 outcome.
 - When the retired reviewers are deleted rather than left disabled.
-- The checkpoint that decides whether the remaining repositories are stood down
-  the same way: count the Devin Review findings the operator actually fixed,
-  compare it with CodeRabbit's output on the repositories that kept it, and
-  revert regardless of that count if reports degrade into an explanatory
-  misreport storm.
+- **Decided on `2026-09-21`:** the canary comparison is dropped. The operator
+  settled the question by reading both reviewers' output directly and judging
+  Devin Review's reports better, so no counted comparison is required before the
+  remaining repositories follow. The remaining repositories keep CodeRabbit
+  until they are enrolled, and the revert tripwire stays in force on its own: if
+  reports degrade into an explanatory misreport storm, the layer is reverted
+  regardless of any count.

@@ -175,6 +175,17 @@ five after a real pull request confirms the required check is enforced.
    `windows-verify` on `AI-Ops` is the check to watch: strict mode lets a slow or
    flaky check stall every merge, so it leaves that list if the first pull
    requests show it.
+
+   One required check is weaker than it reads. On `AI-Ops`, `verify` runs on the
+   repository's self-hosted runner, so the workflow guards it to skip fork pull
+   requests, and GitHub counts a skipped required job as a success: a fork pull
+   request satisfies the Ruleset without the Linux checks ever running. The guard
+   is a security boundary the workflow states in its own comment, not an
+   oversight, and closing it means either moving the job back to a GitHub-hosted
+   runner (abandoned when the account's minutes ran out) or failing fork pull
+   requests closed from a separate required job. The Ruleset is created with the
+   list above regardless: it gates every same-repository pull request, and the
+   fork path is a recorded limitation whose remedy is the operator's decision.
 3. Verify with `gh api repos/kilbertert/<repo>/rulesets` and
    `gh api repos/kilbertert/<repo>/rules/branches/<default>`.
 

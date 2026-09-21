@@ -343,6 +343,48 @@ grep -q "FAIL $external_repo repository class is invalid: company-managed" \
   "$tmp/external-class-invalid.out"
 rm -rf "$external_repo"
 
+# Runner working directories ------------------------------------------------------
+# A self-hosted runner checks code out under `_runners/.../_work/` for the
+# duration of a job, and a deploy checkout is written by a deployment. Neither
+# is a project the installer manages, so their missing delivery metadata is not
+# drift; a repository anywhere else is still held to it.
+runner_repo=$projects/_runners/example-runner/_work/example/example
+deploy_repo=$projects/_runners/example-deploy
+for fixture in "$runner_repo" "$deploy_repo"; do
+  mkdir -p "$fixture"
+  git init --initial-branch=main "$fixture" >/dev/null
+  git -C "$fixture" config user.name test
+  git -C "$fixture" config user.email test@example.com
+  git -C "$fixture" -c core.hooksPath=/dev/null \
+    commit --allow-empty -m fixture >/dev/null
+done
+runner_output=$("$audit" "$projects" 2>&1) || {
+  printf 'FAIL a runner working directory failed the policy audit:\n%s\n' \
+    "$runner_output" >&2
+  exit 1
+}
+grep -q "skip runner working directory $runner_repo " <<<"$runner_output"
+grep -q "skip runner working directory $deploy_repo " <<<"$runner_output"
+if grep -q "FAIL $projects/_runners/" <<<"$runner_output"; then
+  printf 'FAIL a runner working directory was audited as a managed repository:\n%s\n' \
+    "$runner_output" >&2
+  exit 1
+fi
+
+control_repo=$projects/control-no-metadata
+git init --initial-branch=main "$control_repo" >/dev/null
+git -C "$control_repo" config user.name test
+git -C "$control_repo" config user.email test@example.com
+git -C "$control_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m control >/dev/null
+if control_output=$("$audit" "$projects" 2>&1); then
+  printf '%s\n' 'FAIL a project without delivery metadata passed the audit' >&2
+  exit 1
+fi
+grep -q "FAIL $control_repo default-branch expected=main actual=unset" \
+  <<<"$control_output"
+rm -rf "$runner_repo" "$deploy_repo" "$control_repo"
+
 git init --initial-branch=main "$projects/broken" >/dev/null
 printf '%s\n' '[broken' >"$projects/broken/.git/config"
 if "$audit" "$projects" >"$tmp/broken.out" 2>&1; then

@@ -343,6 +343,18 @@ while IFS= read -r -d '' git_path; do
   fi
   dirty=$(printf '%s\n' "$status_output" | awk 'NF { count++ } END { print count + 0 }')
 
+  # A runner working directory and a deploy checkout under the `_runners/`
+  # functional directory are deployment artifacts, not projects: the installer
+  # never manages them, and a job's checkout is created and discarded by the
+  # runner. Their lack of delivery metadata is therefore not drift, and the
+  # managed-repository rules below neither inspect nor repair them. The path is
+  # still reported, so that a checkout cannot hide here unnoticed.
+  if runner_checkout_path "$repo"; then
+    printf 'skip runner working directory %s branch=%s dirty=%s\n' \
+      "$repo" "${branch:-detached}" "$dirty"
+    continue
+  fi
+
   # Repository class. Externally governed repositories keep only the rules that
   # describe this host, so the delivery metadata below is neither inspected nor
   # repaired for them. An unreadable or invalid class is a finding, never an

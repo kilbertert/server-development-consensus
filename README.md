@@ -187,7 +187,11 @@ Run `dev-policy-audit` to inspect every repository or
 `dev-policy-audit --repair` after adding repositories. The repair operation
 records default branches, enables global hooks, and safely chains local hooks.
 The enabled user timer audits drift once per day without automatically changing
-repository state.
+repository state. Self-hosted runner working directories and standby or deploy
+checkouts under `_runners/` are deployment artifacts, not projects: the audit
+reports them as `skip runner working directory` and does not hold them to the
+managed-repository rules, because the installer never manages them and a job
+checkout is created and discarded by the runner.
 
 The installer is intentionally account-specific: run it as `claude` with
 `HOME=/home/claude`. It backs up agent files, Codex config, Git config, global

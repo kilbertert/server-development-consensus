@@ -58,11 +58,46 @@ been executed yet. GOV-B12 becomes executable when the first service is moved
 under the migration contract; until a case has a recorded result, it is not
 evidence and must not be reported as passed.
 
-GOV-B13 through GOV-B16 were added with the Devin Review migration and have not
-been executed yet. GOV-B13 and GOV-B14 become executable on the first pull
-request raised on an enrolled repository after the migration; GOV-B16 requires
-auto-fix to have pushed a commit to a task branch. Until a case has a recorded
+GOV-B13 and GOV-B14 were added with the Devin Review migration and were
+executed on the first pull requests raised on an enrolled repository after the
+migration; their results are recorded below. GOV-B15 stays unexecuted because
+no enrolled repository carries a Ruleset, so the case cannot yet distinguish an
+advisory finding from the absence of a gate. GOV-B16 stays unexecuted because
+auto-fix has not pushed a commit to a task branch. Until a case has a recorded
 result, it is not evidence and must not be reported as passed.
+
+### GOV-B13 and GOV-B14 - one first-pass reviewer, retired reviewers stood down
+
+Executed on `2026-09-21` from the `claude` development host against
+`kilbertert/AI-Ops`, the first enrolled repository to receive a pull request
+after the migration. Two pull requests carry the observation:
+
+- `kilbertert/AI-Ops#349`, head `f6d7ae8f6cdc4efe987526831125bdcc50c22a92`,
+  raised `2026-09-21T08:30:46Z`: one `devin-ai-integration[bot]` review
+  (`COMMENTED`, `2026-09-21T08:32:22Z`), zero `coderabbitai[bot]` comments or
+  reviews.
+- `kilbertert/AI-Ops#350`, head `f91db213c679817d1cff16ff010130d8ba681ae2`,
+  raised `2026-09-21T08:50:35Z`: one `devin-ai-integration[bot]` review
+  (`COMMENTED`, `2026-09-21T08:51:49Z`), zero `coderabbitai[bot]` comments or
+  reviews.
+
+The contrast that makes the result mean something is
+`kilbertert/AI-Ops#345`, raised before the cutover, which carries both Devin
+Review and CodeRabbit on the same pull request.
+
+The stand-down is observed rather than assumed: `pr-agent.service` is
+`disabled` and `inactive`, port 8766 is unbound, and the unit, launcher,
+virtualenv and credential directory remain on disk at
+`~/.config/systemd/user/pr-agent.service`, `~/.local/libexec/pr-agent-start`,
+`~/.local/share/pr-agent/` and `~/.config/pr-agent/`.
+
+Two boundaries of this evidence are recorded rather than implied:
+
+- Both pull requests were raised ready, so the draft-to-ready trigger path in
+  GOV-B13 remains unobserved.
+- The no-CodeRabbit half of GOV-B14 is observed on `AI-Ops` alone. No pull
+  request has been raised on `Auto_Test` or `genesis-evidence` since the
+  cutover, so the same observation does not yet exist there.
 
 - Consensus contract test passed on merge commit
   `19652f60f9732ff7f307d9c6f6e4e3acb7663a1a`; CI run

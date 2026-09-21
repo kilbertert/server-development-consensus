@@ -215,9 +215,9 @@ here as an observation, not fixed in this change. The final reading is
 ### GOV-B18 - a runner working directory is not a managed repository
 
 Executed on `2026-09-21` on the `claude` development host. `dev-policy-audit`
-failed every run with `FAIL /home/claude/Projects/_runners/AI-Ops-runner/_work/
-AI-Ops/AI-Ops default-branch expected=main actual=unset`. That checkout is a
-job's, created by the runner; the installer never manages it, so it never carries
+failed every run with a `default-branch expected=main actual=unset` finding
+against the path `/home/claude/Projects/_runners/AI-Ops-runner/_work/AI-Ops/AI-Ops`.
+That checkout is a job's, created by the runner; the installer never manages it, so it never carries
 `serverPolicy.defaultBranch`, and a rule that reads the hosting service's default
 branch and then demands matching local metadata is not a statement about it.
 `--repair` cannot settle it durably either, because the next job replaces the

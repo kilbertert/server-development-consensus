@@ -136,12 +136,58 @@ reviewer output is a candidate until a human confirms it.
 
 ## Phase 4 — Publication and Rulesets
 
+Status `2026-09-21`: every repository below is already public, so no visibility
+flip remains for them. The Ruleset exists on
+`kilbertert/server-development-consensus` as the canary and reaches the other
+five after a real pull request confirms the required check is enforced.
+
 1. Flip visibility per repository, ordered by Phase 0 completion, one at a time.
+   Met for every repository in the table below except `sports-ability`, which is
+   the only one with a flip still ahead of it.
 2. Enable a Ruleset on each published repository: pull request required, branch
    current before merge, no bypass actors, existing deterministic checks
-   required. This is free for public repositories and is currently unmet on all
-   of them.
-3. Verify with `gh api repos/kilbertert/<repo>/rulesets`.
+   required. This is free for public repositories.
+
+   The applied Ruleset is `protected default branch` on `~DEFAULT_BRANCH` with
+   `bypass_actors: []` and four rules: `deletion`, `non_fast_forward`,
+   `pull_request` with `required_approving_review_count: 0`, and
+   `required_status_checks` with `strict_required_status_checks_policy: true`.
+
+   Two parameters stay off on purpose: `required_review_thread_resolution` and
+   the reviewer's own status check. Either one promotes advisory AI output into a
+   required merge gate, which the policy forbids.
+
+   A required check is a job of a workflow that triggers on `pull_request` for
+   that repository, and nothing else. `agent-*.yml` runs on
+   `pull_request_target` and `architecture-review.yml` runs on a schedule, so
+   neither produces a check on a pull request head, and requiring one blocks
+   merges permanently. Names are matched exactly, including case.
+
+   | Repository | Required checks |
+   | --- | --- |
+   | `server-development-consensus` | `Governance release unit` |
+   | `AI-Ops` | `Workflow policy`, `verify`, `windows-verify` |
+   | `Auto_Test` | `Workflow policy`, `Verify`, `Windows Verify` |
+   | `genesis-evidence` | `Workflow policy`, `quality` |
+   | `newenergy-ai-article-platform` | `build` |
+   | `ds408-visualizer` | `smoke` |
+
+   `windows-verify` on `AI-Ops` is the check to watch: strict mode lets a slow or
+   flaky check stall every merge, so it leaves that list if the first pull
+   requests show it.
+
+   One required check is weaker than it reads. On `AI-Ops`, `verify` runs on the
+   repository's self-hosted runner, so the workflow guards it to skip fork pull
+   requests, and GitHub counts a skipped required job as a success: a fork pull
+   request satisfies the Ruleset without the Linux checks ever running. The guard
+   is a security boundary the workflow states in its own comment, not an
+   oversight, and closing it means either moving the job back to a GitHub-hosted
+   runner (abandoned when the account's minutes ran out) or failing fork pull
+   requests closed from a separate required job. The Ruleset is created with the
+   list above regardless: it gates every same-repository pull request, and the
+   fork path is a recorded limitation whose remedy is the operator's decision.
+3. Verify with `gh api repos/kilbertert/<repo>/rulesets` and
+   `gh api repos/kilbertert/<repo>/rules/branches/<default>`.
 
 ## Phase 5 — Acceptance
 

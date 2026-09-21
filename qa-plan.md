@@ -61,10 +61,10 @@ evidence and must not be reported as passed.
 GOV-B13 and GOV-B14 were added with the Devin Review migration and were
 executed on the first pull requests raised on an enrolled repository after the
 migration; their results are recorded below, with `GOV-B13` passing on its
-ready-on-open path only. GOV-B15 stays unexecuted because no enrolled
-repository carries a Ruleset, so the case cannot yet distinguish an advisory
-finding from the absence of a gate. GOV-B16 stays unexecuted because auto-fix
-has not pushed a commit to a task branch. Until a case has a recorded result,
+ready-on-open path only. GOV-B15 became executable once
+`server-development-consensus` gained the Ruleset that gives an advisory finding
+something to be compared against, and is recorded below. GOV-B16 stays
+unexecuted because auto-fix has not pushed a commit to a task branch. Until a case has a recorded result,
 it is not evidence and must not be reported as passed.
 
 ### GOV-B13 and GOV-B14 - one first-pass reviewer, retired reviewers stood down
@@ -92,6 +92,28 @@ The stand-down is observed rather than assumed: `pr-agent.service` is
 virtualenv and credential directory remain on disk at
 `~/.config/systemd/user/pr-agent.service`, `~/.local/libexec/pr-agent-start`,
 `~/.local/share/pr-agent/` and `~/.config/pr-agent/`.
+
+### GOV-B15 - automated review is never a merge gate
+
+Executed on `2026-09-21` on `kilbertert/server-development-consensus`, which
+carries the Ruleset `protected default branch` on `~DEFAULT_BRANCH` with
+`bypass_actors: []`, `current_user_can_bypass: "never"` and
+`required_status_checks` under `strict_required_status_checks_policy: true`.
+
+Pull request #34 separates the two kinds of signal in its check rollup:
+`Governance release unit` reports `isRequired: true` as a `CheckRun`, while
+`Devin Review` reports `isRequired: false` as a `StatusContext`. Devin Review
+posted two findings on that head, one of them `kind: bug`, and the pull request
+stayed mergeable: the pending advisory check produced `mergeStateStatus:
+UNSTABLE` rather than `BLOCKED`. The deterministic CI job was the only required
+check, so CI and the Ruleset decided the merge while the findings stayed
+candidates for a human.
+
+One finding was resolved: the conflict between this plan and `qa-plan.md` was
+fixed in this change. The second is **open**, not triaged: the fork gate on
+`AI-Ops` is a real limitation, it was neither fixed nor recorded as a false
+positive or an accepted risk, and its remedy is the operator's decision. The
+record names it that way rather than reporting a closed triage.
 
 Not yet observed, recorded rather than implied:
 

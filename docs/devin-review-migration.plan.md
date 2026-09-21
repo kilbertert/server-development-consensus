@@ -91,11 +91,12 @@ private and is not enrolled; it is not a reason to weaken the phase.
    every `.coderabbit.yaml` file in place for rollback. Disabling the governance
    repository's own file in this change is the exception, because it is the
    repository whose test asserts the old arrangement. The remaining
-   repositories keep CodeRabbit until the checkpoint below is met. This changes
-   `tests/test-ai-review-policy.py::test_legacy_coderabbit_config_remains_non_incremental`,
-   which currently asserts the files exist with `auto_review: enabled`,
-   `drafts: "false"`, `auto_incremental_review: "false"` and
-   `labels: ["review-ready"]`.
+   repositories keep CodeRabbit until they are enrolled, which the installation
+   selection reflects rather than a checkpoint. This flipped the governance
+   repository's assertion in `tests/test-ai-review-policy.py` to
+   `test_retired_coderabbit_config_is_preserved_but_disabled`, which now
+   requires `auto_review: enabled: false` while `drafts`,
+   `auto_incremental_review` and `labels: ["review-ready"]` stay as they were.
 3. **`review-sentinel`** — unchanged. It is disabled, and its files and tests
    stay in place; deleting them is a separate decision.
 4. **`ocr review`** — retained as the local, pre-PR development tool. It is not
@@ -103,11 +104,16 @@ private and is not enrolled; it is not a reason to weaken the phase.
 
 ## Phase 3 — Governance change (task branch to pull request)
 
-Delivered in pull request
-[#31](https://github.com/kilbertert/server-development-consensus/pull/31) as
-squash commit `ee1062b`. The QA record for the first two cases and the `VERSION`
-bump `1.8.0` that #31 omitted arrived in pull request
-[#32](https://github.com/kilbertert/server-development-consensus/pull/32).
+The migration is one governance change delivered in one pull request:
+[pull request
+#31](https://github.com/kilbertert/server-development-consensus/pull/31) as
+squash commit `ee1062b`. Two follow-ups carried what it should have included —
+the QA record for the first two cases and the `VERSION` bump `1.8.0` that #31
+omitted, in [pull request
+#32](https://github.com/kilbertert/server-development-consensus/pull/32), and the
+correction to the table below in pull request #33. The split is recorded rather
+than tidied away, because it is a defect in how the change was delivered and not
+the shape the phase asks for.
 
 One change, one pull request, deterministic CI. `test-ai-review-policy.py` is
 fail-closed: changing the documentation without changing the assertions fails CI,

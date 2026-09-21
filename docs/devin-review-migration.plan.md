@@ -137,9 +137,13 @@ reviewer output is a candidate until a human confirms it.
 ## Phase 4 — Publication and Rulesets
 
 Status `2026-09-21`: every repository below is already public, so no visibility
-flip remains for them. The Ruleset exists on
-`kilbertert/server-development-consensus` as the canary and reaches the other
-five after a real pull request confirms the required check is enforced.
+flip remains for them, and `protected default branch` is active on all six. It
+was created on `kilbertert/server-development-consensus` first and validated on
+pull request #34 before the other five followed: that pull request reports
+`isRequired: true` for `Governance release unit` and `isRequired: false` for
+`Devin Review`, and merged with the rules in force. Two decisions remain with
+the operator, and neither is an accepted risk: see the `AI-Ops` fork gate below
+and the duplicate `Auto_Test` Ruleset.
 
 1. Flip visibility per repository, ordered by Phase 0 completion, one at a time.
    Met for every repository in the table below except `sports-ability`, which is
@@ -183,9 +187,14 @@ five after a real pull request confirms the required check is enforced.
    is a security boundary the workflow states in its own comment, not an
    oversight, and closing it means either moving the job back to a GitHub-hosted
    runner (abandoned when the account's minutes ran out) or failing fork pull
-   requests closed from a separate required job. The Ruleset is created with the
+   requests closed from a separate required job. The Ruleset is active with the
    list above regardless: it gates every same-repository pull request, and the
-   fork path is a recorded limitation whose remedy is the operator's decision.
+   fork path is an open limitation whose remedy is the operator's decision.
+
+   `Auto_Test` also carries an older `Require pull requests` Ruleset whose single
+   rule the new one subsumes. Two Rulesets naming the same condition is how two
+   records drift apart, so deleting the older one is recommended and still the
+   operator's call.
 3. Verify with `gh api repos/kilbertert/<repo>/rulesets` and
    `gh api repos/kilbertert/<repo>/rules/branches/<default>`.
 

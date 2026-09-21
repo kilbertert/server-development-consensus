@@ -60,17 +60,19 @@ evidence and must not be reported as passed.
 
 GOV-B13 and GOV-B14 were added with the Devin Review migration and were
 executed on the first pull requests raised on an enrolled repository after the
-migration; their results are recorded below. GOV-B15 stays unexecuted because
-no enrolled repository carries a Ruleset, so the case cannot yet distinguish an
-advisory finding from the absence of a gate. GOV-B16 stays unexecuted because
-auto-fix has not pushed a commit to a task branch. Until a case has a recorded
-result, it is not evidence and must not be reported as passed.
+migration; their results are recorded below, with `GOV-B13` passing on its
+ready-on-open path only. GOV-B15 stays unexecuted because no enrolled
+repository carries a Ruleset, so the case cannot yet distinguish an advisory
+finding from the absence of a gate. GOV-B16 stays unexecuted because auto-fix
+has not pushed a commit to a task branch. Until a case has a recorded result,
+it is not evidence and must not be reported as passed.
 
 ### GOV-B13 and GOV-B14 - one first-pass reviewer, retired reviewers stood down
 
 Executed on `2026-09-21` from the `claude` development host against
 `kilbertert/AI-Ops`, the first enrolled repository to receive a pull request
-after the migration. Two pull requests carry the observation:
+after the migration. `GOV-B14` passed. `GOV-B13` passed on the ready-on-open
+path only. Two pull requests carry the observation:
 
 - `kilbertert/AI-Ops#349`, head `f6d7ae8f6cdc4efe987526831125bdcc50c22a92`,
   raised `2026-09-21T08:30:46Z`: one `devin-ai-integration[bot]` review
@@ -91,13 +93,13 @@ virtualenv and credential directory remain on disk at
 `~/.config/systemd/user/pr-agent.service`, `~/.local/libexec/pr-agent-start`,
 `~/.local/share/pr-agent/` and `~/.config/pr-agent/`.
 
-Two boundaries of this evidence are recorded rather than implied:
+Not yet observed, recorded rather than implied:
 
-- Both pull requests were raised ready, so the draft-to-ready trigger path in
-  GOV-B13 remains unobserved.
-- The no-CodeRabbit half of GOV-B14 is observed on `AI-Ops` alone. No pull
-  request has been raised on `Auto_Test` or `genesis-evidence` since the
-  cutover, so the same observation does not yet exist there.
+- The draft-to-ready trigger path in `GOV-B13`: both pull requests were raised
+  ready, so the case is passed on its ready-on-open path only.
+- The no-CodeRabbit half of `GOV-B14` on `Auto_Test` and `genesis-evidence`: no
+  pull request has been raised there since the cutover, so the same observation
+  does not yet exist outside `AI-Ops`.
 
 - Consensus contract test passed on merge commit
   `19652f60f9732ff7f307d9c6f6e4e3acb7663a1a`; CI run

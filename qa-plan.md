@@ -109,9 +109,11 @@ UNSTABLE` rather than `BLOCKED`. The deterministic CI job was the only required
 check, so CI and the Ruleset decided the merge while the findings stayed
 candidates for a human.
 
-Both findings were triaged: the conflict between this plan and `qa-plan.md` was
-fixed in this change, and the fork gate on `AI-Ops` is recorded in the plan as a
-limitation awaiting the operator's decision rather than as an accepted risk.
+One finding was resolved: the conflict between this plan and `qa-plan.md` was
+fixed in this change. The second is **open**, not triaged: the fork gate on
+`AI-Ops` is a real limitation, it was neither fixed nor recorded as a false
+positive or an accepted risk, and its remedy is the operator's decision. The
+record names it that way rather than reporting a closed triage.
 
 Not yet observed, recorded rather than implied:
 

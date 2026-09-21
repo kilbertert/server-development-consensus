@@ -97,6 +97,28 @@ find_project_git_configs() (
   sort -zu "$configs"
 )
 
+# A self-hosted runner checks code out in its own working directory for the
+# duration of a job, and a standby or deploy checkout is written by a
+# deployment rather than by this host's delivery flow. Both are deployment
+# artifacts, not delivery surfaces: the policy already places them under the
+# `_runners/` functional directory, and the installer never manages them. An
+# audit that holds them to the managed-repository rules fails at random,
+# depending on whether a job happened to be running. The caller passes an
+# absolute path.
+#
+# `_runners/` is the whole test. A bare `*/_work/*` clause used to sit beside
+# it, but every runner root is declared under `_runners/` and every runner's
+# `workFolder` is `_work`, so that clause carried no path the first one did not
+# already carry - while exempting a repository that happened to sit in a `_work`
+# directory anywhere else on the filesystem. The narrower test is the correct
+# one, not merely the safer one.
+runner_checkout_path() {
+  case "$(realpath -m -- "$1")/" in
+    "$(realpath -m -- "${HOME:-}/Projects")/_runners/"*) return 0 ;;
+  esac
+  return 1
+}
+
 default_branch_for_remote() (
   remote_name=${1:-origin}
   configured_default=

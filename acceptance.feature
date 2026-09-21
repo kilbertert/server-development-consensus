@@ -145,3 +145,22 @@ Feature: Layered consensus and AFK governance
       When the responsible agent continues work on that branch
       Then the agent fetches and rebases on the remote task branch before pushing
       And the branch is never force-pushed
+
+  Rule: A delivery surface is retired only after its integration is verified
+
+    Scenario: A merged task branch is retired from the local workspace
+      Given the daily policy audit reports a local task branch as stale
+      When the branch head carries a merged pull request and its tree matches the hosting merge commit
+      Then the branch is retired
+      And a branch without a verified merge is reported rather than deleted
+      And remote branch deletion and local branch deletion are separate, reported operations
+
+  Rule: A deployment artifact is not a delivery surface
+
+    Scenario: A runner working directory is not a managed repository
+      Given a self-hosted runner checks code out under the `_runners/` functional directory
+      When the policy audit scans the projects root
+      Then the checkout is reported as a runner working directory
+      And it is not held to the managed-repository delivery metadata rules
+      And a checkout a job reclaims mid-audit is skipped rather than reported as an inspection failure
+      And a repository outside `_runners/` is still held to those rules, including one in a `_work` directory

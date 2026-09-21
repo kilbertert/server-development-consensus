@@ -343,6 +343,84 @@ grep -q "FAIL $external_repo repository class is invalid: company-managed" \
   "$tmp/external-class-invalid.out"
 rm -rf "$external_repo"
 
+# Runner working directories ------------------------------------------------------
+# A self-hosted runner checks code out under `_runners/.../_work/` for the
+# duration of a job, and a deploy checkout is written by a deployment. Neither
+# is a project the installer manages, so their missing delivery metadata is not
+# drift; a repository anywhere else is still held to it.
+runner_repo=$projects/_runners/example-runner/_work/example/example
+deploy_repo=$projects/_runners/example-deploy
+for fixture in "$runner_repo" "$deploy_repo"; do
+  mkdir -p "$fixture"
+  git init --initial-branch=main "$fixture" >/dev/null
+  git -C "$fixture" config user.name test
+  git -C "$fixture" config user.email test@example.com
+  git -C "$fixture" -c core.hooksPath=/dev/null \
+    commit --allow-empty -m fixture >/dev/null
+done
+runner_output=$("$audit" "$projects" 2>&1) || {
+  printf 'FAIL a runner working directory failed the policy audit:\n%s\n' \
+    "$runner_output" >&2
+  exit 1
+}
+grep -q "skip runner working directory $runner_repo " <<<"$runner_output"
+grep -q "skip runner working directory $deploy_repo " <<<"$runner_output"
+if grep -q "FAIL $projects/_runners/" <<<"$runner_output"; then
+  printf 'FAIL a runner working directory was audited as a managed repository:\n%s\n' \
+    "$runner_output" >&2
+  exit 1
+fi
+
+# A job may reclaim its checkout after the inventory was taken. A deployment
+# artifact whose Git state cannot be read is still not an inspection failure.
+rm -rf "$runner_repo"
+mkdir -p "$runner_repo/.git"
+printf '%s\n' '[broken' >"$runner_repo/.git/config"
+vanished_output=$("$audit" "$projects" 2>&1) || {
+  printf 'FAIL an unreadable runner working directory failed the policy audit:\n%s\n' \
+    "$vanished_output" >&2
+  exit 1
+}
+grep -q "skip runner working directory $runner_repo " <<<"$vanished_output"
+if grep -q "FAIL $runner_repo " <<<"$vanished_output"; then
+  printf 'FAIL an unreadable runner working directory was reported as a failure:\n%s\n' \
+    "$vanished_output" >&2
+  exit 1
+fi
+rm -rf "$deploy_repo"
+
+# The exemption is `_runners/`, not the directory name `_work`. A repository
+# that merely sits in a `_work` directory outside `_runners/` is still a
+# project and must still be audited.
+nested_repo=$projects/customer/_work/api
+mkdir -p "$nested_repo"
+git init --initial-branch=main "$nested_repo" >/dev/null
+git -C "$nested_repo" config user.name test
+git -C "$nested_repo" config user.email test@example.com
+git -C "$nested_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m nested >/dev/null
+if nested_output=$("$audit" "$projects" 2>&1); then
+  printf '%s\n' 'FAIL a repository in a _work directory outside _runners/ passed the audit' >&2
+  exit 1
+fi
+grep -q "FAIL $nested_repo default-branch expected=main actual=unset" \
+  <<<"$nested_output"
+rm -rf "$projects/customer"
+
+control_repo=$projects/control-no-metadata
+git init --initial-branch=main "$control_repo" >/dev/null
+git -C "$control_repo" config user.name test
+git -C "$control_repo" config user.email test@example.com
+git -C "$control_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m control >/dev/null
+if control_output=$("$audit" "$projects" 2>&1); then
+  printf '%s\n' 'FAIL a project without delivery metadata passed the audit' >&2
+  exit 1
+fi
+grep -q "FAIL $control_repo default-branch expected=main actual=unset" \
+  <<<"$control_output"
+rm -rf "$runner_repo" "$deploy_repo" "$control_repo"
+
 git init --initial-branch=main "$projects/broken" >/dev/null
 printf '%s\n' '[broken' >"$projects/broken/.git/config"
 if "$audit" "$projects" >"$tmp/broken.out" 2>&1; then

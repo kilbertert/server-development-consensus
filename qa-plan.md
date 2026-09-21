@@ -27,6 +27,8 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B14 | Enrolled repository | PR-Agent is disabled and CodeRabbit is stood down for this repository | A pull request opened | Open the pull request | No PR-Agent or CodeRabbit comment appears; the PR-Agent unit, virtualenv and credential directory remain on disk; the CodeRabbit configuration remains in the repository but inactive | None (read-only) |
 | GOV-B15 | Any repository with findings on an open pull request | Devin Review findings exist on the head | The required merge gates | Evaluate the gates | Findings are advisory candidates needing human confirmation; deterministic CI and the Ruleset alone decide the merge | None (read-only) |
 | GOV-B16 | Task branch with auto-fix enabled | Auto-fix has pushed a fix commit to the remote task branch; the local worktree holds uncommitted work | An uncommitted change on the task branch | Commit the work, then fetch and rebase on the remote task branch, then push | The rebase runs only once the tree is clean, the fix commit is integrated, nothing is force-pushed, and no uncommitted work is discarded to make the rebase run | Remove the temporary branch |
+| GOV-B17 | Development host workspace with a policy audit reporting stale branches | The audit reports one or more local task branches as `upstream_gone` or `integrated_not_retired` | Local task branches across the scanned repositories | For each branch, verify the head carries a merged pull request and that the branch tree matches its hosting merge commit, then retire the local branch, and the remote ref where one still exists | No branch is retired without a verified merge; the audit then reports `stale_branches=0`; remote ref deletion and local branch deletion are reported as separate operations | None (retirement is the operation) |
+| GOV-B18 | Development host with a self-hosted runner | A job checkout exists under `_runners/<runner>/_work/` and a deploy checkout exists under `_runners/`, neither carrying delivery metadata; one runner checkout is unreadable; two controls sit outside `_runners/` | The runner, deploy and unreadable fixtures in `tests/test-dev-policy-audit.sh`, plus a repository in a `_work` directory and a project with no metadata, both outside `_runners/` | Run `dev-policy-audit` over the projects root | All `_runners/` artifacts are reported as `skip runner working directory` and none fails, including the unreadable one, while both controls still fail with `default-branch expected=main actual=unset` | Remove the fixture repositories |
 
 ## Traceability
 
@@ -48,6 +50,8 @@ repository scope that decides which of those rules a repository is subject to.
 | Retired reviewers stand down | A retired reviewer is stood down rather than deleted | GOV-B14 |
 | Review remains advisory | Automated review is never a merge gate | GOV-B15 |
 | Auto-fix integration | An auto-fix commit does not strand the task branch | GOV-B16 |
+| Stale delivery surface retired | A merged task branch is retired from the local workspace | GOV-B17 |
+| Deployment artifacts are not projects | A runner working directory is not a managed repository | GOV-B18 |
 
 ## Execution Results
 
@@ -66,6 +70,12 @@ ready-on-open path only. GOV-B15 became executable once
 something to be compared against, and is recorded below. GOV-B16 stays
 unexecuted because auto-fix has not pushed a commit to a task branch. Until a case has a recorded result,
 it is not evidence and must not be reported as passed.
+
+GOV-B17 was added with the first full delivery-surface sweep and was executed
+on that sweep; GOV-B18 was added with the audit fix that sweep produced and was
+executed as the case's fixtures. Both results are recorded below. GOV-B17 is
+executed again whenever the daily audit reports a stale branch; the result below
+records the sweep that cleared every finding, not a standing state.
 
 ### GOV-B13 and GOV-B14 - one first-pass reviewer, retired reviewers stood down
 
@@ -165,6 +175,106 @@ GitHub-only command. The repository's full local check set passed on commit
 `ed760d4`. The authoritative result is this change's `Governance release unit`
 CI run:
 [35353503061](https://github.com/kilbertert/server-development-consensus/actions/runs/35353503061).
+
+### GOV-B17 - stale task branches retired after verified integration
+
+Executed on `2026-09-21` on the `claude` development host. The audit reported
+`stale_branches=16` across six repositories: `RedInk` 3, `afk-bootstrap` 3,
+`genesis-evidence` 6, `sports-ability` 2, `borderless-business-days` 1 and
+`ds408-visualizer` 1. An earlier pass the same day had cleared the seven
+`[gone]` branches in `AI-Ops` under the same check.
+
+Every branch was verified before deletion:
+
+- the head carries a **merged** pull request
+  (`gh api repos/<slug>/commits/<sha>/pulls`);
+- the hosting merge commit is an ancestor of `origin/<default>`;
+- `git diff <branch-tip> <merge-commit>` is empty, so the branch tree is the
+  tree the hosting service merged. Fifteen of the sixteen were byte-identical;
+  `RedInk feat/provider-psydo-image` differed by a `CLAUDE.md` that the merge
+  commit inherited from the base branch, so the difference is content the branch
+  did not author and did not lose.
+
+Result: 23 local branches retired in one day (7 in `AI-Ops`, then 16 across the
+six). Six of the 16 still had a live remote ref (`RedInk` ×3, `genesis-evidence`
+×3), each confirmed identical to the local tip, and those were deleted as a
+separate, separately reported operation. No worktree was involved: every
+affected repository had only its canonical checkout. Nothing was pushed.
+
+The reading is a moving one, and this record keeps it so. While the audit fix in
+`GOV-B18` was being prepared, a concurrent AFK run merged `AI-Ops`
+`chore/prd-run-identifies-its-sub-issue` (PR #352, merge `c59105b`) and deleted
+its remote, so the audit reported it. It was verified by the same three checks
+and retired; its task worktree was live on a different branch (`#347` open) and
+was left alone. A linked worktree contributes its shared `refs/heads` to the
+scan, so that one branch read as `stale_branches=2`, once under `AI-Ops` and
+once under `.worktrees/AI-Ops-prd-325-merge`. That double reading is recorded
+here as an observation, not fixed in this change.
+
+The reading kept moving, as the record above says it would. While this change was
+under review, the concurrent AFK run's task branch `agent/prd-325-prd-sql` was
+merged (PR #347, merge `12d0818`) and its remote deleted, so the audit reported
+`stale_branches=2` again — the same branch under `AI-Ops` and under its linked
+worktree, which is the double reading above. Its worktree was still live on a
+different branch, so it was left alone; the branch itself passed the same three
+checks (merged PR, merge commit an ancestor of `origin/main`, empty tree diff)
+and was retired. The final reading after the fix and this second sweep is
+`failures=0 repaired=0 stale_branches=0`.
+
+### GOV-B18 - a runner working directory is not a managed repository
+
+Executed on `2026-09-21` on the `claude` development host. `dev-policy-audit`
+failed every run with a `default-branch expected=main actual=unset` finding
+against the path `/home/claude/Projects/_runners/AI-Ops-runner/_work/AI-Ops/AI-Ops`.
+That checkout is a job's, created by the runner; the installer never manages it, so it never carries
+`serverPolicy.defaultBranch`, and a rule that reads the hosting service's default
+branch and then demands matching local metadata is not a statement about it.
+`--repair` cannot settle it durably either, because the next job replaces the
+checkout.
+
+Fix: the runner-checkout predicate, until then private to `dev-worktree`, moved
+into `lib/dev-git-common.sh` so the worktree layer and the delivery-metadata
+layer share one definition, and the audit now reports such paths as
+`skip runner working directory` rather than auditing them.
+
+The adversarial review of this change produced two corrections, both confirmed
+and both fixed here, and both are why the predicate's scope is stated so
+narrowly:
+
+1. **The predicate was a blanket exemption.** Moved code keeps its old bugs, and
+   this one widened as it moved: a bare `*/_work/*` clause sat beside the
+   `_runners/` clause, matching a `_work` directory anywhere on the filesystem.
+   Under the worktree layer that clause governed only a detached-HEAD note; under
+   the audit it grew into an exemption from every managed-repository rule, so
+   `/home/claude/Projects/customer/_work/api` audited as a deployment artifact
+   and its missing delivery metadata went unreported. Measured on the host: the
+   path was reported as `skip runner working directory` and the audit reported
+   `failures=0` for it. Every runner root here declares its working directory
+   under `_runners/` (five `active` units, `workFolder: _work`), so the `_work`
+   clause carried no path the `_runners/` clause did not already carry; it was
+   removed rather than scoped. The same path now fails with
+   `default-branch expected=main actual=unset`, which is the assertion
+   `tests/test-dev-policy-audit.sh` pins.
+2. **The skip ran after the state read.** The predicate was called only once
+   `git branch` and `git status` had succeeded, so a job reclaiming its checkout
+   between the inventory and the read turned a deployment artifact into
+   `FAIL <path> cannot inspect repository state` and incremented `failures`.
+   Measured on the host with an unreadable fixture: old order reported that
+   `FAIL`; new order reports `skip runner working directory` and `failures=0`.
+   The predicate now runs before any repository state command, and the branch
+   field is best-effort.
+
+Evidence: `tests/test-dev-policy-audit.sh` creates a runner job checkout and a
+deploy checkout under `_runners/`, asserts both are reported as skipped and
+neither fails; makes a runner checkout unreadable and asserts it is still
+skipped rather than failed; and creates two controls outside `_runners/` — a
+repository in a `_work` directory and a project with no delivery metadata at all
+— asserting both still fail with `default-branch expected=main actual=unset`.
+So the exemption is scoped rather than a blanket relaxation. On the host the
+audit moved from `failures=1` to `failures=0`.
+`tests/test-dev-worktree.sh` passes unchanged, which is the check that moving
+the predicate left the worktree-layer behaviour alone. The release unit is
+`1.8.1`.
 
 ## Risk Checks
 

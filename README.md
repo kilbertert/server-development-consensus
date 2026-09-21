@@ -124,8 +124,8 @@ Devin Review automatically reviews the initial ready PR when it is opened,
 reopened, or marked ready for review. It does not rerun after every push. The
 responsible agent waits for the review, triages findings once, fixes verified
 defects, and records false positives or accepted risks. Auto-fix may push a fix
-commit to the task branch, so the agent commits or stashes its own work first,
-then fetches and rebases on the remote task branch; it never force-pushes, and
+commit to the task branch, so the agent commits its own work first, then fetches
+and rebases on the remote task branch; it never force-pushes, and
 never discards uncommitted work to make a rebase run. After a material change,
 the agent requests one re-review with `/devin review`; the human operator does
 not manually drive the normal review loop. Devin Review remains advisory, while

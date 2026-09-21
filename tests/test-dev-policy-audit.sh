@@ -371,6 +371,42 @@ if grep -q "FAIL $projects/_runners/" <<<"$runner_output"; then
   exit 1
 fi
 
+# A job may reclaim its checkout after the inventory was taken. A deployment
+# artifact whose Git state cannot be read is still not an inspection failure.
+rm -rf "$runner_repo"
+mkdir -p "$runner_repo/.git"
+printf '%s\n' '[broken' >"$runner_repo/.git/config"
+vanished_output=$("$audit" "$projects" 2>&1) || {
+  printf 'FAIL an unreadable runner working directory failed the policy audit:\n%s\n' \
+    "$vanished_output" >&2
+  exit 1
+}
+grep -q "skip runner working directory $runner_repo " <<<"$vanished_output"
+if grep -q "FAIL $runner_repo " <<<"$vanished_output"; then
+  printf 'FAIL an unreadable runner working directory was reported as a failure:\n%s\n' \
+    "$vanished_output" >&2
+  exit 1
+fi
+rm -rf "$deploy_repo"
+
+# The exemption is `_runners/`, not the directory name `_work`. A repository
+# that merely sits in a `_work` directory outside `_runners/` is still a
+# project and must still be audited.
+nested_repo=$projects/customer/_work/api
+mkdir -p "$nested_repo"
+git init --initial-branch=main "$nested_repo" >/dev/null
+git -C "$nested_repo" config user.name test
+git -C "$nested_repo" config user.email test@example.com
+git -C "$nested_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m nested >/dev/null
+if nested_output=$("$audit" "$projects" 2>&1); then
+  printf '%s\n' 'FAIL a repository in a _work directory outside _runners/ passed the audit' >&2
+  exit 1
+fi
+grep -q "FAIL $nested_repo default-branch expected=main actual=unset" \
+  <<<"$nested_output"
+rm -rf "$projects/customer"
+
 control_repo=$projects/control-no-metadata
 git init --initial-branch=main "$control_repo" >/dev/null
 git -C "$control_repo" config user.name test

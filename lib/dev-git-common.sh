@@ -105,10 +105,16 @@ find_project_git_configs() (
 # audit that holds them to the managed-repository rules fails at random,
 # depending on whether a job happened to be running. The caller passes an
 # absolute path.
+#
+# `_runners/` is the whole test. A bare `*/_work/*` clause used to sit beside
+# it, but every runner root is declared under `_runners/` and every runner's
+# `workFolder` is `_work`, so that clause carried no path the first one did not
+# already carry - while exempting a repository that happened to sit in a `_work`
+# directory anywhere else on the filesystem. The narrower test is the correct
+# one, not merely the safer one.
 runner_checkout_path() {
   case "$(realpath -m -- "$1")/" in
     "$(realpath -m -- "${HOME:-}/Projects")/_runners/"*) return 0 ;;
-    */_work/*) return 0 ;;
   esac
   return 1
 }

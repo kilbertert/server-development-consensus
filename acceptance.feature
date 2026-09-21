@@ -158,8 +158,9 @@ Feature: Layered consensus and AFK governance
   Rule: A deployment artifact is not a delivery surface
 
     Scenario: A runner working directory is not a managed repository
-      Given a self-hosted runner checks code out under its own working directory
+      Given a self-hosted runner checks code out under the `_runners/` functional directory
       When the policy audit scans the projects root
       Then the checkout is reported as a runner working directory
       And it is not held to the managed-repository delivery metadata rules
-      And a repository outside those directories is still held to them
+      And a checkout a job reclaims mid-audit is skipped rather than reported as an inspection failure
+      And a repository outside `_runners/` is still held to those rules, including one in a `_work` directory

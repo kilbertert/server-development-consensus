@@ -335,13 +335,6 @@ done < <(find "$projects_root" -mindepth 1 -maxdepth 1 -type d ! -name '.*' \
 declare -A audited_worktree_roots=()
 while IFS= read -r -d '' git_path; do
   repo=${git_path%/.git}
-  if ! branch=$(git -C "$repo" branch --show-current 2>/dev/null) ||
-     ! status_output=$(git -C "$repo" status --porcelain 2>/dev/null); then
-    printf 'FAIL %s cannot inspect repository state\n' "$repo"
-    failures=$((failures + 1))
-    continue
-  fi
-  dirty=$(printf '%s\n' "$status_output" | awk 'NF { count++ } END { print count + 0 }')
 
   # A runner working directory and a deploy checkout under the `_runners/`
   # functional directory are deployment artifacts, not projects: the installer
@@ -349,11 +342,26 @@ while IFS= read -r -d '' git_path; do
   # runner. Their lack of delivery metadata is therefore not drift, and the
   # managed-repository rules below neither inspect nor repair them. The path is
   # still reported, so that a checkout cannot hide here unnoticed.
+  #
+  # This runs before any repository state command: a job may reclaim its
+  # checkout after the inventory was taken, and a deployment artifact that
+  # disappeared mid-audit must not read as an inspection failure. The branch
+  # and dirty fields are best-effort additions for a checkout that is still
+  # present.
   if runner_checkout_path "$repo"; then
-    printf 'skip runner working directory %s branch=%s dirty=%s\n' \
-      "$repo" "${branch:-detached}" "$dirty"
+    branch=$(git -C "$repo" branch --show-current 2>/dev/null) || branch=
+    printf 'skip runner working directory %s branch=%s\n' \
+      "$repo" "${branch:-detached}"
     continue
   fi
+
+  if ! branch=$(git -C "$repo" branch --show-current 2>/dev/null) ||
+     ! status_output=$(git -C "$repo" status --porcelain 2>/dev/null); then
+    printf 'FAIL %s cannot inspect repository state\n' "$repo"
+    failures=$((failures + 1))
+    continue
+  fi
+  dirty=$(printf '%s\n' "$status_output" | awk 'NF { count++ } END { print count + 0 }')
 
   # Repository class. Externally governed repositories keep only the rules that
   # describe this host, so the delivery metadata below is neither inspected nor

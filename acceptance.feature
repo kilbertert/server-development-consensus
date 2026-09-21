@@ -120,3 +120,28 @@ Feature: Layered consensus and AFK governance
       Then it names targets by logical name only
       And addresses, fingerprints, and credentials live outside version control
 
+  Rule: Exactly one automated reviewer holds the first-pass pull-request slot
+
+    Scenario: An enrolled repository receives one automated review
+      Given a repository is enrolled for Devin Review and has observed pull-request traffic
+      When a pull request is opened or a draft is marked ready for review
+      Then Devin Review posts exactly one review on that head
+      And no other automated reviewer comments on the pull request
+
+    Scenario: A retired reviewer is stood down rather than deleted
+      Given the automatic review layer has been reassigned
+      When an enrolled repository receives a pull request
+      Then no PR-Agent comment appears, while its unit, virtualenv and credential directory stay on disk
+      And CodeRabbit is stood down through its GitHub App installation with its configuration preserved
+
+    Scenario: Automated review is never a merge gate
+      Given a pull request carries Devin Review findings
+      When the required merge gates are evaluated
+      Then the findings remain candidates that need human confirmation
+      And the deterministic CI checks and the Ruleset alone decide the merge
+
+    Scenario: An auto-fix commit does not strand the task branch
+      Given auto-fix is enabled and Devin Review has pushed a fix commit to the task branch
+      When the responsible agent continues work on that branch
+      Then the agent fetches and rebases on the remote task branch before pushing
+      And the branch is never force-pushed

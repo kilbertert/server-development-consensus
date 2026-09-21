@@ -34,7 +34,9 @@ exactly one reviewer holds the slot, because two reviewers on one pull request
 double the triage cost without widening coverage. It is removed there by
 dropping those repositories from the GitHub App installation (one reversible
 act) while every configuration file stays in place; the remaining repositories
-keep it until the checkpoint recorded in the migration plan is met.
+keep it until they are enrolled. The comparison checkpoint that once gated that
+handover was dropped on `2026-09-21`, when the operator settled the question by
+reading both reviewers' output directly instead of counting it.
 
 `sports-ability` is outside the enrolled set. It stays private, so the
 open-source tier does not apply to it, and enrolling it would send minors'

@@ -34,3 +34,20 @@ Add one row in ascending port order before starting a new fixed service.
 Services established before this policy may retain documented host ports
 outside the pool. New services must not copy those exceptions, and existing
 services should be migrated only through a separately verified change.
+
+Add one row in ascending port order when a pre-policy service is first recorded
+or reconciled. These are recorded as they run, never renumbered: the registry
+exists to state the real value an auditor can confirm, and inventing a pool-shaped
+number for a live listener would make it wrong.
+
+| Port | Protocol | Bind address | Project/service | Owner | Purpose | Lifecycle |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 8100 | TCP | 0.0.0.0 | linkedin-lead-gen / API | claude | Lead generation API (basic auth at the application) | active |
+| 8125 | TCP | 127.0.0.1 | genesis-evidence / evidence API | claude | Read-only published-evidence API; deliberate internal edge for Health-Flow, never a user domain | active |
+| 8126 | TCP | 127.0.0.1 | genesis-evidence / review workbench | claude | Paper acquisition, extraction and review workbench (Bearer-gated) | active |
+| 8127 | TCP | 127.0.0.1 | health-flow / user application | claude | Patient report portal and report API; public entry is `genesis-evidence.ranlei.work` | active |
+
+Exposure is not implied by a row. `8100` binds a non-loopback address and is
+recorded debt (see `fleet-ops/FLEET.md` §3.2). The three loopback rows pair with
+`fleet-ops/FLEET.md` §3.2 A, `docs/deployment.md` and `health-flow/ops/README.md`
+for the entry chain and its security decision.

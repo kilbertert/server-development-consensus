@@ -348,17 +348,26 @@ threads as its work queue, but never posts the re-review that would close them.
 #### Canary observation: `kilbertert/AI-Ops#371`
 
 The behavioural evidence, on a real pull request against the gated repository.
-Head `49622e29`, then `4edbfb9` / `86bae95`. Every reading below was taken with
-all three required checks (`Workflow policy`, `verify`, `windows-verify`)
-reporting `pass` and `mergeable: MERGEABLE`, so thread state is the only
-variable:
+The four observations were taken across the branch's life, at these heads, with
+the head recorded per row rather than claimed to be constant:
 
-| Threads resolved | `mergeStateStatus` |
-| --- | --- |
-| 0 of 2 | `BLOCKED` |
-| 1 of 2 | `BLOCKED` |
-| 2 of 2 | `CLEAN` |
-| 1 of 2 (one re-unresolved) | `BLOCKED` |
+| Head | Threads resolved | `mergeStateStatus` |
+| --- | --- | --- |
+| `49622e29` | 0 of 1 | `BLOCKED` |
+| `49622e29` | 1 of 1 → re-unresolved to 0 of 1 | `BLOCKED` |
+| `4edbfb9` | 0 of 2 | `BLOCKED` |
+| `86bae95` | 2 of 2 | `CLEAN` |
+
+Reading the table correctly requires one care: the first two rows are the
+controlled comparison, because they are the **same head with unchanged checks**
+and differ only in thread state, including a re-unresolving that re-blocked a
+pull request whose checks had not moved. The later rows are re-reads after the
+head advanced, so they corroborate the gate but are not single-variable
+comparisons against the first two.
+
+Every reading was taken with all three required checks (`Workflow policy`,
+`verify`, `windows-verify`) reporting `pass` and `mergeable: MERGEABLE`, so no
+pending check can account for any `BLOCKED` in the table.
 
 `gh pr merge --squash` in the blocked states was refused with `the base branch
 policy prohibits the merge`. The second and fourth rows are the ones that matter:

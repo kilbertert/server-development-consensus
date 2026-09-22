@@ -137,8 +137,12 @@ reviewer output is a candidate until a human confirms it.
 ## Phase 4 — Publication and Rulesets
 
 Status `2026-09-21`: every repository below is already public, so no visibility
-flip remains for them, and `protected default branch` is active on all six. It
-was created on `kilbertert/server-development-consensus` first and validated on
+flip remains for them, and `protected default branch` is active on all six that
+the phase then covered. `Health-Flow` was added to the table on `2026-09-22`
+after being found by enumerating public repositories, and carries the Ruleset
+`23809254`; the count in this paragraph is left as the state the phase closed in
+rather than restated, so that the omission stays visible.
+It was created on `kilbertert/server-development-consensus` first and validated on
 pull request #34 before the other five followed: that pull request reports
 `isRequired: true` for `Governance release unit` and `isRequired: false` for
 `Devin Review`, and merged with the rules in force. The two limitations recorded

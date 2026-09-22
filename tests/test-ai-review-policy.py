@@ -55,6 +55,19 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "never TEAM-MEMORY, host configuration, logs, or credentials" in normalized_policy
     assert "needs human approval before publication" in normalized_policy
 
+    # The triage gate. The distinction it rests on must stay stated in all three
+    # governance files, or the gate reads as "AI review became a merge gate".
+    for normalized, name in (
+        (normalized_policy, "policy"),
+        (normalized_readme, "README"),
+        (normalized_codex_instructions, "Codex instructions"),
+    ):
+        assert "conversation resolution" in normalized, name
+        assert "non-required" in normalized or "not required" in normalized, name
+    assert "Triage is gated; the reviewer's check is not" in normalized_policy
+    assert "requires conversation resolution" in normalized_policy
+    assert "posts `/devin review` after addressing findings" in normalized_policy
+
     assert "server's three-layer architecture is explicit" in normalized_readme
     assert "Devin Review automatically reviews the initial ready PR" in normalized_readme
     assert "CI and Rulesets remain the only mandatory merge gates" in normalized_readme

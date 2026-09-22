@@ -154,12 +154,30 @@ Ruleset — were both closed later the same day; neither was an accepted risk.
 
    The applied Ruleset is `protected default branch` on `~DEFAULT_BRANCH` with
    `bypass_actors: []` and four rules: `deletion`, `non_fast_forward`,
-   `pull_request` with `required_approving_review_count: 0`, and
-   `required_status_checks` with `strict_required_status_checks_policy: true`.
+   `pull_request` with `required_approving_review_count: 0` and
+   `required_review_thread_resolution: true`, and `required_status_checks` with
+   `strict_required_status_checks_policy: true`.
 
-   Two parameters stay off on purpose: `required_review_thread_resolution` and
-   the reviewer's own status check. Either one promotes advisory AI output into a
-   required merge gate, which the policy forbids.
+   The reviewer's own status check stays off, and must: it is a `StatusContext`
+   that is pending for the life of the pull request, so requiring it would bind
+   merge availability to a third-party vendor's uptime. This plan originally
+   listed `required_review_thread_resolution` alongside it as a second parameter
+   that "promotes advisory AI output into a required merge gate". That reasoning
+   was too broad, and the measurement showed why. A month of pull requests
+   recorded the outcome of the two parameters being off together: 23 of 24
+   finding-bearing pull requests across four repositories were merged with their
+   threads unresolved, and every merge happened within 268 seconds of the review
+   (`Health-Flow#104`: 84 seconds, head unchanged, three findings, zero replies).
+   The rule "a human must confirm severity" was enforced by nothing.
+
+   Conversation resolution is not the reviewer's check under another name. It
+   gates a *state* — every thread answered — rather than a *service*. An absent
+   reviewer opens no thread and costs no merge availability; any user with write
+   access can resolve a thread, so the reviewer cannot hold a branch hostage;
+   and Devin resolves only the threads it considers addressed, at re-review, so
+   the gate is satisfied by doing the work rather than by waiting. The two
+   parameters differ in exactly the way that matters: one makes a vendor's
+   availability a merge precondition, the other makes an unanswered question one.
 
    A required check is a job of a workflow that triggers on `pull_request` for
    that repository, and nothing else. `agent-*.yml` runs on

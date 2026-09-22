@@ -500,6 +500,11 @@ reactivated with `dev-worktree activate PATH`.
     task branch before continuing. After a material change made in response to
     verified findings, the responsible agent requests one re-review with
     `/devin review`; the human operator is not expected to trigger it manually.
+    That request is also what closes the loop on the triage gate: Devin resolves
+    the threads it considers addressed at re-review, so an agent that fixes
+    findings without posting `/devin review` leaves its own merge blocked. A
+    finding that is triaged as not applicable is answered in the thread and
+    resolved by a human.
     CodeRabbit is the rollback path for this layer. It is stood down through the
     GitHub App installation rather than by deleting its configuration, so
     restoring it is a deliberate, recorded act.
@@ -530,9 +535,25 @@ reactivated with `dev-worktree activate PATH`.
   milestone; the re-review is allowed after a material change or explicit human
   request. Stop when review cost,
   latency, or noise exceeds likely value.
+- **Triage is gated; the reviewer's check is not.** A finding that is never
+  triaged is a finding the server paid for and did not read, and "a human must
+  confirm severity" is a rule nothing enforced. The Ruleset therefore requires
+  conversation resolution, which makes an unresolved thread a merge blocker.
+  This is not the same thing as promoting AI output into a required check:
+  `Devin Review`'s own status check stays non-required, so a Cognition outage
+  costs no merge availability because an absent reviewer opens no thread; and
+  any user with write access can resolve a thread, so the AI cannot hold a
+  branch hostage. The distinction is between a *gate on a state* (every thread
+  answered) and a *gate on a service* (an AI vendor's check must turn green).
+  Resolution is not itself automatic: Devin re-evaluates and resolves the
+  threads it considers addressed only when a re-review is requested, so the
+  responsible agent posts `/devin review` after addressing findings. A finding
+  whose remedy is "not applicable" is answered and the thread resolved by a
+  human, with the reasoning recorded on the pull request — that is triage, not
+  a bypass.
 - Public repositories use an active Ruleset with no bypass actors, require a
-  pull request, require the branch to be current, and require the selected
-  deterministic CI checks.
+  pull request, require the branch to be current, require conversation
+  resolution, and require the selected deterministic CI checks.
 - Private repositories on GitHub Free cannot enable Rulesets or legacy branch
   protection. The same workflow is still mandatory, and the local guard still
   prohibits direct default-branch pushes, but the hosting account must be

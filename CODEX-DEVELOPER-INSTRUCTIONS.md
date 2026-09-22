@@ -75,7 +75,15 @@ to the task branch: commit your own work first, then fetch and rebase on the
 remote task branch; never force-push it, and never discard uncommitted
 work to make a rebase run. After a material change, the agent requests
 one re-review with `/devin review`; never require the human operator to trigger
-the normal review loop manually.
+the normal review loop manually. Posting that request is also what unblocks the
+branch: the Ruleset requires conversation resolution, and Devin resolves the
+threads it considers addressed only at re-review. Fixing findings without
+requesting the re-review leaves your own merge blocked. A finding triaged as not
+applicable is answered in the thread and resolved by a human, with the reasoning
+recorded — that is triage, and it is the only sanctioned way past the gate.
+Devin Review's own status check stays **non-required**, which is what keeps the
+vendor out of the merge path, and any user with write access can resolve a
+thread, so the reviewer cannot hold a branch hostage.
 A self-hosted ClawSweeper-like service, if adopted, is a separate PR/issue
 evidence reviewer with its own least-privilege GitHub App and queue; installing
 the public App alone is insufficient. It may receive only an explicitly allowed

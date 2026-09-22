@@ -25,10 +25,11 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B12 | Service host and development host | A service selected for its first migration under the contract | The service's repository, its acceptance check, and its previous deployment | Move the service, switch traffic, then retire the previous instance as a separate step | Deployment assets are versioned in the repository; the acceptance result is recorded with build identity, environment and timestamp; the previous deployment keeps running until acceptance passes; traffic switch and retirement are separate steps; the exposure decision cites an observed-traffic record | Retire the previous instance only after the switch is verified |
 | GOV-B13 | Enrolled repository with an observed PR-traffic record | Devin Review holds the automatic review layer and the repository is enrolled | A pull request opened, then a draft marked ready | Open the pull request, then mark the draft ready | Exactly one Devin Review appears on the ready head; no other automated reviewer comments | None (review artifact retained) |
 | GOV-B14 | Enrolled repository | PR-Agent is disabled and CodeRabbit is stood down for this repository | A pull request opened | Open the pull request | No PR-Agent or CodeRabbit comment appears; the PR-Agent unit, virtualenv and credential directory remain on disk; the CodeRabbit configuration remains in the repository but inactive | None (read-only) |
-| GOV-B15 | Any repository with findings on an open pull request | Devin Review findings exist on the head | The required merge gates | Evaluate the gates | Findings are advisory candidates needing human confirmation; deterministic CI and the Ruleset alone decide the merge | None (read-only) |
+| GOV-B15 | Any repository with findings on an open pull request | Devin Review findings exist on the head | The required merge gates | Evaluate the gates | Findings are advisory candidates needing human confirmation; the reviewer's own status check is never required; deterministic CI and the Ruleset decide the merge | None (read-only) |
 | GOV-B16 | Task branch with auto-fix enabled | Auto-fix has pushed a fix commit to the remote task branch; the local worktree holds uncommitted work | An uncommitted change on the task branch | Commit the work, then fetch and rebase on the remote task branch, then push | The rebase runs only once the tree is clean, the fix commit is integrated, nothing is force-pushed, and no uncommitted work is discarded to make the rebase run | Remove the temporary branch |
 | GOV-B17 | Development host workspace with a policy audit reporting stale branches | The audit reports one or more local task branches as `upstream_gone` or `integrated_not_retired` | Local task branches across the scanned repositories | For each branch, verify the head carries a merged pull request and that the branch tree matches its hosting merge commit, then retire the local branch, and the remote ref where one still exists | No branch is retired without a verified merge; the audit then reports `stale_branches=0`; remote ref deletion and local branch deletion are reported as separate operations | None (retirement is the operation) |
 | GOV-B18 | Development host with a self-hosted runner | A job checkout exists under `_runners/<runner>/_work/` and a deploy checkout exists under `_runners/`, neither carrying delivery metadata; one runner checkout is unreadable; two controls sit outside `_runners/` | The runner, deploy and unreadable fixtures in `tests/test-dev-policy-audit.sh`, plus a repository in a `_work` directory and a project with no metadata, both outside `_runners/` | Run `dev-policy-audit` over the projects root | All `_runners/` artifacts are reported as `skip runner working directory` and none fails, including the unreadable one, while both controls still fail with `default-branch expected=main actual=unset` | Remove the fixture repositories |
+| GOV-B19 | Enrolled repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread | A real pull request against the gated repository | Attempt the merge with the thread unresolved; resolve it by hand; then re-request the review and let Devin resolve the threads it considers addressed | The merge is blocked while a thread is unresolved and `mergeStateStatus` is `BLOCKED` rather than `UNSTABLE`; the reviewer's own check is still `isRequired: false`; a write-access user can resolve a thread and unblock the merge; the merge succeeds only with no unresolved thread | None (the gate is the state under test) |
 
 ## Traceability
 
@@ -52,6 +53,8 @@ repository scope that decides which of those rules a repository is subject to.
 | Auto-fix integration | An auto-fix commit does not strand the task branch | GOV-B16 |
 | Stale delivery surface retired | A merged task branch is retired from the local workspace | GOV-B17 |
 | Deployment artifacts are not projects | A runner working directory is not a managed repository | GOV-B18 |
+| Triage is gated, the reviewer is not | An untriaged finding cannot be merged past | GOV-B19 |
+| The re-review closes the loop | Requesting the re-review is what closes the triage loop | GOV-B19 |
 
 ## Execution Results
 
@@ -76,6 +79,13 @@ on that sweep; GOV-B18 was added with the audit fix that sweep produced and was
 executed as the case's fixtures. Both results are recorded below. GOV-B17 is
 executed again whenever the daily audit reports a stale branch; the result below
 records the sweep that cleared every finding, not a standing state.
+
+GOV-B19 was added with the triage gate and was executed as a canary on
+`AI-Ops` before the gate was extended to any other repository. Its result is
+recorded below, and the gate stays on `AI-Ops` alone until that result is read.
+GOV-B15's expected result was corrected in the same change: it previously said
+deterministic CI and the Ruleset *alone* decide the merge, which the triage gate
+makes false.
 
 ### GOV-B13 and GOV-B14 - one first-pass reviewer, retired reviewers stood down
 
@@ -275,6 +285,65 @@ audit moved from `failures=1` to `failures=0`.
 `tests/test-dev-worktree.sh` passes unchanged, which is the check that moving
 the predicate left the worktree-layer behaviour alone. The release unit is
 `1.8.1`.
+
+### GOV-B19 - triage is gated, the reviewer is not
+
+Executed on `2026-09-22`. This case exists because of a measurement, not a
+design preference: the rule "a human must confirm severity and applicability"
+was enforced by nothing, so it did not happen.
+
+The measurement, over pull requests created on or after the reviewer was
+connected:
+
+| Repository | Pull requests with findings | Triaged | Merged past |
+| --- | --- | --- | --- |
+| `server-development-consensus` | 7 | 6 | 1 |
+| `AI-Ops` | 8 | 1 | 7 |
+| `genesis-evidence` | 1 | 0 | 1 |
+| `Health-Flow` | 1 | 0 | 1 |
+
+The latency separates the two populations cleanly: every triaged pull request
+was merged at least 276 seconds after the review, every merge-past within 268
+seconds, half within 120. `Health-Flow#104` is the clearest instance — the head
+never moved, three findings received no reply, and the merge came 84 seconds
+after the review posted. A review merged past in under 90 seconds was not read.
+
+The gate is `required_review_thread_resolution: true` on the existing Ruleset.
+Applied first to `AI-Ops` (ruleset `23760870`), which carries both the worst
+ratio and a real pull-request check to keep required; the other five enrolled
+repositories follow only if this canary passes.
+
+The distinction the gate rests on, verified rather than asserted:
+
+- **The reviewer's status check stays non-required.** `Devin Review` is a
+  `StatusContext`; `verify`, `windows-verify` and `Workflow policy` remain the
+  required `CheckRun`s. A vendor outage opens no thread and so costs no merge
+  availability, which is precisely what requiring the status check would have
+  broken.
+- **A human can resolve a thread.** Exercised on a merged, inert pull request
+  (`server-development-consensus#38`): a thread Devin had left unresolved was
+  resolved by `kilbertert` and then unresolved again, so no false record was
+  left behind. The mutation returned `resolvedBy: kilbertert`. The reviewer
+  therefore cannot hold a branch hostage.
+- **Resolution is not automatic.** This is the finding that changed the shape of
+  the change. Across 11 pull requests the correlation is exact: every head that
+  received an explicit `/devin review` had its threads resolved by
+  `devin-ai-integration[bot]`; every head that did not received zero resolutions
+  (`AI-Ops` 4 pull requests carrying 10 threads, 0 resolved; `consensus#38`,
+  1 thread, unresolved). A triage comment alone resolved nothing — on
+  `consensus#37` the comment and the `/devin review` posted one second apart,
+  and only the re-review produced the resolutions. The gate is therefore
+  satisfied by requesting the re-review, which is the same action the policy
+  already requires of the responsible agent.
+
+One failure mode the gate does **not** catch, recorded rather than smoothed
+over: `AI-Ops#344` and `#360` were merged 23 and 19 seconds after being marked
+ready, before the review had posted at all, so no thread existed to block. The
+reviewer responds in 1-2 minutes consistently, so this is a race against the
+review's arrival, not reviewer latency. The mitigation is the existing
+convention — do not merge a pull request that was just moved out of draft until
+its review has posted — and `AI-Ops`' own agent already treats unresolved
+threads as its work queue, but never posts the re-review that would close them.
 
 ## Risk Checks
 

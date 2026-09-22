@@ -193,6 +193,17 @@ Ruleset — were both closed later the same day; neither was an accepted risk.
    | `genesis-evidence` | `Workflow policy`, `quality` |
    | `newenergy-ai-article-platform` | `build` |
    | `ds408-visualizer` | `smoke` |
+   | `Health-Flow` | `Workflow policy` |
+
+   `Health-Flow` is listed seventh because it was **missing from this table**, and
+   that omission is what let it go without a Ruleset at all: it is public, so the
+   phase applied to it, but a table that does not name a repository cannot be
+   checked against reality. It was found by enumerating public repositories and
+   asking which of them carried a Ruleset, not by reading this list. Its required
+   check was taken from the one workflow that actually triggers on
+   `pull_request` there (`AFK Policy` → job `Workflow policy`), verified before
+   being required, because requiring a check that never fires blocks every merge
+   permanently. Ruleset `23809254`, created with the triage gate included.
 
    `windows-verify` on `AI-Ops` is the check to watch: strict mode lets a slow or
    flaky check stall every merge, so it leaves that list if the first pull

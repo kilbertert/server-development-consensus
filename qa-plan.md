@@ -29,7 +29,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B16 | Task branch with auto-fix enabled | Auto-fix has pushed a fix commit to the remote task branch; the local worktree holds uncommitted work | An uncommitted change on the task branch | Commit the work, then fetch and rebase on the remote task branch, then push | The rebase runs only once the tree is clean, the fix commit is integrated, nothing is force-pushed, and no uncommitted work is discarded to make the rebase run | Remove the temporary branch |
 | GOV-B17 | Development host workspace with a policy audit reporting stale branches | The audit reports one or more local task branches as `upstream_gone` or `integrated_not_retired` | Local task branches across the scanned repositories | For each branch, verify the head carries a merged pull request and that the branch tree matches its hosting merge commit, then retire the local branch, and the remote ref where one still exists | No branch is retired without a verified merge; the audit then reports `stale_branches=0`; remote ref deletion and local branch deletion are reported as separate operations | None (retirement is the operation) |
 | GOV-B18 | Development host with a self-hosted runner | A job checkout exists under `_runners/<runner>/_work/` and a deploy checkout exists under `_runners/`, neither carrying delivery metadata; one runner checkout is unreadable; two controls sit outside `_runners/` | The runner, deploy and unreadable fixtures in `tests/test-dev-policy-audit.sh`, plus a repository in a `_work` directory and a project with no metadata, both outside `_runners/` | Run `dev-policy-audit` over the projects root | All `_runners/` artifacts are reported as `skip runner working directory` and none fails, including the unreadable one, while both controls still fail with `default-branch expected=main actual=unset` | Remove the fixture repositories |
-| GOV-B19 | Enrolled repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread | A real pull request against the gated repository | Attempt the merge with the thread unresolved; resolve it by hand; then re-request the review and let Devin resolve the threads it considers addressed | The merge is blocked while a thread is unresolved and `mergeStateStatus` is `BLOCKED` rather than `UNSTABLE`; the reviewer's own check is still `isRequired: false`; a write-access user can resolve a thread and unblock the merge; the merge succeeds only with no unresolved thread | None (the gate is the state under test) |
+| GOV-B19 | Enrolled repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread | A real pull request against the gated repository (`AI-Ops#371`, head `49622e29` / `4edbfb9` / `86bae95`) | Read `mergeStateStatus` with all required checks passing, at 0, 1 and 2 resolved threads and back to 1; attempt the merge while blocked; resolve a thread by hand; then post the triage record and request the re-review | `BLOCKED` at 0 and 1 resolved threads and `CLEAN` at 2, on one unchanged head with unchanged checks; `gh pr merge` refused with `the base branch policy prohibits the merge`; a write-access user resolves a thread and returns `resolvedBy: kilbertert`; after the re-review Devin resolves the thread it considers fixed and leaves the accepted-limitation thread unresolved | None (the gate is the state under test) |
 
 ## Traceability
 
@@ -344,6 +344,55 @@ review's arrival, not reviewer latency. The mitigation is the existing
 convention — do not merge a pull request that was just moved out of draft until
 its review has posted — and `AI-Ops`' own agent already treats unresolved
 threads as its work queue, but never posts the re-review that would close them.
+
+#### Canary observation: `kilbertert/AI-Ops#371`
+
+The behavioural evidence, on a real pull request against the gated repository.
+Head `49622e29`, then `4edbfb9` / `86bae95`. Every reading below was taken with
+all three required checks (`Workflow policy`, `verify`, `windows-verify`)
+reporting `pass` and `mergeable: MERGEABLE`, so thread state is the only
+variable:
+
+| Threads resolved | `mergeStateStatus` |
+| --- | --- |
+| 0 of 2 | `BLOCKED` |
+| 1 of 2 | `BLOCKED` |
+| 2 of 2 | `CLEAN` |
+| 1 of 2 (one re-unresolved) | `BLOCKED` |
+
+`gh pr merge --squash` in the blocked states was refused with `the base branch
+policy prohibits the merge`. The second and fourth rows are the ones that matter:
+a partial state still blocks, and re-unresolving a single thread re-blocks a pull
+request whose checks have not changed at all.
+
+An earlier reading is recorded because it was **invalid and had to be discarded**:
+`BLOCKED` was first observed while `windows-verify` was still `pending`, which is
+independently sufficient to produce `BLOCKED`. Attributing the gate to that
+reading would have been a false claim, so the observation was repeated after the
+check completed. Every reading in the table above post-dates that.
+
+Both manual resolutions in this sequence were performed by `kilbertert` and
+returned `resolvedBy: kilbertert`, re-confirming the escape hatch on a gated
+repository rather than only on an inert merged one.
+
+The loop then closed as the mechanism predicts: after the triage record and a
+`/devin review` request, Devin resolved the thread covering the finding that was
+actually fixed and left the thread covering the finding recorded as accepted
+unresolved — independently demonstrating the limitation described below.
+
+Two limitations rest on this canary and are not resolved by it:
+
+- **The gate does not prove a human read the finding.** It requires a resolved
+  thread, and a re-review resolves threads in bulk, so it cannot require that the
+  resolver read the finding or wrote a reason. What it does is make an untriaged
+  finding cost something; on this very canary, Devin resolved one thread and left
+  the other, so the distinction between "fixed" and "recorded as accepted" stayed
+  visible at least to the reviewer. Recorded as a known boundary of the chosen
+  mechanism rather than smoothed over.
+- **The gate is canary-only.** Only `AI-Ops` carries it. The other five enrolled
+  repositories still merge unresolved findings, and the policy text now states a
+  rule those repositories do not yet enforce. Extending it is the next step, and
+  until it happens the gap is stated here rather than implied to be closed.
 
 ## Risk Checks
 

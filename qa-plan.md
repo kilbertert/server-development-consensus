@@ -354,16 +354,19 @@ the head recorded per row rather than claimed to be constant:
 | Head | Threads resolved | `mergeStateStatus` |
 | --- | --- | --- |
 | `49622e29` | 0 of 1 | `BLOCKED` |
-| `49622e29` | 1 of 1 → re-unresolved to 0 of 1 | `BLOCKED` |
+| `49622e29` | 1 of 1 | `BLOCKED` |
+| `49622e29` | 1 of 1, then re-unresolved to 0 of 1 | `BLOCKED` |
 | `4edbfb9` | 0 of 2 | `BLOCKED` |
+| `4edbfb9` | 1 of 2 | `BLOCKED` |
 | `86bae95` | 2 of 2 | `CLEAN` |
 
-Reading the table correctly requires one care: the first two rows are the
+Reading the table correctly requires one care: the first three rows are the
 controlled comparison, because they are the **same head with unchanged checks**
-and differ only in thread state, including a re-unresolving that re-blocked a
-pull request whose checks had not moved. The later rows are re-reads after the
-head advanced, so they corroborate the gate but are not single-variable
-comparisons against the first two.
+and differ only in thread state. Row 2 is the partial state (one of two threads
+resolved) and row 3 is the re-unresolving that re-blocked a pull request whose
+checks had not moved. The remaining rows are re-reads after the head advanced,
+so they corroborate the gate but are not single-variable comparisons against the
+first three.
 
 Every reading was taken with all three required checks (`Workflow policy`,
 `verify`, `windows-verify`) reporting `pass` and `mergeable: MERGEABLE`, so no

@@ -492,7 +492,15 @@ reactivated with `dev-worktree activate PATH`.
     delegated to Codex or Claude Code. Run it with an approved local provider,
     or use its delegation mode when no provider is configured. It is advisory
     and must be run at a meaningful milestone, not after every edit or every
-    agent turn. It must not invoke the GitHub Action.
+    agent turn. It must not invoke the GitHub Action. **Coverage must be
+    measured, not assumed:** OpenCodeReview selects files by extension and path
+    rules, so a change it filters out is reported as a clean run rather than as
+    an unreviewed one. Run `ocr review --from <default> --to <branch> --preview`
+    before opening the PR and read the selected-file count; when it selects
+    nothing (a documentation-only change, for example), record the layer as
+    **not applicable**, never as passed. A change that mixes code and prose is
+    only partly covered — the filtered files still need human or Devin Review
+    triage.
   - Devin Review is the server's automatic PR advisory reviewer. It reviews the
     initial ready PR, does not rerun after every push, and never replaces
     deterministic CI or human triage. When auto-fix is enabled it may push a fix
@@ -593,8 +601,12 @@ For normal work led by Codex or Claude Code:
    reports, or record the explicit non-applicability reason.
 5. At a meaningful milestone, run `ocr review --from <default> --to <branch>`
    only when an approved local provider is configured; otherwise invoke the
-   installed OpenCodeReview delegation skill. Use `--preview` first for a large
-   or unfamiliar change. Do not run OCR after every turn.
+   installed OpenCodeReview delegation skill. **Always run `--preview` first**
+   and check how many files it actually selected: OCR filters by extension and
+   path rules, so a documentation-only change is reported as skipped, not as
+   reviewed. Record the layer as not applicable when it selects nothing, and
+   state the count when it selects only part of the change. Do not run OCR after
+   every turn.
 6. Triage local findings once. Fix confirmed defects, record accepted risks and
    false positives, and do not turn every model suggestion into added complexity.
 7. Commit, push, and open the PR. Devin Review automatically reviews the PR when

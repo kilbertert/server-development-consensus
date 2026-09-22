@@ -64,9 +64,14 @@ review; and **CI/Ruleset** as the only mandatory quality
 gate. At a meaningful implementation milestone, run local `ocr review` against
 the workspace, commit, or task branch only with an approved local provider;
 otherwise invoke OpenCodeReview's delegation mode as a bounded second opinion.
-Do not run it after every edit, agent turn, or push. Triage its findings once:
-fix verified defects, explicitly record false positives or accepted risks, and
-do not turn speculative model suggestions into an open-ended repair loop.
+Do not run it after every edit, agent turn, or push. Always run `--preview`
+first and read the selected-file count: OCR filters by extension and path rules,
+so a change it filters out is reported as a clean run rather than as an
+unreviewed one. Record the layer as not applicable when it selects nothing (a
+documentation-only change, for example), and state the count when it covers only
+part of the change. Triage its findings once: fix verified defects, explicitly
+record false positives or accepted risks, and do not turn speculative model
+suggestions into an open-ended repair loop.
 Devin Review automatically reviews a PR when it is opened, reopened, or marked
 ready for review. It does not rerun after every push. The responsible agent
 waits for the result, triages it once, fixes verified defects, and records false

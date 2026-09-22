@@ -67,7 +67,9 @@ otherwise invoke OpenCodeReview's delegation mode as a bounded second opinion.
 Do not run it after every edit, agent turn, or push. Always run `--preview`
 first and read the selected-file count: OCR filters by extension and path rules,
 so a change it filters out is reported as a clean run rather than as an
-unreviewed one. Record the layer as not applicable when it selects nothing (a
+unreviewed one. Preview and review the same change set — the workspace form
+while the milestone is uncommitted, the branch range once it is committed.
+Record the layer as not applicable when it selects nothing (a
 documentation-only change, for example), and state the count when it covers only
 part of the change. Triage its findings once: fix verified defects, explicitly
 record false positives or accepted risks, and do not turn speculative model

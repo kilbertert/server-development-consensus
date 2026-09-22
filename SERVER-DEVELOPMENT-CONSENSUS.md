@@ -497,11 +497,14 @@ reactivated with `dev-worktree activate PATH`.
     rules, so a change it filters out is reported as a clean run rather than as
     an unreviewed one. Measure coverage against the change set actually under
     review, because the two ways of naming it are not interchangeable: a branch
-    range sees commits only, so run `ocr review --preview` on the workspace
-    while the work is uncommitted, and
-    `ocr review --from <default> --to <branch> --preview` once it is committed.
-    Read the selected-file count before opening the PR; when it selects nothing
-    (a documentation-only change, for example), record the layer as
+    range sees commits only. Preview and review the same change set — the
+    workspace form (`ocr review --preview`, then `ocr review`) while the
+    milestone is uncommitted, the range form
+    (`ocr review --from <default> --to <branch> --preview`, then without
+    `--preview`) once it is committed — and read the selected-file count before
+    opening the PR. A milestone that switches form between preview and review
+    measures one change set and reviews another. When it selects nothing (a
+    documentation-only change, for example), record the layer as
     **not applicable**, never as passed. A change that mixes code and prose is
     only partly covered — the filtered files still need human or Devin Review
     triage.
@@ -608,12 +611,14 @@ For normal work led by Codex or Claude Code:
    installed OpenCodeReview delegation skill. **Always run `--preview` first**
    and check how many files it actually selected: OCR filters by extension and
    path rules, so a documentation-only change is reported as skipped, not as
-   reviewed. Preview the same change set the review will cover — the workspace
-   form while the milestone is still uncommitted, the branch range once it is
-   committed, since a range sees only commits and an uncommitted milestone would
-   otherwise measure as zero files. Record the layer as not applicable when it
-   selects nothing, and state the count when it selects only part of the change.
-   Do not run OCR after every turn.
+   reviewed. Preview and review the same change set: while the milestone is
+   uncommitted run the workspace form (`ocr review --preview`, then
+   `ocr review`), once it is committed run the range form
+   (`ocr review --from <default> --to <branch> --preview`, then without
+   `--preview`). Since a range sees only commits, an uncommitted milestone would
+   otherwise measure as zero files and then be reviewed as nothing. Record the
+   layer as not applicable when it selects nothing, and state the count when it
+   selects only part of the change. Do not run OCR after every turn.
 6. Triage local findings once. Fix confirmed defects, record accepted risks and
    false positives, and do not turn every model suggestion into added complexity.
 7. Commit, push, and open the PR. Devin Review automatically reviews the PR when

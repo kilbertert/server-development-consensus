@@ -68,9 +68,16 @@ enforce_commit_message_contract() {
     \#*) return 0 ;;
   esac
 
-  case $first_line in
-    feat:*|feat!:*|feat\(*\):*|feat!\(*\):*|fix:*|fix!:*|fix\(*\):*|fix!\(*\):*|docs:*|docs!:*|docs\(*\):*|docs!\(*\):*|style:*|style!:*|style\(*\):*|style!\(*\):*|refactor:*|refactor!:*|refactor\(*\):*|refactor!\(*\):*|perf:*|perf!:*|perf\(*\):*|perf!\(*\):*|test:*|test!:*|test\(*\):*|test!\(*\):*|chore:*|chore!:*|chore\(*\):*|chore!\(*\):*|build:*|build!:*|build\(*\):*|build!\(*\):*|ci:*|ci!:*|ci\(*\):*|ci!\(*\):*|revert:*|revert!:*|revert\(*\):*|revert!\(*\):*)
-      ;;
+  # Conventional Commits puts an optional `!` breaking marker before the colon,
+  # after the optional scope. Spelling the four shapes out per type keeps the
+  # set enumerable in POSIX shell but missed `<type>(<scope>)!:` — the one shape
+  # every other tool renders, and the one a breaking change with a scope uses.
+  # Match the type, then the marker optionally around the optional scope, then
+  # the colon, so all four shapes are accepted without a fourth pattern.
+  first_line_type=${first_line%%[:(!]*}
+  first_line_rest=${first_line#"$first_line_type"}
+  case $first_line_type in
+    feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert) ;;
     *)
       printf '\n%s\n' 'SERVER POLICY: commit message must use Conventional Commits.' >&2
       printf '%s\n' 'Expected first line: <type>(<scope>): <subject>' >&2
@@ -80,8 +87,19 @@ enforce_commit_message_contract() {
       return 1
       ;;
   esac
+  case $first_line_rest in
+    :*|!:*|\(?*\):*|\(?*\)!:*) ;;
+    *)
+      # A recognised type followed by something that is not one of the four
+      # marker/scope shapes is malformed, not a different convention.
+      printf '\n%s\n' 'SERVER POLICY: commit message must use Conventional Commits.' >&2
+      printf '%s\n' 'Expected first line: <type>(<scope>): <subject>, optionally with a bang breaking marker (type(scope)!:) before the colon.' >&2
+      printf '%s\n' 'For example: fix(api): fix timeout on order payment / feat(api)!: change the response shape' >&2
+      return 1
+      ;;
+  esac
 
-  subject=$(printf '%s\n' "$first_line" | sed -e 's/^[a-z]*//' -e 's/^(\([^)]*\))*//' -e 's/^: *//')
+  subject=$(printf '%s\n' "$first_line" | sed -e 's/^[a-z]*//' -e 's/^(\([^)]*\))*//' -e 's/^!//' -e 's/^: *//')
   if [ -z "$subject" ] || printf '%s' "$subject" | grep -q '^[[:space:]]*$'; then
     printf '\n%s\n' 'SERVER POLICY: commit message is missing a subject after the type prefix.' >&2
     return 1

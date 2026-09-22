@@ -37,7 +37,20 @@ run_check 'chore(deps): bump lodash' && run_check 'refactor!: rework api' || {
   exit 1
 }
 
-for bad in 'nonsense' 'Feat: add login' 'feat(api) add login' 'feat:' 'feat' 'fix : x'; do
+# Conventional Commits allows an optional `!` breaking marker before the colon,
+# after the optional scope. The four shapes must hold for every type — the
+# `<type>(<scope>)!:` form was the one the enumerated pattern missed.
+for type in feat fix docs style refactor perf test chore build ci revert; do
+  for subject in "$type: a" "$type(scope): a" "$type!: a" "$type(scope)!: a"; do
+    run_check "$subject" || {
+      printf 'FAIL valid commit message "%s" was rejected\n' "$subject" >&2
+      exit 1
+    }
+  done
+done
+
+for bad in 'nonsense' 'Feat: add login' 'feat(api) add login' 'feat:' 'feat' 'fix : x' \
+  'feat(api)!x' 'feat()!: a' 'feat(): a' '!: a' 'feat(bad' '(x): a'; do
   if run_check "$bad"; then
     printf 'FAIL invalid commit message "%s" was accepted\n' "$bad" >&2
     exit 1

@@ -401,10 +401,82 @@ Two limitations rest on this canary and are not resolved by it:
   the other, so the distinction between "fixed" and "recorded as accepted" stayed
   visible at least to the reviewer. Recorded as a known boundary of the chosen
   mechanism rather than smoothed over.
-- **The gate is canary-only.** Only `AI-Ops` carries it. The other five enrolled
-  repositories still merge unresolved findings, and the policy text now states a
-  rule those repositories do not yet enforce. Extending it is the next step, and
-  until it happens the gap is stated here rather than implied to be closed.
+- ~~**The gate is canary-only.**~~ Closed by the rollout recorded below. It was
+  true when written and is kept here as the state the change passed through,
+  struck through rather than deleted so the sequence stays readable.
+
+#### Rollout to the remaining repositories
+
+The canary passed (recorded above), so the gate was extended. The change was
+made with the minimal round-trip — fetch the whole rule set, change the one key,
+PUT it back — and **verified by reading the value back**, not by trusting an exit
+code, because the canary produced a defect that exited `0` while changing nothing.
+
+| Repository | Ruleset | Result |
+| --- | --- | --- |
+| `AI-Ops` | `23760870` | already enabled (canary) |
+| `server-development-consensus` | `23760245` | enabled; other rules and conditions unchanged |
+| `genesis-evidence` | `23760874` | enabled; other rules and conditions unchanged |
+| `newenergy-ai-article-platform` | `23760875` | enabled; other rules and conditions unchanged |
+| `ds408-visualizer` | `23760876` | enabled; other rules and conditions unchanged |
+| `Auto_Test` | `23760872` | **found already enabled, created/enabled outside this work** |
+| `Health-Flow` | `23809254` (new) | ruleset created with the gate included |
+
+`Auto_Test` is recorded as found rather than as changed by this work. Its ruleset
+reports `updated_at 2026-09-22T11:45:59+08:00`, which is not a time this work
+touched it, and the rollout script reported `already true; nothing to do` without
+writing. Who enabled it is not established here; recording it as this change's
+work would be an unverified claim. The value is `true` either way, which is what
+the policy requires of the repository.
+
+`Health-Flow` had **no ruleset at all** — it is public, so the Phase 4 rule
+applied to it and had been missed. `Health-Flow#104` was merged 84 seconds after
+a review carrying three unread findings with nothing enforcing anything, which is
+what a public repository with no ruleset permits. Its ruleset was created with
+the same four rules and with the triage gate included from the start (there was
+no prior setting to preserve), `bypass_actors: []`,
+`current_user_can_bypass: never`, and `Workflow policy` as the required check —
+verified as the only workflow that actually triggers on `pull_request` in that
+repository, since requiring a check that never fires would block every merge
+permanently.
+
+**All six enrolled repositories now require conversation resolution.** The
+policy text no longer describes a rule that nothing enforces.
+
+#### Canary outcome
+
+The canary passed and the gate is live on `AI-Ops`. `kilbertert/AI-Ops#371` was
+merged on `2026-09-22T07:03:54Z` as `229cc194`, with **14 of 14 review threads
+resolved**, every one carrying a written disposition.
+
+The number that matters is not 14 — it is what the gate forced out of the way.
+The pull request was blocked by its own gate through seven review rounds, and
+each round produced findings that were real:
+
+- A documented **verification step that would really have merged the observation
+  pull request** (`gh pr merge` without `--auto` executes the merge on a
+  `BLOCKED` pull request, so a failed test would have modified the default branch).
+- A "hardened" shell script whose rewritten form **silently never enabled the
+  gate**: it PUT an unchanged rule set, exited `0`, and reported success while
+  `required_review_thread_resolution` stayed `false`. It survived its own test
+  suite because that suite asserted exit codes rather than outcomes.
+- Two documents that were each true alone and contradicted each other.
+- A milestone record that claimed behaviour evidence its own validation section
+  still described as unobserved.
+
+The mechanism's shape was revised because of this: the four-step, single-boolean
+operation had grown ~80 lines of shell and three embedded `python` blocks, and
+each round of hardening introduced a new defect. The script was deleted in favour
+of the minimal `gh api` round-trip plus one deterministic acceptance — read the
+value back and see `true` — which is what the `/ai-ops` record now documents.
+
+Four findings were raised repeatedly and closed as triaged rather than re-edited:
+the mechanism cannot prove a human read a finding (accepted limitation); the
+concurrent-write window is covered by a stated cost rather than `If-Match`
+(accepted risk); remote configuration is not managed by the commit, which is
+answered with a re-runnable read-only check rather than versioning the state; and
+the `BLOCKED` attribution is now scoped to the current rule set with the
+rule-set query retained as evidence. Those dispositions are on the pull request.
 
 ## Risk Checks
 

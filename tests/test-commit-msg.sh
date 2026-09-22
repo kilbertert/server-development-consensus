@@ -49,8 +49,13 @@ for type in feat fix docs style refactor perf test chore build ci revert; do
   done
 done
 
+# The malformed-scope rows are the ones an anchored pattern cannot catch: a `*`
+# in `(?*)` spans a `)`, so `feat(a)b): x` reads as a valid scope and the junk
+# becomes the subject. They must be rejected by the scope check, not by luck.
 for bad in 'nonsense' 'Feat: add login' 'feat(api) add login' 'feat:' 'feat' 'fix : x' \
-  'feat(api)!x' 'feat()!: a' 'feat(): a' '!: a' 'feat(bad' '(x): a'; do
+  'feat(api)!x' 'feat()!: a' 'feat(): a' '!: a' 'feat(bad' '(x): a' \
+  'feat(a)b): x' 'feat(api)junk): x' 'feat(api)junk)!: x' 'feat(api)(x): y' \
+  'feat(a(b): x' 'feat(api)): x' 'feat(a()b): x'; do
   if run_check "$bad"; then
     printf 'FAIL invalid commit message "%s" was accepted\n' "$bad" >&2
     exit 1

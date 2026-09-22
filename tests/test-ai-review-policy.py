@@ -118,6 +118,8 @@ def test_ocr_coverage_is_measured_rather_than_assumed() -> None:
     assert "Always run `--preview` first" in normalized_policy
     assert "Always run `--preview` first" in normalized_codex_instructions
     assert "Record the layer as not applicable when it selects nothing" in normalized_policy
+    assert "a branch range sees commits only" in normalized_policy
+    assert "Preview the same change set the review will cover" in normalized_policy
 
 
 def test_engineering_article_release_contract_is_explicit() -> None:

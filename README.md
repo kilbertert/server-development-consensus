@@ -118,7 +118,13 @@ approved local provider is configured, while the agent integrations use
 delegation mode when one is not. It is useful as a focused second opinion after
 a coherent implementation milestone, but must not run after every edit, agent
 turn, or push. It does not use a GitHub Action and does not depend on an OCR
-gateway.
+gateway. OCR selects files by extension and path rules, so a change it filters
+out is reported as a clean run rather than as an unreviewed one: run
+`ocr review --preview` first and read the selected-file count. Preview and
+review the same change set — the workspace form while the milestone is
+uncommitted, the branch range once it is committed — and for a
+documentation-only change record the layer as **not applicable** rather than
+passed. A change that mixes code and prose is only partly covered.
 
 Devin Review automatically reviews the initial ready PR when it is opened,
 reopened, or marked ready for review. It does not rerun after every push. The

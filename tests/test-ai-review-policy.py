@@ -98,6 +98,34 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "PR-Agent" not in normalized_codex_instructions
 
 
+def test_ocr_coverage_is_measured_rather_than_assumed() -> None:
+    # OCR selects files by extension and path rules, so a change it filters out
+    # is reported as a clean run rather than as an unreviewed one. Without this
+    # discipline an unreviewed documentation change reads as three green layers.
+    policy = POLICY.read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+    codex_instructions = CODEX_INSTRUCTIONS.read_text(encoding="utf-8")
+    normalized_policy = " ".join(policy.split())
+    normalized_readme = " ".join(readme.split())
+    normalized_codex_instructions = " ".join(codex_instructions.split())
+
+    assert "Coverage must be measured, not assumed" in normalized_policy
+    assert "selects files by extension and path rules" in normalized_policy
+    assert "reported as a clean run rather than as an unreviewed one" in normalized_policy
+    assert "`ocr review --from <default> --to <branch> --preview`" in normalized_policy
+    assert "run `ocr review --preview` first" in normalized_readme
+    assert "record the layer as **not applicable**" in normalized_readme
+    assert "Always run `--preview` first" in normalized_policy
+    assert "Always run `--preview` first" in normalized_codex_instructions
+    assert "Record the layer as not applicable when it selects nothing" in normalized_policy
+    assert "a branch range sees commits only" in normalized_policy
+    assert "Preview and review the same change set" in normalized_policy
+    assert "Preview and review the same change set" in normalized_readme
+    assert "Preview and review the same change set" in normalized_codex_instructions
+    assert "measures one change set and reviews another" in normalized_policy
+    assert "the workspace form (`ocr review --preview`, then `ocr review`)" in normalized_policy
+
+
 def test_engineering_article_release_contract_is_explicit() -> None:
     policy = POLICY.read_text(encoding="utf-8")
     readme = README.read_text(encoding="utf-8")

@@ -29,7 +29,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B16 | Task branch with auto-fix enabled | Auto-fix has pushed a fix commit to the remote task branch; the local worktree holds uncommitted work | An uncommitted change on the task branch | Commit the work, then fetch and rebase on the remote task branch, then push | The rebase runs only once the tree is clean, the fix commit is integrated, nothing is force-pushed, and no uncommitted work is discarded to make the rebase run | Remove the temporary branch |
 | GOV-B17 | Development host workspace with a policy audit reporting stale branches | The audit reports one or more local task branches as `upstream_gone` or `integrated_not_retired` | Local task branches across the scanned repositories | For each branch, verify the head carries a merged pull request and that the branch tree matches its hosting merge commit, then retire the local branch, and the remote ref where one still exists | No branch is retired without a verified merge; the audit then reports `stale_branches=0`; remote ref deletion and local branch deletion are reported as separate operations | None (retirement is the operation) |
 | GOV-B18 | Development host with a self-hosted runner | A job checkout exists under `_runners/<runner>/_work/` and a deploy checkout exists under `_runners/`, neither carrying delivery metadata; one runner checkout is unreadable; two controls sit outside `_runners/` | The runner, deploy and unreadable fixtures in `tests/test-dev-policy-audit.sh`, plus a repository in a `_work` directory and a project with no metadata, both outside `_runners/` | Run `dev-policy-audit` over the projects root | All `_runners/` artifacts are reported as `skip runner working directory` and none fails, including the unreadable one, while both controls still fail with `default-branch expected=main actual=unset` | Remove the fixture repositories |
-| GOV-B19 | Enrolled repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread | A real pull request against the gated repository (`AI-Ops#371`, head `49622e29` / `4edbfb9` / `86bae95`) | Read `mergeStateStatus` with all required checks passing, at 0, 1 and 2 resolved threads and back to 1; attempt the merge while blocked; resolve a thread by hand; then post the triage record and request the re-review | `BLOCKED` at 0 and 1 resolved threads and `CLEAN` at 2, on one unchanged head with unchanged checks; `gh pr merge` refused with `the base branch policy prohibits the merge`; a write-access user resolves a thread and returns `resolvedBy: kilbertert`; after the re-review Devin resolves the thread it considers fixed and leaves the accepted-limitation thread unresolved | None (the gate is the state under test) |
+| GOV-B19 | Repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread; all required checks pass | A real pull request against a gated repository (`AI-Ops#371`, merged `229cc194`) | Read `mergeStateStatus` with all required checks passing while threads are unresolved and again once resolved; attempt the merge while blocked; resolve a thread by hand; post the triage record and request the re-review | `BLOCKED` with unresolved threads under all-checks-passing and `CLEAN` once every thread is resolved (`14 of 14` at merge); `gh pr merge` refused with `the base branch policy prohibits the merge`; a write-access user resolves a thread and returns `resolvedBy: kilbertert`; after the re-review Devin resolves the thread it considers fixed and leaves the accepted-limitation thread unresolved | None (the gate is the state under test) |
 
 ## Traceability
 
@@ -80,9 +80,12 @@ executed as the case's fixtures. Both results are recorded below. GOV-B17 is
 executed again whenever the daily audit reports a stale branch; the result below
 records the sweep that cleared every finding, not a standing state.
 
-GOV-B19 was added with the triage gate and was executed as a canary on
-`AI-Ops` before the gate was extended to any other repository. Its result is
-recorded below, and the gate stays on `AI-Ops` alone until that result is read.
+GOV-B19 was added with the triage gate. It ran as a canary on `AI-Ops` first,
+the gate was held on that repository alone until the result was read, and it was
+then extended to every repository carrying this server's Ruleset. The sequence
+matters and is recorded in that order below rather than rewritten as one
+completed state: the intermediate "canary only" status was true when written.
+
 GOV-B15's expected result was corrected in the same change: it previously said
 deterministic CI and the Ruleset *alone* decide the merge, which the triage gate
 makes false.
@@ -347,41 +350,47 @@ threads as its work queue, but never posts the re-review that would close them.
 
 #### Canary observation: `kilbertert/AI-Ops#371`
 
-The behavioural evidence, on a real pull request against the gated repository.
-The four observations were taken across the branch's life, at these heads, with
-the head recorded per row rather than claimed to be constant:
+Two things are recorded here, and they carry different weight. The **result** is
+solid; the **per-row readings** are not, and the difference is stated rather than
+smoothed over.
 
-| Head | Threads resolved | `mergeStateStatus` |
-| --- | --- | --- |
-| `49622e29` | 0 of 1 | `BLOCKED` |
-| `49622e29` | 1 of 1 | `BLOCKED` |
-| `49622e29` | 1 of 1, then re-unresolved to 0 of 1 | `BLOCKED` |
-| `4edbfb9` | 0 of 2 | `BLOCKED` |
-| `4edbfb9` | 1 of 2 | `BLOCKED` |
-| `86bae95` | 2 of 2 | `CLEAN` |
+**Result (verified).** The gate blocked the pull request repeatedly while findings
+were unresolved, and released it when they were not. `#371` was merged on
+`2026-09-22T07:03:54Z` as `229cc194` with **14 of 14 review threads resolved**,
+each carrying a written disposition. Before that merge, with all three required
+checks (`Workflow policy`, `verify`, `windows-verify`) reporting `pass` and
+`mergeable: MERGEABLE`, the pull request read `BLOCKED` and
+`gh pr merge --squash` was refused with `the base branch policy prohibits the
+merge`. When every thread was resolved under the same check state it read
+`CLEAN`. Both were read directly from `gh pr view`/`gh pr checks` on the pull
+request.
 
-Reading the table correctly requires one care: the first three rows are the
-controlled comparison, because they are the **same head with unchanged checks**
-and differ only in thread state. Row 2 is the partial state (one of two threads
-resolved) and row 3 is the re-unresolving that re-blocked a pull request whose
-checks had not moved. The remaining rows are re-reads after the head advanced,
-so they corroborate the gate but are not single-variable comparisons against the
-first three.
+**Per-row readings (not substantiated — treat as withdrawn).** Earlier versions
+of this record carried a table of thread counts against specific heads, including
+a claimed controlled comparison at one head where only thread state varied. That
+table cannot be substantiated and is removed rather than corrected again:
 
-Every reading was taken with all three required checks (`Workflow policy`,
-`verify`, `windows-verify`) reporting `pass` and `mergeable: MERGEABLE`, so no
-pending check can account for any `BLOCKED` in the table.
+- It named head `49622e29`, which is a commit of this work's own against which
+  **no review finding was ever raised** — the pull request's review-comment
+  records show zero findings at that head. Rows describing "0 of 1" and "1 of 1"
+  there were describing a state in which nothing was under test.
+- Rewriting it from the review-comment records produced counts that did not match
+  the head (`86bae95` carries four findings, not the two the replacement claimed).
 
-`gh pr merge --squash` in the blocked states was refused with `the base branch
-policy prohibits the merge`. The second and fourth rows are the ones that matter:
-a partial state still blocks, and re-unresolving a single thread re-blocks a pull
-request whose checks have not changed at all.
+Two reconstruction attempts failed, so the readings are withdrawn instead of
+being patched a third time. **What this costs:** there is no per-head record here
+of a thread-count-versus-`mergeStateStatus` sweep, so the claim that a *partial*
+state blocks is not evidenced by this record — only that unresolved threads block
+and full resolution releases. The `BLOCKED`/`CLEAN` result above does not depend
+on the withdrawn rows. A future canary that wants a controlled comparison should
+capture `gh pr view --json mergeStateStatus` alongside `gh pr checks` at each
+step as it goes, rather than reconstructing them afterwards.
 
 An earlier reading is recorded because it was **invalid and had to be discarded**:
 `BLOCKED` was first observed while `windows-verify` was still `pending`, which is
 independently sufficient to produce `BLOCKED`. Attributing the gate to that
-reading would have been a false claim, so the observation was repeated after the
-check completed. Every reading in the table above post-dates that.
+reading would have been a false claim, so the readings above were taken only
+after every required check had completed.
 
 Both manual resolutions in this sequence were performed by `kilbertert` and
 returned `resolvedBy: kilbertert`, re-confirming the escape hatch on a gated
@@ -401,10 +410,98 @@ Two limitations rest on this canary and are not resolved by it:
   the other, so the distinction between "fixed" and "recorded as accepted" stayed
   visible at least to the reviewer. Recorded as a known boundary of the chosen
   mechanism rather than smoothed over.
-- **The gate is canary-only.** Only `AI-Ops` carries it. The other five enrolled
-  repositories still merge unresolved findings, and the policy text now states a
-  rule those repositories do not yet enforce. Extending it is the next step, and
-  until it happens the gap is stated here rather than implied to be closed.
+- ~~**The gate is canary-only.**~~ Closed by the rollout recorded below. It was
+  true when written and is kept here as the state the change passed through,
+  struck through rather than deleted so the sequence stays readable.
+
+#### Rollout to the remaining repositories
+
+The canary passed (recorded above), so the gate was extended. The change was
+made with the minimal round-trip — fetch the whole rule set, change the one key,
+PUT it back — and **verified by reading the value back**, not by trusting an exit
+code, because the canary produced a defect that exited `0` while changing nothing.
+
+| Repository | Ruleset | Result |
+| --- | --- | --- |
+| `AI-Ops` | `23760870` | already enabled (canary) |
+| `server-development-consensus` | `23760245` | enabled; other rules and conditions unchanged |
+| `genesis-evidence` | `23760874` | enabled; other rules and conditions unchanged |
+| `newenergy-ai-article-platform` | `23760875` | enabled; other rules and conditions unchanged |
+| `ds408-visualizer` | `23760876` | enabled; other rules and conditions unchanged |
+| `Auto_Test` | `23760872` | **found already enabled, created/enabled outside this work** |
+| `Health-Flow` | `23809254` (new) | ruleset created with the gate included |
+
+`Auto_Test` is recorded as found rather than as changed by this work. Its ruleset
+reports `updated_at 2026-09-22T11:45:59+08:00`, which is not a time this work
+touched it, and the rollout script reported `already true; nothing to do` without
+writing. Who enabled it is not established here; recording it as this change's
+work would be an unverified claim. The value is `true` either way, which is what
+the policy requires of the repository.
+
+`Health-Flow` had **no ruleset at all** — it is public, so the Phase 4 rule
+applied to it and had been missed. `Health-Flow#104` was merged 84 seconds after
+a review carrying three unread findings with nothing enforcing anything, which is
+what a public repository with no ruleset permits. Its ruleset was created with
+the same four rules and with the triage gate included from the start (there was
+no prior setting to preserve), `bypass_actors: []`,
+`current_user_can_bypass: never`, and `Workflow policy` as the required check —
+verified as the only workflow that actually triggers on `pull_request` in that
+repository, since requiring a check that never fires would block every merge
+permanently.
+
+**Every repository that carries this server's Ruleset now requires conversation
+resolution.** Being precise about the set, because an earlier version of this
+paragraph said "all six enrolled repositories" and conflated two different sets:
+
+- The **enrolled set for Devin Review** is four repositories — `AI-Ops`,
+  `Auto_Test`, `server-development-consensus`, `genesis-evidence` — defined by
+  observed pull-request traffic in `docs/devin-review-migration.plan.md`.
+  `newenergy-ai-article-platform` and `ds408-visualizer` are enrolled when their
+  next pull request arrives, and `sports-ability` stays out deliberately.
+- The set that carries the `protected default branch` Ruleset is those four plus
+  `newenergy-ai-article-platform`, `ds408-visualizer` and `Health-Flow`.
+
+The gate belongs on **every repository whose merges this server controls**, not
+only on the enrolled ones: an unresolved finding blocks a merge whether or not
+the repository is enrolled, and a repository that is not yet enrolled is exactly
+the one that will be. So the change covers the seven repositories above, and the
+statement the policy text needs is the one true of all of them — no repository
+under this server's Ruleset merges past an unresolved thread.
+
+#### Canary outcome
+
+The canary passed and the gate is live on `AI-Ops`. `kilbertert/AI-Ops#371` was
+merged on `2026-09-22T07:03:54Z` as `229cc194`, with **14 of 14 review threads
+resolved**, every one carrying a written disposition.
+
+The number that matters is not 14 — it is what the gate forced out of the way.
+The pull request was blocked by its own gate through seven review rounds, and
+each round produced findings that were real:
+
+- A documented **verification step that would really have merged the observation
+  pull request** (`gh pr merge` without `--auto` executes the merge on a
+  `BLOCKED` pull request, so a failed test would have modified the default branch).
+- A "hardened" shell script whose rewritten form **silently never enabled the
+  gate**: it PUT an unchanged rule set, exited `0`, and reported success while
+  `required_review_thread_resolution` stayed `false`. It survived its own test
+  suite because that suite asserted exit codes rather than outcomes.
+- Two documents that were each true alone and contradicted each other.
+- A milestone record that claimed behaviour evidence its own validation section
+  still described as unobserved.
+
+The mechanism's shape was revised because of this: the four-step, single-boolean
+operation had grown ~80 lines of shell and three embedded `python` blocks, and
+each round of hardening introduced a new defect. The script was deleted in favour
+of the minimal `gh api` round-trip plus one deterministic acceptance — read the
+value back and see `true` — which is what the `/ai-ops` record now documents.
+
+Four findings were raised repeatedly and closed as triaged rather than re-edited:
+the mechanism cannot prove a human read a finding (accepted limitation); the
+concurrent-write window is covered by a stated cost rather than `If-Match`
+(accepted risk); remote configuration is not managed by the commit, which is
+answered with a re-runnable read-only check rather than versioning the state; and
+the `BLOCKED` attribution is now scoped to the current rule set with the
+rule-set query retained as evidence. Those dispositions are on the pull request.
 
 ## Risk Checks
 

@@ -68,20 +68,54 @@ enforce_commit_message_contract() {
     \#*) return 0 ;;
   esac
 
-  case $first_line in
-    feat:*|feat!:*|feat\(*\):*|feat!\(*\):*|fix:*|fix!:*|fix\(*\):*|fix!\(*\):*|docs:*|docs!:*|docs\(*\):*|docs!\(*\):*|style:*|style!:*|style\(*\):*|style!\(*\):*|refactor:*|refactor!:*|refactor\(*\):*|refactor!\(*\):*|perf:*|perf!:*|perf\(*\):*|perf!\(*\):*|test:*|test!:*|test\(*\):*|test!\(*\):*|chore:*|chore!:*|chore\(*\):*|chore!\(*\):*|build:*|build!:*|build\(*\):*|build!\(*\):*|ci:*|ci!:*|ci\(*\):*|ci!\(*\):*|revert:*|revert!:*|revert\(*\):*|revert!\(*\):*)
-      ;;
-    *)
-      printf '\n%s\n' 'SERVER POLICY: commit message must use Conventional Commits.' >&2
-      printf '%s\n' 'Expected first line: <type>(<scope>): <subject>' >&2
-      printf '%s\n' 'types: feat fix docs style refactor perf test chore build ci revert' >&2
-      printf '%s\n' 'For example: fix(api): fix timeout on order payment' >&2
-      printf '%s\n' 'To opt a repository out of this check, set serverPolicy.commitMessageOverride=default-branch-only.' >&2
-      return 1
+  # Conventional Commits puts an optional `!` breaking marker before the colon,
+  # after the optional scope. Spelling the four shapes out per type keeps the
+  # set enumerable in POSIX shell but missed `<type>(<scope>)!:` — the one shape
+  # every other tool renders, and the one a breaking change with a scope uses.
+  #
+  # Match the type, then peel the scope, then the marker. A single `case`
+  # pattern per shape does not work: `*` may span a `)`, so `\(?*\):` also
+  # accepts `(a)b):`, a malformed scope whose `)` the `*` swallowed. Peeling
+  # the scope explicitly makes its boundary — and its validity — observable.
+  first_line_type=${first_line%%[:(!]*}
+  after_type=${first_line#"$first_line_type"}
+  after_scope=$after_type
+  scope_ok=true
+  case $after_type in
+    \(*)
+      # Scope is everything up to the first `)`; it must be non-empty and must
+      # not contain a parenthesis of either kind.
+      scope_part=${after_type#\(}
+      scope_part=${scope_part%%\)*}
+      after_scope=${after_type#\(*\)}
+      case $scope_part in
+        ''|*\(*|*\)*) scope_ok=false ;;
+      esac
       ;;
   esac
 
-  subject=$(printf '%s\n' "$first_line" | sed -e 's/^[a-z]*//' -e 's/^(\([^)]*\))*//' -e 's/^: *//')
+  reject_commit_message() {
+    printf '\n%s\n' 'SERVER POLICY: commit message must use Conventional Commits.' >&2
+    printf '%s\n' "$1" >&2
+    printf '%s\n' 'types: feat fix docs style refactor perf test chore build ci revert' >&2
+    printf '%s\n' 'For example: fix(api): fix timeout on order payment / feat(api)!: change the response shape' >&2
+    printf '%s\n' 'To opt a repository out of this check, set serverPolicy.commitMessageOverride=default-branch-only.' >&2
+    return 1
+  }
+
+  case $first_line_type in
+    feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert) ;;
+    *) reject_commit_message 'Expected first line: <type>(<scope>): <subject>'; return 1 ;;
+  esac
+  if [ "$scope_ok" = false ]; then
+    reject_commit_message 'The scope in <type>(<scope>): must be non-empty and contain no parentheses.'; return 1
+  fi
+  case $after_scope in
+    :*|!:*) ;;
+    *) reject_commit_message 'Expected first line: <type>(<scope>): <subject>, optionally with a bang breaking marker (type(scope)!:) before the colon.'; return 1 ;;
+  esac
+
+  subject=$(printf '%s\n' "$first_line" | sed -e 's/^[a-z]*//' -e 's/^(\([^)]*\))*//' -e 's/^!//' -e 's/^: *//')
   if [ -z "$subject" ] || printf '%s' "$subject" | grep -q '^[[:space:]]*$'; then
     printf '\n%s\n' 'SERVER POLICY: commit message is missing a subject after the type prefix.' >&2
     return 1

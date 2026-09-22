@@ -128,10 +128,19 @@ commit to the task branch, so the agent commits its own work first, then fetches
 and rebases on the remote task branch; it never force-pushes, and
 never discards uncommitted work to make a rebase run. After a material change,
 the agent requests one re-review with `/devin review`; the human operator does
-not manually drive the normal review loop. Devin Review remains advisory, while
-CI and Rulesets remain the only mandatory merge gates. CodeRabbit is the
-rollback path for this layer: it is stood down through its GitHub App
-installation rather than by deleting its configuration.
+not manually drive the normal review loop.
+
+Devin Review remains advisory, and CI and Rulesets remain the only mandatory
+merge gates. What the Ruleset additionally requires is conversation resolution:
+an unresolved review thread blocks the merge, so a finding cannot be merged past
+unread. Devin's own status check stays non-required, which is what keeps the
+vendor out of the merge path — no reviewer means no thread, and any user with
+write access can resolve a thread. Devin only resolves threads it considers
+addressed when a re-review is requested, so posting `/devin review` after the
+fixes is what unblocks the branch; a finding triaged as not applicable is
+answered in the thread and resolved by a human. CodeRabbit is the rollback path
+for this layer: it is stood down through its GitHub App installation rather than
+by deleting its configuration.
 
 ClawSweeper is a different system: a self-hosted GitHub PR/issue review queue
 that can publish one durable evidence and merge-readiness report. The

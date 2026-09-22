@@ -138,7 +138,22 @@ Feature: Layered consensus and AFK governance
       Given a pull request carries Devin Review findings
       When the required merge gates are evaluated
       Then the findings remain candidates that need human confirmation
-      And the deterministic CI checks and the Ruleset alone decide the merge
+      And the reviewer's own status check is never required
+      And the deterministic CI checks and the Ruleset decide the merge
+
+    Scenario: An untriaged finding cannot be merged past
+      Given a pull request carries an unresolved Devin Review thread
+      When the merge is attempted
+      Then the merge is blocked until the thread is resolved
+      And resolving the thread is what unblocks it
+      And any user with write access can resolve a thread, so the reviewer cannot hold the branch hostage
+
+    Scenario: Requesting the re-review is what closes the triage loop
+      Given the responsible agent has addressed the findings on the head
+      When the agent posts `/devin review`
+      Then Devin re-evaluates the head and resolves the threads it considers addressed
+      And a finding triaged as not applicable is answered and resolved by a human
+      And the merge is unblocked only once no unresolved thread remains
 
     Scenario: An auto-fix commit does not strand the task branch
       Given auto-fix is enabled and Devin Review has pushed a fix commit to the task branch

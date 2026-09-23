@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+#
+# Reap abandoned Sandcastle sandbox containers.
+#
+# Why this exists
+# ---------------
+# The Sandcastle library removes its container on a normal path, and registers
+# teardown for process `exit`, `SIGINT` and `SIGTERM`. It cannot cover `SIGKILL`,
+# and a CI job that is cancelled or hits its timeout is killed that way — GitHub
+# sends SIGTERM, then SIGKILL after a short grace period. A 20-minute job
+# timeout or an operator cancellation therefore leaves a container behind with
+# nobody to remove it. Observed: four orphans, the oldest four days old.
+#
+# The library's own `pruneStale` does not help: it prunes abandoned *worktrees*,
+# not containers.
+#
+# Why the check is conservative
+# -----------------------------
+# Every Sandcastle container runs `sleep infinity` as its entrypoint, so it has
+# exactly one live process whether or not a job is using it. Container-internal
+# state therefore cannot distinguish an active sandbox from an abandoned one, and
+# a runner process can be alive between jobs. The only reliable evidence is: no
+# CI job is running on this host, AND the container is far older than any job
+# could legitimately last.
+#
+# Failing to reap costs a little memory. Reaping a live sandbox destroys an
+# agent's work. The thresholds are therefore deliberately loose.
+#
+# Usage:
+#   reap-sandcastle-containers.sh [--apply] [--max-age-hours N] [--quiet]
+#
+# Default is a dry run.
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  dev-reap-sandbox [--apply] [--max-age-hours N] [--quiet]
+
+Reaps Sandcastle sandbox containers abandoned by a cancelled or timed-out job.
+
+Default is a dry run: it lists what it would remove. Pass --apply to remove.
+Quiet unless --quiet is given, so the dry run's output is visible by default.
+EOF
+  exit 2
+}
+
+APPLY=0
+QUIET=0
+# Generous: the longest configured job timeout is 20 minutes. A local run can
+# legitimately exceed an hour, so only containers older than this are candidates.
+MAX_AGE_HOURS=${MAX_AGE_HOURS:-6}
+# Name prefix the library generates; anything else is not ours to touch.
+PREFIX="sandcastle-"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --apply) APPLY=1 ;;
+    -h|--help) usage ;;
+    --quiet) QUIET=1 ;;
+    --max-age-hours) MAX_AGE_HOURS=${2:?value required}; shift ;;
+    *) printf 'usage: %s [--apply] [--max-age-hours N] [--quiet]\n' "$0" >&2; exit 64 ;;
+  esac
+  shift
+done
+
+say() { [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
+
+command -v docker >/dev/null 2>&1 || { printf 'docker not available\n' >&2; exit 65; }
+
+# Refuse to act while any job is active on this host. This is the fail-closed
+# gate: an in-flight job may own containers of any age.
+active_jobs=$(ps -eo cmd 2>/dev/null | grep -c '[R]unner.Worker' || true)
+if [ "${active_jobs:-0}" -gt 0 ]; then
+  say "a runner worker is present; refusing to reap (fail-closed)"
+  exit 0
+fi
+
+# Any workflow run in progress, checked through the API, in every repository
+# this host serves. Cheap enough to be the deciding signal.
+for repo in kilbertert/genesis-evidence kilbertert/Health-Flow; do
+  n=$(gh run list --repo "$repo" --limit 20 --json status \
+        --jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length' 2>/dev/null || echo 0)
+  if [ "${n:-0}" -gt 0 ]; then
+    say "$repo has ${n} active run(s); refusing to reap (fail-closed)"
+    exit 0
+  fi
+done
+
+now=$(date +%s)
+candidates=0
+reaped=0
+
+while read -r name; do
+  case "$name" in "$PREFIX"*) ;; *) continue ;; esac
+  # `docker ps` CreatedAt appends a timezone NAME ("CST") that `date` cannot
+  # parse; `docker inspect` returns clean RFC3339 UTC instead.
+  created=$(docker inspect "$name" --format '{{.Created}}' 2>/dev/null) || continue
+  created_epoch=$(date -d "$created" +%s 2>/dev/null) || continue
+  age_hours=$(( (now - created_epoch) / 3600 ))
+  if [ "$age_hours" -lt "$MAX_AGE_HOURS" ]; then
+    say "keep    $name (age ${age_hours}h < ${MAX_AGE_HOURS}h)"
+    continue
+  fi
+  candidates=$((candidates+1))
+  if [ "$APPLY" = 1 ]; then
+    if docker rm -f "$name" >/dev/null 2>&1; then
+      say "reaped  $name (age ${age_hours}h)"
+      reaped=$((reaped+1))
+    else
+      say "FAILED  $name (age ${age_hours}h)"
+    fi
+  else
+    say "would reap $name (age ${age_hours}h)"
+  fi
+done < <(docker ps --format '{{.Names}}' 2>/dev/null)
+
+say "candidates: $candidates | reaped: $reaped | apply: $APPLY"
+[ "$APPLY" = 1 ] || say "(dry run — pass --apply to remove)"

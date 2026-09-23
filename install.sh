@@ -694,8 +694,9 @@ backup_file "$HOME/.local/bin/dev-pr" installed-dev-pr.installed
 install -m 700 "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
 backup_file "$HOME/.local/bin/dev-worktree" installed-dev-worktree.installed
 install -m 700 "$base_dir/bin/dev-policy-audit" "$HOME/.local/bin/dev-policy-audit"
-install -m 700 "$base_dir/bin/dev-reap-sandbox" "$HOME/.local/bin/dev-reap-sandbox"
 backup_file "$HOME/.local/bin/dev-policy-audit" installed-dev-policy-audit.installed
+install -m 700 "$base_dir/bin/dev-reap-sandbox" "$HOME/.local/bin/dev-reap-sandbox"
+backup_file "$HOME/.local/bin/dev-reap-sandbox" installed-dev-reap-sandbox.installed
 install -m 700 "$base_dir/bin/dev-host" "$HOME/.local/bin/dev-host"
 backup_file "$HOME/.local/bin/dev-host" installed-dev-host.installed
 install -m 700 "$base_dir/bin/hash-tree.sh" "$HOME/.local/bin/hash-tree.sh"

@@ -10,7 +10,11 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 export HOME=$tmp/home
-mkdir -p "$HOME/.local/bin" "$tmp/stub"
+mkdir -p "$HOME/.local/bin" "$tmp/stub" "$HOME/Projects/_runners/test-runner"
+# A runner config makes the repository list discoverable, as on the host.
+cat >"$HOME/Projects/_runners/test-runner/.runner" <<'EOF'
+{ "gitHubUrl": "https://github.com/kilbertert/genesis-evidence" }
+EOF
 
 tool="$base_dir/bin/dev-reap-sandbox"
 [ -x "$tool" ] || { echo "FAIL: $tool is not executable"; exit 1; }
@@ -108,6 +112,59 @@ echo "T7 --max-age-hours is respected"
 : >"$STUB_RM_LOG"
 STUB_CONTAINERS="sandcastle-x:3" "$tool" --apply --max-age-hours 2 >/dev/null 2>&1
 check "removed past the custom threshold" grep -q "sandcastle-x" "$STUB_RM_LOG"
+
+echo "T8 an unreadable gh response stops everything (fail-closed)"
+: >"$STUB_RM_LOG"
+# gh exits nonzero -> the reaper must not treat that as "no active runs".
+cat >"$tmp/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+chmod +x "$tmp/stub/gh"
+STUB_CONTAINERS="sandcastle-old:50" "$tool" --apply >/dev/null 2>&1
+check "removed nothing when the run list is unreadable" is_empty "$STUB_RM_LOG"
+
+echo "T9 a non-numeric run count stops everything (fail-closed)"
+: >"$STUB_RM_LOG"
+cat >"$tmp/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "not-a-number"
+STUB
+chmod +x "$tmp/stub/gh"
+STUB_CONTAINERS="sandcastle-old:50" "$tool" --apply >/dev/null 2>&1
+check "removed nothing on a non-numeric count" is_empty "$STUB_RM_LOG"
+
+echo "T10 a removal failure exits nonzero"
+restore_gh() {
+  cat >"$tmp/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "${STUB_ACTIVE_RUNS:-0}"
+STUB
+  chmod +x "$tmp/stub/gh"
+}
+restore_gh
+cat >"$tmp/stub/docker" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  ps) printf '%s\n' ${STUB_CONTAINERS:-} | cut -d: -f1 ;;
+  inspect) printf '%s\n' "$(date -u -d "-50 hours" +%Y-%m-%dT%H:%M:%SZ)" ;;
+  rm) exit 1 ;;   # removal always fails
+esac
+exit 0
+STUB
+chmod +x "$tmp/stub/docker"
+if STUB_CONTAINERS="sandcastle-old:50" "$tool" --apply >/dev/null 2>&1; then
+  echo "  FAIL removal failure should exit nonzero" >&2; fail=1
+else
+  echo "  ok   removal failure exits nonzero"
+fi
+
+echo "T11 no runner config stops everything (fail-closed)"
+: >"$STUB_RM_LOG"
+mv "$HOME/Projects/_runners" "$tmp/runners-hidden"
+STUB_CONTAINERS="sandcastle-old:50" "$tool" --apply >/dev/null 2>&1
+check "removed nothing without runner configuration" is_empty "$STUB_RM_LOG"
+mv "$tmp/runners-hidden" "$HOME/Projects/_runners"
 
 echo
 if [ "$fail" -ne 0 ]; then echo "dev-reap-sandbox tests FAILED"; exit 1; fi

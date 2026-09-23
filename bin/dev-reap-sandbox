@@ -69,21 +69,66 @@ say() { [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
 
 command -v docker >/dev/null 2>&1 || { printf 'docker not available\n' >&2; exit 65; }
 
-# Refuse to act while any job is active on this host. This is the fail-closed
-# gate: an in-flight job may own containers of any age.
-active_jobs=$(ps -eo cmd 2>/dev/null | grep -c '[R]unner.Worker' || true)
-if [ "${active_jobs:-0}" -gt 0 ]; then
+# Refuse to act unless the absence of activity is *established*, not merely
+# assumed. An inability to check counts as activity: a missing command, an
+# expired token, a network fault, or a GitHub API failure must stop the reaper,
+# not wave it through. Reading a failed check as "zero active jobs" is exactly
+# the mistake that would delete a container a live job is still using.
+active_jobs=0
+if ! ps_output=$(ps -eo cmd 2>/dev/null); then
+  say "cannot read the process table; refusing to reap (fail-closed)"
+  exit 0
+fi
+active_jobs=$(printf '%s\n' "$ps_output" | grep -c '[R]unner.Worker' || true)
+case "$active_jobs" in
+  ''|*[!0-9]*) say "unreadable runner-worker count; refusing to reap (fail-closed)"; exit 0 ;;
+esac
+if [ "$active_jobs" -gt 0 ]; then
   say "a runner worker is present; refusing to reap (fail-closed)"
   exit 0
 fi
 
 # Any workflow run in progress, checked through the API, in every repository
-# this host serves. Cheap enough to be the deciding signal.
-for repo in kilbertert/genesis-evidence kilbertert/Health-Flow; do
-  n=$(gh run list --repo "$repo" --limit 20 --json status \
-        --jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length' 2>/dev/null || echo 0)
-  if [ "${n:-0}" -gt 0 ]; then
-    say "$repo has ${n} active run(s); refusing to reap (fail-closed)"
+# this host serves.
+#
+# The list is discovered from the installed runners rather than hardcoded. A
+# hardcoded list is a blind spot the moment a repository is added, and this gate
+# was written with exactly that bug: it named two repositories while five
+# runners were installed, one of which had recently produced a leaked container.
+#
+# Each runner's `.runner` file records the repository it belongs to.
+REPOS=""
+for runner_dir in "$HOME/Projects/_runners"/*/; do
+  runner_file="$runner_dir.runner"
+  [ -f "$runner_file" ] || continue
+  url=$(grep -oP '"gitHubUrl"\s*:\s*"\K[^"]+' "$runner_file" 2>/dev/null | head -1) || continue
+  [ -n "$url" ] || continue
+  slug=${url#https://github.com/}
+  case "$slug" in
+    "$url") continue ;;  # not a github.com URL we understand
+  esac
+  case " $REPOS " in
+    *" $slug "*) ;;
+    *) REPOS="${REPOS:+$REPOS }$slug" ;;
+  esac
+done
+
+if [ -z "$REPOS" ]; then
+  # No runners found: we cannot establish that nothing is running.
+  say "no runner configuration found; refusing to reap (fail-closed)"
+  exit 0
+fi
+for repo in $REPOS; do
+  if ! runs=$(gh run list --repo "$repo" --limit 20 --json status \
+        --jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length' 2>/dev/null); then
+    say "cannot query $repo; refusing to reap (fail-closed)"
+    exit 0
+  fi
+  case "$runs" in
+    ''|*[!0-9]*) say "unreadable run count for $repo; refusing to reap (fail-closed)"; exit 0 ;;
+  esac
+  if [ "$runs" -gt 0 ]; then
+    say "$repo has ${runs} active run(s); refusing to reap (fail-closed)"
     exit 0
   fi
 done
@@ -91,6 +136,7 @@ done
 now=$(date +%s)
 candidates=0
 reaped=0
+failed=0
 
 while read -r name; do
   case "$name" in "$PREFIX"*) ;; *) continue ;; esac
@@ -110,11 +156,20 @@ while read -r name; do
       reaped=$((reaped+1))
     else
       say "FAILED  $name (age ${age_hours}h)"
+      failed=$((failed+1))
     fi
   else
     say "would reap $name (age ${age_hours}h)"
   fi
 done < <(docker ps --format '{{.Names}}' 2>/dev/null)
 
-say "candidates: $candidates | reaped: $reaped | apply: $APPLY"
+say "candidates: $candidates | reaped: $reaped | failed: $failed | apply: $APPLY"
 [ "$APPLY" = 1 ] || say "(dry run — pass --apply to remove)"
+
+# A partial or total failure to remove must be visible to the caller: a
+# scheduled job that reports success while containers were left behind is
+# worse than one that fails loudly.
+if [ "$failed" -gt 0 ]; then
+  printf 'error: %d container(s) could not be removed\n' "$failed" >&2
+  exit 1
+fi

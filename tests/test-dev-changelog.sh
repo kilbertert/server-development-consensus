@@ -163,4 +163,83 @@ if ! "$tool" --check "$tagged/sub" >/dev/null 2>&1; then
   exit 1
 fi
 
+# --- an undeclared type does not become its own heading ---------------------
+# A history written before the commit-msg hook existed carries free-form
+# commits like `improve:` or `merge:`. git-cliff accepts any `word:` prefix as
+# conventional, so without a catch-all each one becomes a section of its own —
+# which is what a real 417-commit history produced before this guard existed.
+variety=$tmp/variety
+mkdir -p "$variety"
+git init --initial-branch=main -q "$variety"
+git -C "$variety" config user.name test
+git -C "$variety" config user.email test@example.invalid
+git -C "$variety" config --local serverPolicy.publishesVersions true
+for message in "feat: a real feature" "improve: not a declared type" \
+  "merge: branch x" "ops: deploy thing" "fix: a real fix"; do
+  printf '%s\n' "$message" >>"$variety/file.txt"
+  git -C "$variety" add file.txt
+  git -C "$variety" -c core.hooksPath=/dev/null commit -q -m "$message"
+done
+"$tool" "$variety" >/dev/null
+for heading in improve merge ops; do
+  if grep -qi "^### $heading$" "$variety/CHANGELOG.md"; then
+    echo "FAIL: undeclared type '$heading' became its own changelog heading"
+    cat "$variety/CHANGELOG.md"
+    exit 1
+  fi
+done
+# The declared types must still be there, so the guard cannot pass by omission.
+grep -q '^### Added$' "$variety/CHANGELOG.md" || { echo "FAIL: lost Added"; exit 1; }
+grep -q '^### Fixed$' "$variety/CHANGELOG.md" || { echo "FAIL: lost Fixed"; exit 1; }
+grep -q 'A real feature' "$variety/CHANGELOG.md" || { echo "FAIL: lost the feat entry"; exit 1; }
+
+# --- a longer word sharing a type prefix is not that type -------------------
+# git-cliff matches parsers without anchoring, so `^feat` also accepted
+# `feature:` and `^fix` accepted `fixup:`, filing both under Added and Fixed.
+# The type pattern must end at the delimiter that follows it.
+collision=$tmp/collision
+mkdir -p "$collision"
+git init --initial-branch=main -q "$collision"
+git -C "$collision" config user.name test
+git -C "$collision" config user.email test@example.invalid
+git -C "$collision" config --local serverPolicy.publishesVersions true
+for message in "feat: real feature" "feature: prefix collision" \
+  "fix: real fix" "fixup: prefix collision" "fixer: another" "docker: not docs"; do
+  printf '%s\n' "$message" >>"$collision/file.txt"
+  git -C "$collision" add file.txt
+  git -C "$collision" -c core.hooksPath=/dev/null commit -q -m "$message"
+done
+"$tool" "$collision" >/dev/null
+grep -q 'Prefix collision' "$collision/CHANGELOG.md" && {
+  echo "FAIL: a longer word sharing a type prefix was filed as that type"
+  cat "$collision/CHANGELOG.md"
+  exit 1
+}
+grep -q 'Another' "$collision/CHANGELOG.md" && {
+  echo "FAIL: an undeclared type was filed under a declared one"
+  exit 1
+}
+# The real entries must survive, so the guard cannot pass by dropping them.
+grep -q 'Real feature' "$collision/CHANGELOG.md" || { echo "FAIL: lost the feat"; exit 1; }
+grep -q 'Real fix' "$collision/CHANGELOG.md" || { echo "FAIL: lost the fix"; exit 1; }
+
+# --- scoped and breaking forms still group ----------------------------------
+# The delimiter-anchored patterns must not cost the three real shapes.
+shapes=$tmp/shapes
+mkdir -p "$shapes"
+git init --initial-branch=main -q "$shapes"
+git -C "$shapes" config user.name test
+git -C "$shapes" config user.email test@example.invalid
+git -C "$shapes" config --local serverPolicy.publishesVersions true
+for message in "feat(api): scoped" "feat!: bang" "feat(api)!: both" "docs: plain" "doc: singular"; do
+  printf '%s\n' "$message" >>"$shapes/file.txt"
+  git -C "$shapes" add file.txt
+  git -C "$shapes" -c core.hooksPath=/dev/null commit -q -m "$message"
+done
+"$tool" "$shapes" >/dev/null
+for entry in Scoped Bang Both; do
+  grep -q "$entry" "$shapes/CHANGELOG.md" || { echo "FAIL: lost feat shape $entry"; exit 1; }
+done
+grep -q '^### Documentation$' "$shapes/CHANGELOG.md" || { echo "FAIL: lost Documentation"; exit 1; }
+
 echo "dev-changelog tests passed"

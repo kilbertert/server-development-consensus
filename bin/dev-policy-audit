@@ -401,7 +401,25 @@ while IFS= read -r -d '' git_path; do
   # release cadence, not a commit cadence, and because --repair cannot fix it:
   # generating a changelog is a content decision, not drift repair. A WARN keeps
   # it a finding without gating the installer, which fails when the audit does.
-  if [[ $repo_class == managed ]]; then
+  #
+  # The obligation belongs to the repository, so it is checked once, at the one
+  # checkout whose work tree is the repository's own. `serverPolicy.*` is
+  # repository configuration and therefore shared by every linked worktree — a
+  # declaration made for the repository is visible from a worktree doing
+  # unrelated work. Reading it there would find that worktree's work tree, which
+  # legitimately has no CHANGELOG.md, and report a finding against unrelated
+  # work. The main checkout is the one whose git directory is the common
+  # directory; a linked worktree's git directory is a per-worktree entry below
+  # it. Only the main checkout's work tree can be compared with the rendered
+  # changelog, because the generating tool reads the repository it is given and
+  # writes beside it.
+  git_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)
+  common_dir_for_changelog=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  is_main_checkout=false
+  if [[ -n $git_dir && -n $common_dir_for_changelog && $git_dir = "$common_dir_for_changelog" ]]; then
+    is_main_checkout=true
+  fi
+  if [[ $repo_class == managed && $is_main_checkout == true ]]; then
     # `git config --get` exits 0 with empty output for a key set to the empty
     # string, so "present but empty" and "absent" are different states and only
     # the absent one is the default. Treating them alike would let an empty

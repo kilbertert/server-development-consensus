@@ -30,6 +30,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B17 | Development host workspace with a policy audit reporting stale branches | The audit reports one or more local task branches as `upstream_gone` or `integrated_not_retired` | Local task branches across the scanned repositories | For each branch, verify the head carries a merged pull request and that the branch tree matches its hosting merge commit, then retire the local branch, and the remote ref where one still exists | No branch is retired without a verified merge; the audit then reports `stale_branches=0`; remote ref deletion and local branch deletion are reported as separate operations | None (retirement is the operation) |
 | GOV-B18 | Development host with a self-hosted runner | A job checkout exists under `_runners/<runner>/_work/` and a deploy checkout exists under `_runners/`, neither carrying delivery metadata; one runner checkout is unreadable; two controls sit outside `_runners/` | The runner, deploy and unreadable fixtures in `tests/test-dev-policy-audit.sh`, plus a repository in a `_work` directory and a project with no metadata, both outside `_runners/` | Run `dev-policy-audit` over the projects root | All `_runners/` artifacts are reported as `skip runner working directory` and none fails, including the unreadable one, while both controls still fail with `default-branch expected=main actual=unset` | Remove the fixture repositories |
 | GOV-B19 | Repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread; all required checks pass | A real pull request against a gated repository (`AI-Ops#371`, merged `229cc194`) | Read `mergeStateStatus` with all required checks passing while threads are unresolved and again once resolved; attempt the merge while blocked; resolve a thread by hand; post the triage record and request the re-review | `BLOCKED` with unresolved threads under all-checks-passing and `CLEAN` once every thread is resolved (`14 of 14` at merge); `gh pr merge` refused with `the base branch policy prohibits the merge`; a write-access user resolves a thread and returns `resolvedBy: kilbertert`; after the re-review Devin resolves the thread it considers fixed and leaves the accepted-limitation thread unresolved | None (the gate is the state under test) |
+| GOV-B20 | Installer test fixture home with a repository declaring `serverPolicy.publishesVersions` | The changelog generator is installed and the fixture repository carries conventional commits and the declaration | A marked repository with no `CHANGELOG.md`; a marked repository whose changelog is regenerated, then receives one more `feat` commit; a repository with the key absent or `false`; a repository with the key set to a non-boolean | Run `dev-changelog` and `dev-changelog --check` against each, then run `dev-policy-audit` over the fixture root | The unmarked repository is skipped with no file written; the marked repository without a changelog is reported `WARN ... but has no CHANGELOG.md` and the audit is not failed by it; generation produces Keep a Changelog headings with `feat` under Added and `chore` omitted, and a second run is byte-identical; the commit added afterwards makes `--check` exit non-zero with `does not match the commits` while writing nothing; the absent and `false` cases produce no finding; the non-boolean value fails the audit | Remove the fixture repositories |
 
 ## Traceability
 
@@ -55,6 +56,7 @@ repository scope that decides which of those rules a repository is subject to.
 | Deployment artifacts are not projects | A runner working directory is not a managed repository | GOV-B18 |
 | Triage is gated, the reviewer is not | An untriaged finding cannot be merged past | GOV-B19 |
 | The re-review closes the loop | Requesting the re-review is what closes the triage loop | GOV-B19 |
+| A publisher keeps its changelog | A publishing repository's changelog tracks its commits | GOV-B20 |
 
 ## Execution Results
 
@@ -502,6 +504,53 @@ concurrent-write window is covered by a stated cost rather than `If-Match`
 answered with a re-runnable read-only check rather than versioning the state; and
 the `BLOCKED` attribution is now scoped to the current rule set with the
 rule-set query retained as evidence. Those dispositions are on the pull request.
+
+### GOV-B20 - a publishing repository's changelog tracks its commits
+
+Executed on `2026-09-24` on the `claude` development host, against
+`feat/changelog-policy` based on `ba34597`.
+
+The starting point was a measured one: of the repositories in the workspace,
+exactly one carries a real hand-written `CHANGELOG.md`, and it had drifted two
+months behind its own code — evidence that a changelog maintained by discipline
+alone is not maintained. The rule that produced it also did not exist: the
+consensus document contained no mention of a changelog at all. So the change
+adds both the obligation and the mechanism that keeps it from rotting.
+
+Two facts shaped the mechanism. First, there is no reliable way to infer which
+repositories publish: nearly every `package.json` in the workspace is
+`private: true`, and the only two that are not are forks whose versions this
+host has no authority to define. The obligation therefore attaches to an
+explicit `serverPolicy.publishesVersions` declaration, absent by default, in the
+same shape as the repository class. Second, generation has to be reproducible or
+drift detection is meaningless, so this was verified rather than assumed: for a
+fixed commit, `git-cliff` renders byte-identical output across runs, and a new
+`feat` commit produces a diff. Both are asserted in `tests/test-dev-changelog.sh`.
+
+Results, all on the development host:
+
+| Check | Command | Result |
+|---|---|---|
+| Generator behaviour | `sh tests/test-dev-changelog.sh` | `dev-changelog tests passed` |
+| Audit integration | `bash tests/test-dev-policy-audit.sh` | `development policy audit tests passed` |
+| Installer delivery | `sh tests/test-install.sh` | `installer integration tests passed` |
+| Version contract | `bash tests/test-afk-contract.sh` | `AFK contract passed` |
+
+The audit check was verified in the failing direction as well as the passing
+one: a fixture repository declaring `publishesVersions=true` with no changelog
+produces `WARN ... declares serverPolicy.publishesVersions but has no
+CHANGELOG.md` and no `FAIL`, so the installer gate is not tripped by a missing
+changelog; a later `feat` commit makes `--check` exit non-zero while writing
+nothing; a non-boolean declaration fails the audit rather than exempting it. A
+check that can only pass is not a check.
+
+Scope boundary: `acceptance.feature` is unchanged, and the reason is recorded
+rather than assumed. Its rules state invariants of the AFK execution plane — trust
+plane, credential boundary, host fleet, reviewer layering — and "a publishing
+repository keeps a changelog" is a working convention, not a cross-system
+contract, so it has no rule at that grain to belong to. The policy text change it
+does depend on is already covered by the existing scenario asserting that every
+installed policy copy matches the canonical source with no audit drift.
 
 ## Risk Checks
 

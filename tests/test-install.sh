@@ -113,6 +113,8 @@ custom_chain=$(git config --global --path --get serverPolicy.globalChainedHooksP
 cmp "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
 [ -x "$HOME/.local/bin/dev-host" ]
 cmp "$base_dir/bin/dev-host" "$HOME/.local/bin/dev-host"
+[ -x "$HOME/.local/bin/dev-changelog" ]
+cmp "$base_dir/bin/dev-changelog" "$HOME/.local/bin/dev-changelog"
 [ -x "$HOME/.local/bin/hash-tree.sh" ]
 cmp "$base_dir/bin/hash-tree.sh" "$HOME/.local/bin/hash-tree.sh"
 [ "$custom_chain" != "$HOME/.config/git/hooks" ]

@@ -1,0 +1,174 @@
+#!/bin/sh
+set -eu
+
+. "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
+
+# Regenerate CHANGELOG.md from Conventional Commits for a repository that
+# publishes versioned artifacts.
+#
+# The obligation is opted into, never inferred. `serverPolicy.publishesVersions`
+# is a local, explicit declaration in the same shape as the repository class:
+# absent means "this repository does not publish", so an unmarked repository is
+# skipped rather than failed. Inferring it was tried and rejected — nearly every
+# package.json in the workspace is `private: true`, and the only two that are
+# not are forks whose versions this host has no authority to define.
+#
+# The git-cliff configuration is embedded below rather than shipped as a
+# separate file: it is one consumer's private format, and the release unit has
+# no delivery path for per-tool configuration. If it ever needs to be shared
+# across consumers or tuned per repository, promote it to `lib/`.
+
+usage() {
+  printf '%s\n' 'usage: dev-changelog [--check] [REPO]' >&2
+  exit 2
+}
+
+check=false
+repo=
+for argument in "$@"; do
+  case $argument in
+    --check) check=true ;;
+    -h|--help) usage ;;
+    -*) printf '%s\n' "error: unknown option: $argument" >&2; usage ;;
+    *)
+      [ -z "$repo" ] || {
+        printf '%s\n' 'error: at most one repository may be given' >&2
+        usage
+      }
+      repo=$argument
+      ;;
+  esac
+done
+
+if [ -n "$repo" ]; then
+  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    printf '%s\n' "error: not a Git worktree: $repo" >&2
+    exit 2
+  }
+else
+  require_repository
+fi
+# `git -C` accepts any directory inside the work tree, so an argument naming a
+# subdirectory would otherwise render and compare a CHANGELOG.md beside itself
+# while the repository root kept a different one.
+repo=$(git -C "$repo" rev-parse --show-toplevel) || {
+  printf '%s\n' 'error: could not determine the repository root' >&2
+  exit 2
+}
+
+publishes=false
+if declared=$(git -C "$repo" config --local --get serverPolicy.publishesVersions 2>/dev/null); then
+  publishes=$declared
+else
+  declared_status=$?
+  # Status 1 is "the key is absent", which is the documented default rather than
+  # an error; anything higher means the configuration could not be read at all,
+  # and a check that cannot read its own condition must not report success.
+  [ "$declared_status" -eq 1 ] || {
+    printf '%s\n' "error: cannot inspect serverPolicy.publishesVersions for $repo" >&2
+    exit 2
+  }
+fi
+case $publishes in
+  true) ;;
+  false)
+    # Silent on --check so the policy audit's output stays a list of findings;
+    # a skip is not a finding.
+    $check || printf '%s\n' "skip $repo: serverPolicy.publishesVersions is not declared"
+    exit 0
+    ;;
+  *)
+    printf '%s\n' "error: serverPolicy.publishesVersions must be true or false, got: ${publishes:-an empty value}" \
+      >&2
+    exit 2
+    ;;
+esac
+
+command -v git-cliff >/dev/null 2>&1 || {
+  printf '%s\n' 'error: git-cliff is required (install with: uv tool install git-cliff)' >&2
+  exit 2
+}
+
+# git-cliff selects its parser from the configuration file's extension, so the
+# temporary copy has to keep a `.toml` name; a bare mktemp path is rejected as
+# an unsupported format.
+tmp_dir=${TMPDIR:-/tmp}
+config=$(mktemp "$tmp_dir/dev-changelog-XXXXXX.toml") || {
+  printf '%s\n' 'error: could not create a temporary file' >&2
+  exit 2
+}
+generated=$(mktemp "$tmp_dir/dev-changelog-XXXXXX.out") || {
+  rm -f "$config"
+  printf '%s\n' 'error: could not create a temporary file' >&2
+  exit 2
+}
+trap 'rm -f "$config" "$generated"' EXIT INT TERM
+
+# Keep a Changelog 1.1.0 headings mapped from the repository's commit types. The
+# mapping is the reason a generated changelog is worth having at all: it is the
+# step a human reading `git log` has to perform by hand, every time.
+cat >"$config" <<'CLIFF'
+[changelog]
+header = "# Changelog\n\nAll notable changes to this project are documented in this file.\n\nThe format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n"
+body = """{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group }}
+{% for commit in commits %}\
+- {{ commit.message | upper_first }}{% if commit.breaking %} **BREAKING**{% endif %}
+{% endfor %}
+{% endfor %}\
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^perf", group = "Changed" },
+  { message = "^style", group = "Changed" },
+  { message = "^revert", group = "Removed" },
+  { message = "^chore|^ci|^test|^build", skip = true },
+]
+tag_pattern = "v?[0-9]+\\.[0-9]+\\.[0-9]+"
+sort_commits = "oldest"
+CLIFF
+
+if ! git-cliff --config "$config" --repository "$repo" --output "$generated" 2>/dev/null; then
+  printf '%s\n' "error: git-cliff could not render a changelog for $repo" >&2
+  exit 2
+fi
+
+target=$repo/CHANGELOG.md
+
+if $check; then
+  if [ ! -f "$target" ]; then
+    printf '%s\n' "$target is missing"
+    exit 1
+  fi
+  if cmp -s "$generated" "$target"; then
+    exit 0
+  fi
+  printf '%s\n' "$target does not match the commits it is generated from"
+  exit 1
+fi
+
+if [ -f "$target" ] && cmp -s "$generated" "$target"; then
+  printf '%s\n' "unchanged $target"
+  exit 0
+fi
+
+# The file is rewritten rather than appended: it is a projection of the commit
+# history, so a stale section is corrected, not preserved.
+cat "$generated" >"$target" || {
+  printf '%s\n' "error: could not write $target" >&2
+  exit 2
+}
+printf '%s\n' "wrote $target"

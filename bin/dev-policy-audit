@@ -18,6 +18,7 @@ codex_policy_file=$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md
 managed_hooks_manifest=$policy_dir/managed-hooks.sha256
 codex_updater=$policy_home/.local/bin/update-codex-config
 worktree_tool=$policy_home/.local/bin/dev-worktree
+changelog_tool=$policy_home/.local/bin/dev-changelog
 failures=0
 repaired=0
 stale_branches=0
@@ -195,6 +196,13 @@ source "$common"
 if [[ ! -x $worktree_tool ]]; then
   printf 'FAIL worktree lifecycle tool is unavailable: %s\n' "$worktree_tool"
   failures=$((failures + 1))
+fi
+# The changelog check is advisory, so a missing tool degrades the check rather
+# than failing the audit: a host that never publishes anything has no reason to
+# have the generator installed. The check itself reports the gap per repository.
+if [[ ! -x $changelog_tool ]]; then
+  printf 'WARN changelog generator is unavailable; changelog drift is not checked: %s\n' \
+    "$changelog_tool"
 fi
 if [[ ! -d $projects_root || ! -r $projects_root ]]; then
   printf 'FAIL cannot scan projects root %s\n' "$projects_root"
@@ -381,6 +389,75 @@ while IFS= read -r -d '' git_path; do
     printf 'FAIL %s repository class is invalid: %s\n' "$repo" "$repo_class"
     failures=$((failures + 1))
     continue
+  fi
+
+  # A publishing repository opts in to maintaining CHANGELOG.md by declaring
+  # serverPolicy.publishesVersions; absence is the documented default, not a gap.
+  # The declaration is read only for managed repositories: an externally
+  # governed repository keeps its own release process, and a fork's upstream
+  # version is not this host's to document.
+  #
+  # The check is a WARN rather than a FAIL because a changelog is updated on a
+  # release cadence, not a commit cadence, and because --repair cannot fix it:
+  # generating a changelog is a content decision, not drift repair. A WARN keeps
+  # it a finding without gating the installer, which fails when the audit does.
+  if [[ $repo_class == managed ]]; then
+    # `git config --get` exits 0 with empty output for a key set to the empty
+    # string, so "present but empty" and "absent" are different states and only
+    # the absent one is the default. Treating them alike would let an empty
+    # value read as undeclared — an implicit exemption from a malformed
+    # declaration, which is the failure mode this whole block avoids.
+    publishes_versions=
+    publishes_declared=false
+    if publishes_versions=$(git -C "$repo" config --local --get serverPolicy.publishesVersions 2>/dev/null); then
+      publishes_declared=true
+    else
+      publishes_status=$?
+      if [[ $publishes_status -ne 1 ]]; then
+        printf 'FAIL %s cannot inspect serverPolicy.publishesVersions\n' "$repo"
+        failures=$((failures + 1))
+        continue
+      fi
+      publishes_versions=
+    fi
+    case $publishes_versions in
+      true)
+        if [[ ! -f $repo/CHANGELOG.md ]]; then
+          printf 'WARN %s declares serverPolicy.publishesVersions but has no CHANGELOG.md\n' \
+            "$repo"
+        elif [[ -x $changelog_tool ]]; then
+          changelog_output=$("$changelog_tool" --check "$repo" 2>&1)
+          changelog_status=$?
+          case $changelog_status in
+            0) ;;
+            1)
+              printf 'WARN %s changelog drifted from its commits: %s\n' \
+                "$repo" "$changelog_output"
+              ;;
+            *)
+              # The tool separates "the file drifted" (1) from "the check could
+              # not run" (2). Collapsing them would report a missing git-cliff
+              # or an unreadable declaration as a content finding, which is a
+              # false claim about the file.
+              printf 'WARN %s changelog could not be checked: %s\n' \
+                "$repo" "$changelog_output"
+              ;;
+          esac
+        fi
+        ;;
+      '')
+        if $publishes_declared; then
+          printf 'FAIL %s serverPolicy.publishesVersions must be true or false, got an empty value\n' \
+            "$repo"
+          failures=$((failures + 1))
+        fi
+        ;;
+      *)
+        printf 'FAIL %s serverPolicy.publishesVersions must be true or false, got: %s\n' \
+          "$repo" "$publishes_versions"
+        failures=$((failures + 1))
+        ;;
+    esac
   fi
 
   local_hooks=$(git -C "$repo" config --local --path --get core.hooksPath 2>/dev/null)

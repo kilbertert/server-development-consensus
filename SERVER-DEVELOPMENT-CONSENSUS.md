@@ -401,10 +401,17 @@ documentation change:
    version, is reported. The audit reports it and does not repair it, because
    generating a changelog is a decision about what a release contains — use
    `dev-changelog` to render the sections from the repository's own Conventional
-   Commits once that decision is made. A repository with no version tags yet
-   renders a single `Unreleased` section; that is a starting point for the
-   changelog, not a substitute for tagging, and it becomes one section per
-   release as tags are created.
+   Commits once that decision is made.
+
+   A section's boundary is a version tag and nothing else, so a deployed service
+   that creates no tags renders a single `Unreleased` section — its changelog
+   answers "what has landed" but not "what was in the last deployment". That is
+   a real and stated limit, not a hidden one: this rule requires the changelog,
+   and it does not by itself require a tagging practice. A repository that needs
+   its deployments told apart creates a tag at each deployment, which is the
+   decision the preceding paragraph already governs, and the changelog then
+   splits into one section per deployment with no further change. Until then the
+   `Unreleased` section is a starting point, not a substitute.
 
 Direct pushes, force pushes, local merges pushed to the default branch, and
 using `--no-verify` to bypass the server guard are prohibited. Do not weaken or

@@ -108,12 +108,22 @@ trap 'rm -f "$config" "$generated"' EXIT INT TERM
 # mapping is the reason a generated changelog is worth having at all: it is the
 # step a human reading `git log` has to perform by hand, every time.
 #
-# The trailing catch-all is load-bearing, not a formality. git-cliff treats any
-# `word:` prefix as a conventional commit, so a history written before the
+# Two properties of this list are load-bearing, and both were found by running
+# the generator over a real history rather than by reasoning about it.
+#
+# Every pattern ends at the delimiter that follows the type — `(`, `!` or `:` —
+# because git-cliff matches without anchoring. A bare `^feat` also accepts
+# `feature:`, and `^fix` accepts `fixup:`; both then land in Added and Fixed,
+# which is precisely the mis-grouping a changelog exists to prevent. The same
+# defect applies to `^doc`/`docker:` and `^ci`/`circus:`.
+#
+# The trailing catch-all is what makes the list authoritative. git-cliff treats
+# any `word:` prefix as a conventional commit, so a history written before the
 # commit-msg hook existed — `improve:`, `merge:`, `ops:` — otherwise passes
-# `filter_unconventional` and each such type becomes its own heading, which is
-# the opposite of a readable changelog. Only the types this host's contract
-# declares may produce a section; everything else is skipped.
+# `filter_unconventional` and each such type becomes its own heading. Only the
+# types this host's contract declares may produce a section, so the declared
+# types are matched and everything else, including the skipped chore/test/ci/
+# build, falls to the catch-all.
 cat >"$config" <<'CLIFF'
 [changelog]
 header = "# Changelog\n\nAll notable changes to this project are documented in this file.\n\nThe format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n"
@@ -135,14 +145,13 @@ trim = true
 conventional_commits = true
 filter_unconventional = true
 commit_parsers = [
-  { message = "^feat", group = "Added" },
-  { message = "^fix", group = "Fixed" },
-  { message = "^doc", group = "Documentation" },
-  { message = "^refactor", group = "Changed" },
-  { message = "^perf", group = "Changed" },
-  { message = "^style", group = "Changed" },
-  { message = "^revert", group = "Removed" },
-  { message = "^chore|^ci|^test|^build", skip = true },
+  { message = "^feat(\\(|!|:)", group = "Added" },
+  { message = "^fix(\\(|!|:)", group = "Fixed" },
+  { message = "^docs?(\\(|!|:)", group = "Documentation" },
+  { message = "^refactor(\\(|!|:)", group = "Changed" },
+  { message = "^perf(\\(|!|:)", group = "Changed" },
+  { message = "^style(\\(|!|:)", group = "Changed" },
+  { message = "^revert(\\(|!|:)", group = "Removed" },
   { message = ".*", skip = true },
 ]
 tag_pattern = "v?[0-9]+\\.[0-9]+\\.[0-9]+"

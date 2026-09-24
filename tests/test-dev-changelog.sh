@@ -13,9 +13,12 @@ trap 'rm -rf "$tmp"' EXIT
 tool=$base_dir/bin/dev-changelog
 [ -x "$tool" ] || { echo "FAIL: $tool is not executable"; exit 1; }
 
+# The generator is only meaningful with git-cliff present, so its absence is a
+# failure rather than a skip: a suite that silently skips in CI verifies nothing
+# while still reporting success. CI installs it explicitly.
 command -v git-cliff >/dev/null 2>&1 || {
-  echo "SKIP: git-cliff is not installed; dev-changelog tests need it"
-  exit 0
+  echo "FAIL: git-cliff is not installed; the generator cannot be verified"
+  exit 1
 }
 
 export HOME=$tmp/home
@@ -123,5 +126,41 @@ grep -q 'must be true or false' "$tmp/empty.out" || {
   cat "$tmp/empty.out"
   exit 1
 }
+
+# --- a bare MAJOR.MINOR.PATCH tag is a version boundary ---------------------
+# The policy specifies annotated SemVer tags without a prefix, so the tag
+# pattern has to accept `1.2.0` as well as `v1.2.0`; a pattern that only
+# accepted one of them would fold a real release into Unreleased.
+tagged=$tmp/tagged
+make_repo "$tagged"
+git -C "$tagged" config --local serverPolicy.publishesVersions true
+git -C "$tagged" tag -a 1.0.0 -m "release 1.0.0"
+printf 'more\n' >>"$tagged/file.txt"
+git -C "$tagged" add file.txt
+git -C "$tagged" commit -q -m "feat: after the release"
+"$tool" "$tagged" >/dev/null
+grep -q '^## \[1\.0\.0\]' "$tagged/CHANGELOG.md" || {
+  echo "FAIL: a bare version tag did not produce a version section"
+  cat "$tagged/CHANGELOG.md"
+  exit 1
+}
+# The commit after the tag belongs to Unreleased, not to the released section.
+grep -q '^## \[Unreleased\]$' "$tagged/CHANGELOG.md" || { echo "FAIL: no Unreleased"; exit 1; }
+awk '/^## \[Unreleased\]/{u=1} /^## \[1\.0\.0\]/{u=0} u' "$tagged/CHANGELOG.md" |
+  grep -q 'After the release' || { echo "FAIL: post-tag commit not under Unreleased"; exit 1; }
+
+# --- an explicit subdirectory argument still targets the repository root ----
+# `git -C` accepts any directory in the work tree, so rendering beside the
+# argument would let one repository hold two different changelogs.
+mkdir -p "$tagged/sub"
+"$tool" "$tagged/sub" >/dev/null
+[ ! -e "$tagged/sub/CHANGELOG.md" ] || {
+  echo "FAIL: a subdirectory argument wrote a changelog below the root"
+  exit 1
+}
+if ! "$tool" --check "$tagged/sub" >/dev/null 2>&1; then
+  echo "FAIL: a subdirectory argument did not check the root changelog"
+  exit 1
+fi
 
 echo "dev-changelog tests passed"

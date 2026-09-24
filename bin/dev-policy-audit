@@ -426,10 +426,23 @@ while IFS= read -r -d '' git_path; do
           printf 'WARN %s declares serverPolicy.publishesVersions but has no CHANGELOG.md\n' \
             "$repo"
         elif [[ -x $changelog_tool ]]; then
-          if ! changelog_output=$("$changelog_tool" --check "$repo" 2>&1); then
-            printf 'WARN %s changelog drifted from its commits: %s\n' \
-              "$repo" "$changelog_output"
-          fi
+          changelog_output=$("$changelog_tool" --check "$repo" 2>&1)
+          changelog_status=$?
+          case $changelog_status in
+            0) ;;
+            1)
+              printf 'WARN %s changelog drifted from its commits: %s\n' \
+                "$repo" "$changelog_output"
+              ;;
+            *)
+              # The tool separates "the file drifted" (1) from "the check could
+              # not run" (2). Collapsing them would report a missing git-cliff
+              # or an unreadable declaration as a content finding, which is a
+              # false claim about the file.
+              printf 'WARN %s changelog could not be checked: %s\n' \
+                "$repo" "$changelog_output"
+              ;;
+          esac
         fi
         ;;
       '')

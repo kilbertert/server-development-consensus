@@ -402,24 +402,39 @@ while IFS= read -r -d '' git_path; do
   # generating a changelog is a content decision, not drift repair. A WARN keeps
   # it a finding without gating the installer, which fails when the audit does.
   #
-  # The obligation belongs to the repository, so it is checked once, at the one
-  # checkout whose work tree is the repository's own. `serverPolicy.*` is
+  # The obligation belongs to the repository, so it is checked once per
+  # repository rather than once per linked worktree. `serverPolicy.*` is
   # repository configuration and therefore shared by every linked worktree — a
   # declaration made for the repository is visible from a worktree doing
   # unrelated work. Reading it there would find that worktree's work tree, which
   # legitimately has no CHANGELOG.md, and report a finding against unrelated
   # work. The main checkout is the one whose git directory is the common
   # directory; a linked worktree's git directory is a per-worktree entry below
-  # it. Only the main checkout's work tree can be compared with the rendered
-  # changelog, because the generating tool reads the repository it is given and
-  # writes beside it.
+  # it.
+  #
+  # The obligation is checked at the main checkout when the scan can see it.
+  # When it cannot — the repository's main checkout lives outside the projects
+  # root, and only a linked worktree is inside it — the check still runs, on the
+  # worktree, rather than being skipped. Skipping is the one outcome that must
+  # not happen: an unreadable condition would then read as a pass, and a
+  # repository could hold the declaration, keep no changelog, and never be told.
+  # The cost is the opposite error on that path — a finding against a worktree
+  # that is not the repository's own work tree — which is why the generated-file
+  # comparison is made only where the two coincide.
   git_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)
   common_dir_for_changelog=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
   is_main_checkout=false
   if [[ -n $git_dir && -n $common_dir_for_changelog && $git_dir = "$common_dir_for_changelog" ]]; then
     is_main_checkout=true
   fi
-  if [[ $repo_class == managed && $is_main_checkout == true ]]; then
+  main_checkout_in_scan=false
+  if [[ -n $common_dir_for_changelog && -d $common_dir_for_changelog ]]; then
+    main_checkout_path=${common_dir_for_changelog%/.git}
+    case $main_checkout_path in
+      "$projects_root"|"$projects_root"/*) main_checkout_in_scan=true ;;
+    esac
+  fi
+  if [[ $repo_class == managed && ( $is_main_checkout == true || $main_checkout_in_scan == false ) ]]; then
     # `git config --get` exits 0 with empty output for a key set to the empty
     # string, so "present but empty" and "absent" are different states and only
     # the absent one is the default. Treating them alike would let an empty
@@ -443,7 +458,13 @@ while IFS= read -r -d '' git_path; do
         if [[ ! -f $repo/CHANGELOG.md ]]; then
           printf 'WARN %s declares serverPolicy.publishesVersions but has no CHANGELOG.md\n' \
             "$repo"
-        elif [[ -x $changelog_tool ]]; then
+        elif [[ -x $changelog_tool && $is_main_checkout == true ]]; then
+          # Compared only where the repository's own work tree is the one being
+          # read. On the fallback path above, the generator renders the
+          # repository's main work tree while the file belongs to a linked
+          # worktree on another branch, so a difference here would be an artifact
+          # of that mismatch rather than drift — a claim about the file the
+          # comparison cannot support.
           changelog_output=$("$changelog_tool" --check "$repo" 2>&1)
           changelog_status=$?
           case $changelog_status in

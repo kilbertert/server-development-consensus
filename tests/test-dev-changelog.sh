@@ -110,4 +110,18 @@ grep -q 'must be true or false' "$tmp/broken.out" || {
   exit 1
 }
 
+# --- an empty value is a malformed declaration, not an absent one -----------
+empty=$tmp/empty
+make_repo "$empty"
+git -C "$empty" config --local serverPolicy.publishesVersions ''
+if "$tool" --check "$empty" >"$tmp/empty.out" 2>&1; then
+  echo "FAIL: an empty declaration was treated as a skip"
+  exit 1
+fi
+grep -q 'must be true or false' "$tmp/empty.out" || {
+  echo "FAIL: empty declaration was not explained"
+  cat "$tmp/empty.out"
+  exit 1
+}
+
 echo "dev-changelog tests passed"

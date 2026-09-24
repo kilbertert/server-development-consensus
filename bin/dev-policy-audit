@@ -402,22 +402,25 @@ while IFS= read -r -d '' git_path; do
   # generating a changelog is a content decision, not drift repair. A WARN keeps
   # it a finding without gating the installer, which fails when the audit does.
   if [[ $repo_class == managed ]]; then
+    # `git config --get` exits 0 with empty output for a key set to the empty
+    # string, so "present but empty" and "absent" are different states and only
+    # the absent one is the default. Treating them alike would let an empty
+    # value read as undeclared — an implicit exemption from a malformed
+    # declaration, which is the failure mode this whole block avoids.
     publishes_versions=
+    publishes_declared=false
     if publishes_versions=$(git -C "$repo" config --local --get serverPolicy.publishesVersions 2>/dev/null); then
-      :
+      publishes_declared=true
     else
       publishes_status=$?
-      if [[ $publishes_status -eq 1 ]]; then
-        publishes_versions=
-      else
+      if [[ $publishes_status -ne 1 ]]; then
         printf 'FAIL %s cannot inspect serverPolicy.publishesVersions\n' "$repo"
         failures=$((failures + 1))
         continue
       fi
+      publishes_versions=
     fi
     case $publishes_versions in
-      '')
-        ;;
       true)
         if [[ ! -f $repo/CHANGELOG.md ]]; then
           printf 'WARN %s declares serverPolicy.publishesVersions but has no CHANGELOG.md\n' \
@@ -427,6 +430,13 @@ while IFS= read -r -d '' git_path; do
             printf 'WARN %s changelog drifted from its commits: %s\n' \
               "$repo" "$changelog_output"
           fi
+        fi
+        ;;
+      '')
+        if $publishes_declared; then
+          printf 'FAIL %s serverPolicy.publishesVersions must be true or false, got an empty value\n' \
+            "$repo"
+          failures=$((failures + 1))
         fi
         ;;
       *)

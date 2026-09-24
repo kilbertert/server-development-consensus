@@ -384,6 +384,14 @@ if "$audit" "$projects" >"$tmp/changelog-invalid.out" 2>&1; then
 fi
 grep -q "FAIL $publishing_repo serverPolicy.publishesVersions must be true or false, got: yes" \
   "$tmp/changelog-invalid.out"
+# An empty value is malformed too, and must not read as undeclared.
+git -C "$publishing_repo" config serverPolicy.publishesVersions ''
+if "$audit" "$projects" >"$tmp/changelog-empty.out" 2>&1; then
+  printf '%s\n' 'FAIL empty publishesVersions value was accepted as undeclared' >&2
+  exit 1
+fi
+grep -q "FAIL $publishing_repo serverPolicy.publishesVersions must be true or false, got an empty value" \
+  "$tmp/changelog-empty.out"
 rm -rf "$publishing_repo"
 
 # Runner working directories ------------------------------------------------------

@@ -75,7 +75,8 @@ case $publishes in
     exit 0
     ;;
   *)
-    printf '%s\n' "error: serverPolicy.publishesVersions must be true or false, got: $publishes" >&2
+    printf '%s\n' "error: serverPolicy.publishesVersions must be true or false, got: ${publishes:-an empty value}" \
+      >&2
     exit 2
     ;;
 esac

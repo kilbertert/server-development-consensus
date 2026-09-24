@@ -163,4 +163,34 @@ if ! "$tool" --check "$tagged/sub" >/dev/null 2>&1; then
   exit 1
 fi
 
+# --- an undeclared type does not become its own heading ---------------------
+# A history written before the commit-msg hook existed carries free-form
+# commits like `improve:` or `merge:`. git-cliff accepts any `word:` prefix as
+# conventional, so without a catch-all each one becomes a section of its own —
+# which is what a real 417-commit history produced before this guard existed.
+variety=$tmp/variety
+mkdir -p "$variety"
+git init --initial-branch=main -q "$variety"
+git -C "$variety" config user.name test
+git -C "$variety" config user.email test@example.invalid
+git -C "$variety" config --local serverPolicy.publishesVersions true
+for message in "feat: a real feature" "improve: not a declared type" \
+  "merge: branch x" "ops: deploy thing" "fix: a real fix"; do
+  printf '%s\n' "$message" >>"$variety/file.txt"
+  git -C "$variety" add file.txt
+  git -C "$variety" -c core.hooksPath=/dev/null commit -q -m "$message"
+done
+"$tool" "$variety" >/dev/null
+for heading in improve merge ops; do
+  if grep -qi "^### $heading$" "$variety/CHANGELOG.md"; then
+    echo "FAIL: undeclared type '$heading' became its own changelog heading"
+    cat "$variety/CHANGELOG.md"
+    exit 1
+  fi
+done
+# The declared types must still be there, so the guard cannot pass by omission.
+grep -q '^### Added$' "$variety/CHANGELOG.md" || { echo "FAIL: lost Added"; exit 1; }
+grep -q '^### Fixed$' "$variety/CHANGELOG.md" || { echo "FAIL: lost Fixed"; exit 1; }
+grep -q 'A real feature' "$variety/CHANGELOG.md" || { echo "FAIL: lost the feat entry"; exit 1; }
+
 echo "dev-changelog tests passed"

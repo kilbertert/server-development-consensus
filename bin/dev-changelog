@@ -107,6 +107,13 @@ trap 'rm -f "$config" "$generated"' EXIT INT TERM
 # Keep a Changelog 1.1.0 headings mapped from the repository's commit types. The
 # mapping is the reason a generated changelog is worth having at all: it is the
 # step a human reading `git log` has to perform by hand, every time.
+#
+# The trailing catch-all is load-bearing, not a formality. git-cliff treats any
+# `word:` prefix as a conventional commit, so a history written before the
+# commit-msg hook existed — `improve:`, `merge:`, `ops:` — otherwise passes
+# `filter_unconventional` and each such type becomes its own heading, which is
+# the opposite of a readable changelog. Only the types this host's contract
+# declares may produce a section; everything else is skipped.
 cat >"$config" <<'CLIFF'
 [changelog]
 header = "# Changelog\n\nAll notable changes to this project are documented in this file.\n\nThe format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n"
@@ -136,6 +143,7 @@ commit_parsers = [
   { message = "^style", group = "Changed" },
   { message = "^revert", group = "Removed" },
   { message = "^chore|^ci|^test|^build", skip = true },
+  { message = ".*", skip = true },
 ]
 tag_pattern = "v?[0-9]+\\.[0-9]+\\.[0-9]+"
 sort_commits = "oldest"

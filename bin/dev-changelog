@@ -3,8 +3,9 @@ set -eu
 
 . "$HOME/.local/lib/server-development-consensus/dev-git-common.sh"
 
-# Regenerate CHANGELOG.md from Conventional Commits for a repository that
-# publishes versioned artifacts.
+# Regenerate CHANGELOG.md from Conventional Commits for a repository whose work
+# reaches a consumer outside the development host — a published artifact or a
+# deployed service.
 #
 # The obligation is opted into, never inferred. `serverPolicy.publishesVersions`
 # is a local, explicit declaration in the same shape as the repository class:

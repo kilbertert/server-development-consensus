@@ -371,31 +371,40 @@ documentation change:
    should agree its versioning contract and release cadence before tagging
    begins.
 
-9. A repository that publishes versioned artifacts to a consumer outside the
-   development host keeps a `CHANGELOG.md` in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-   format, with the sections its changes fall into and a version heading per
-   release. The changelog is what a consumer reads between two versions; the
-   commit log is not, because it is written for the history, not for the reader
-   comparing releases. **This obligation is opted into, never inferred.** A
-   repository declares it with `serverPolicy.publishesVersions=true`; the
-   declaration is absent by default, and a repository that does not carry it
-   keeps no such obligation — most repositories on this host are single-operator
-   work with no external consumer, and a changelog nobody reads becomes a file
-   that drifts out of date rather than evidence. It is a local marker in the
-   same shape as the repository class and is never committed. A fork is not a
-   publisher: when the origin remote is the upstream project, its versions and
-   its changelog belong to that project, not to this host. Externally governed
-   repositories are excluded for the reason their class already gives — their
-   release process is another organization's to define.
+9. A repository whose work reaches a consumer outside the development host —
+   because it publishes versioned artifacts, or because it is deployed to run
+   for real users — keeps a `CHANGELOG.md` in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+   format: one section per released or deployed version, carrying the changes
+   that version contains. The changelog is what that consumer reads between two
+   versions; the commit log is not, because it is written for the history, not
+   for the reader comparing releases. The obligation is about **who consumes the
+   result**, not about the mechanism that delivers it: a deployable service and a
+   published package owe the same changelog for the same reason, and a service
+   with no version tags at all is the case that needs one most, because its
+   operator otherwise has only the commit log to tell deployments apart. **The
+   obligation is opted into, never inferred.** A repository declares it with
+   `serverPolicy.publishesVersions=true`; the declaration is absent by default,
+   and a repository that does not carry it keeps no such obligation — most
+   repositories on this host are single-operator work with no external consumer,
+   and a changelog nobody reads becomes a file that drifts out of date rather
+   than evidence. It is a local marker in the same shape as the repository class
+   and is never committed. A fork is not a consumer-facing repository: when the
+   origin remote is the upstream project, its versions and its changelog belong
+   to that project, not to this host. Externally governed repositories are
+   excluded for the reason their class already gives — their release process is
+   another organization's to define.
 
    The obligation reaches a repository's content; the server enforces the
-   declaration, not the quality of the prose. When a repository publishes, the
-   declared fact is what the policy audit checks: a publishing repository
-   without a changelog, or one whose changelog no longer matches the commits
-   since its last version, is reported. The audit reports it and does not repair
-   it, because generating a changelog is a decision about what the release
-   contains — use `dev-changelog` to render the sections from the repository's
-   own Conventional Commits once that decision is made.
+   declaration, not the quality of the prose. When a repository declares it, the
+   declared fact is what the policy audit checks: a repository without a
+   changelog, or one whose changelog no longer matches the commits since its last
+   version, is reported. The audit reports it and does not repair it, because
+   generating a changelog is a decision about what a release contains — use
+   `dev-changelog` to render the sections from the repository's own Conventional
+   Commits once that decision is made. A repository with no version tags yet
+   renders a single `Unreleased` section; that is a starting point for the
+   changelog, not a substitute for tagging, and it becomes one section per
+   release as tags are created.
 
 Direct pushes, force pushes, local merges pushed to the default branch, and
 using `--no-verify` to bypass the server guard are prohibited. Do not weaken or

@@ -25,7 +25,11 @@ the managed `commit-msg` hook enforces this at commit time. Keep each commit
 small and focused (normally under ~300 changed lines; a PR under ~500-800
 lines), and use a lightweight PR template (`changes`/`tests`/`checklist`) when
 one is provided. When a repository publishes versions, tag the merged default
-branch with an annotated Semantic Version tag (`MAJOR.MINOR.PATCH`).
+branch with an annotated Semantic Version tag (`MAJOR.MINOR.PATCH`). A
+repository that publishes to a consumer outside the development host also keeps
+a Keep a Changelog `CHANGELOG.md`, declared with
+`serverPolicy.publishesVersions=true` rather than inferred; `dev-changelog`
+renders it, and the policy audit reports a missing or drifted one.
 
 The repository root is a delivery surface. Before editing and before handoff,
 report its path, current branch, `git status --short --branch`, `git worktree

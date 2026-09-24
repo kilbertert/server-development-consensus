@@ -78,6 +78,7 @@ The local enforcement layer is installed at:
 - `~/.local/bin/dev-pr`
 - `~/.local/bin/dev-worktree`
 - `~/.local/bin/dev-policy-audit`
+- `~/.local/bin/dev-changelog`
 - `~/.local/bin/sync-privileged-policy`
 - `~/.config/systemd/user/dev-policy-audit.{service,timer}`
 
@@ -210,6 +211,19 @@ checkout is created and discarded by the runner. The test is the `_runners/`
 directory itself, not the `_work` directory name, and it is applied before any
 repository state command, so a checkout a job reclaims mid-audit is skipped
 rather than reported as an inspection failure.
+
+Run `dev-changelog [--check] [REPO]` in a repository that publishes versioned
+artifacts to an outside consumer. It renders `CHANGELOG.md` in Keep a Changelog
+form from the repository's own Conventional Commits, grouping `feat` under
+Added, `fix` under Fixed, and so on, with a section per version tag and an
+`Unreleased` section for what has landed since. `--check` compares the file with
+what the commits would produce and exits non-zero on a difference without
+writing anything. The obligation is opted into: a repository declares
+`serverPolicy.publishesVersions=true`, an absent key means it does not publish,
+and an unmarked repository is skipped rather than failed. The command needs
+`git-cliff` on `PATH` (`uv tool install git-cliff`); the policy audit warns when
+it is unavailable rather than failing, since a host with no publishing
+repository has no reason to carry it.
 
 The installer is intentionally account-specific: run it as `claude` with
 `HOME=/home/claude`. It backs up agent files, Codex config, Git config, global

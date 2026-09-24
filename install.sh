@@ -264,6 +264,8 @@ rollback_install() {
     installed-dev-policy-audit installed-dev-policy-audit.installed
   restore_file_conditionally "$HOME/.local/bin/dev-reap-sandbox" \
     installed-dev-reap-sandbox installed-dev-reap-sandbox.installed
+  restore_file_conditionally "$HOME/.local/bin/dev-changelog" \
+    installed-dev-changelog installed-dev-changelog.installed
   restore_file_conditionally "$HOME/.local/bin/dev-host" \
     installed-dev-host installed-dev-host.installed
   restore_file_conditionally "$HOME/.local/bin/hash-tree.sh" \
@@ -531,6 +533,7 @@ backup_file "$HOME/.local/bin/dev-pr" installed-dev-pr
 backup_file "$HOME/.local/bin/dev-worktree" installed-dev-worktree
 backup_file "$HOME/.local/bin/dev-policy-audit" installed-dev-policy-audit
 backup_file "$HOME/.local/bin/dev-reap-sandbox" installed-dev-reap-sandbox
+backup_file "$HOME/.local/bin/dev-changelog" installed-dev-changelog
 backup_file "$HOME/.local/bin/dev-host" installed-dev-host
 backup_file "$HOME/.local/bin/hash-tree.sh" installed-hash-tree
 backup_file "$HOME/.local/bin/update-codex-config" installed-update-codex-config
@@ -697,6 +700,8 @@ install -m 700 "$base_dir/bin/dev-policy-audit" "$HOME/.local/bin/dev-policy-aud
 backup_file "$HOME/.local/bin/dev-policy-audit" installed-dev-policy-audit.installed
 install -m 700 "$base_dir/bin/dev-reap-sandbox" "$HOME/.local/bin/dev-reap-sandbox"
 backup_file "$HOME/.local/bin/dev-reap-sandbox" installed-dev-reap-sandbox.installed
+install -m 700 "$base_dir/bin/dev-changelog" "$HOME/.local/bin/dev-changelog"
+backup_file "$HOME/.local/bin/dev-changelog" installed-dev-changelog.installed
 install -m 700 "$base_dir/bin/dev-host" "$HOME/.local/bin/dev-host"
 backup_file "$HOME/.local/bin/dev-host" installed-dev-host.installed
 install -m 700 "$base_dir/bin/hash-tree.sh" "$HOME/.local/bin/hash-tree.sh"

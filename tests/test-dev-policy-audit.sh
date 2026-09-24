@@ -343,6 +343,49 @@ grep -q "FAIL $external_repo repository class is invalid: company-managed" \
   "$tmp/external-class-invalid.out"
 rm -rf "$external_repo"
 
+# Changelog declarations ----------------------------------------------------------
+# A publishing repository opts in with serverPolicy.publishesVersions; only then
+# is a missing or drifted CHANGELOG.md a finding, and an externally governed
+# repository is excluded even when it carries the key, because its release
+# process is not this host's.
+publishing_repo=$projects/publishing-repo
+git init --initial-branch=main "$publishing_repo" >/dev/null
+git -C "$publishing_repo" config user.name test
+git -C "$publishing_repo" config user.email test@example.com
+git -C "$publishing_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m "feat: publish" >/dev/null
+git -C "$publishing_repo" config serverPolicy.publishesVersions true
+# Declared like the external fixture's, so the only finding this repository can
+# produce is the changelog one the case is about.
+git -C "$publishing_repo" config serverPolicy.defaultBranch main
+"$audit" "$projects" >"$tmp/changelog-missing.out" 2>&1 || true
+grep -q "WARN $publishing_repo declares serverPolicy.publishesVersions but has no CHANGELOG.md" \
+  "$tmp/changelog-missing.out"
+# It is a warning, not a failure: the installer gate is not tripped by a
+# missing changelog, so no FAIL may name that repository.
+if grep -q "FAIL $publishing_repo " "$tmp/changelog-missing.out"; then
+  cat "$tmp/changelog-missing.out" >&2
+  printf '%s\n' 'FAIL a missing changelog failed the audit instead of warning' >&2
+  exit 1
+fi
+# An explicitly declared false is the same as undeclared: no finding.
+git -C "$publishing_repo" config serverPolicy.publishesVersions false
+"$audit" "$projects" >"$tmp/changelog-false.out" 2>&1 || true
+if grep -q 'publishesVersions but has no CHANGELOG.md' "$tmp/changelog-false.out"; then
+  cat "$tmp/changelog-false.out" >&2
+  printf '%s\n' 'FAIL an undeclared/false publishing flag produced a changelog finding' >&2
+  exit 1
+fi
+# An invalid value is a finding, never an implicit exemption.
+git -C "$publishing_repo" config serverPolicy.publishesVersions yes
+if "$audit" "$projects" >"$tmp/changelog-invalid.out" 2>&1; then
+  printf '%s\n' 'FAIL invalid publishesVersions value was accepted' >&2
+  exit 1
+fi
+grep -q "FAIL $publishing_repo serverPolicy.publishesVersions must be true or false, got: yes" \
+  "$tmp/changelog-invalid.out"
+rm -rf "$publishing_repo"
+
 # Runner working directories ------------------------------------------------------
 # A self-hosted runner checks code out under `_runners/.../_work/` for the
 # duration of a job, and a deploy checkout is written by a deployment. Neither

@@ -46,6 +46,9 @@ jobs:
       - name: Server development dev-host tests
         shell: bash
         run: bash tests/test-dev-host.sh
+      - name: Server development changelog tests
+        shell: sh
+        run: sh tests/test-dev-changelog.sh
       - name: Server development installer tests
         shell: sh
         run: sh tests/test-install.sh

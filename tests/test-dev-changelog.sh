@@ -240,6 +240,13 @@ done
 for entry in Scoped Bang Both; do
   grep -q "$entry" "$shapes/CHANGELOG.md" || { echo "FAIL: lost feat shape $entry"; exit 1; }
 done
+# `Documentation` is a documented extension beyond Keep a Changelog's six change
+# types, kept because this host gives documentation commits their own type and
+# folding them into Added would hide the signal. Asserted so the choice stays
+# deliberate rather than becoming an accident.
 grep -q '^### Documentation$' "$shapes/CHANGELOG.md" || { echo "FAIL: lost Documentation"; exit 1; }
+grep -q 'follows \[Keep a Changelog\](https://keepachangelog.com/en/1.1.0/)' \
+  "$shapes/CHANGELOG.md" ||
+  { echo "FAIL: header no longer says follows, which the extension relies on"; exit 1; }
 
 echo "dev-changelog tests passed"

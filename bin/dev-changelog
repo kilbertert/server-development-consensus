@@ -109,6 +109,14 @@ trap 'rm -f "$config" "$generated"' EXIT INT TERM
 # mapping is the reason a generated changelog is worth having at all: it is the
 # step a human reading `git log` has to perform by hand, every time.
 #
+# `Documentation` is not one of that spec's six change types
+# (Added/Changed/Deprecated/Removed/Fixed/Security); it is this host's addition,
+# which is why the header says "follows" rather than "conforms to". It is kept
+# deliberately: this host's convention gives documentation commits a type of
+# their own, and folding them into Added would be accurate to the spec's letter
+# while losing the signal that a release was mostly documentation — which is
+# the signal a reader of this changelog actually needs.
+#
 # Two properties of this list are load-bearing, and both were found by running
 # the generator over a real history rather than by reasoning about it.
 #

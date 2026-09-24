@@ -392,6 +392,60 @@ if "$audit" "$projects" >"$tmp/changelog-empty.out" 2>&1; then
 fi
 grep -q "FAIL $publishing_repo serverPolicy.publishesVersions must be true or false, got an empty value" \
   "$tmp/changelog-empty.out"
+# The obligation belongs to the repository, not to each of its worktrees:
+# serverPolicy.* is repository configuration shared by every linked worktree, so
+# a worktree doing unrelated work must not be reported against a changelog it
+# never had. This guards the exact false finding a real run produced.
+git -C "$publishing_repo" config serverPolicy.publishesVersions true
+git -C "$publishing_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m "chore: baseline" >/dev/null
+git -C "$publishing_repo" worktree add -b chore/unrelated \
+  "$projects/publishing-unrelated" main >/dev/null
+"$audit" "$projects" >"$tmp/changelog-worktree.out" 2>&1 || true
+grep -q "WARN $publishing_repo declares" "$tmp/changelog-worktree.out" || {
+  cat "$tmp/changelog-worktree.out" >&2
+  printf '%s\n' 'FAIL the main checkout was not reported for a missing changelog' >&2
+  exit 1
+}
+if grep -q "WARN $projects/publishing-unrelated declares" "$tmp/changelog-worktree.out"; then
+  cat "$tmp/changelog-worktree.out" >&2
+  printf '%s\n' 'FAIL a linked worktree was reported for the repository changelog' >&2
+  exit 1
+fi
+git -C "$publishing_repo" worktree remove --force "$projects/publishing-unrelated" \
+  >/dev/null 2>&1
+# When the main checkout lives outside the scanned root and only a linked
+# worktree is inside it, the check must still run there rather than being
+# skipped. Skipping would let a repository hold the declaration, keep no
+# changelog, and never be told — an unreadable condition reading as a pass.
+outside_repo=$tmp/outside-main
+outside_wt=$projects/outside-linked
+git init --initial-branch=main "$outside_repo" >/dev/null
+git -C "$outside_repo" config user.name test
+git -C "$outside_repo" config user.email test@example.com
+git -C "$outside_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m "feat: outside" >/dev/null
+git -C "$outside_repo" config serverPolicy.publishesVersions true
+git -C "$outside_repo" config serverPolicy.defaultBranch main
+git -C "$outside_repo" worktree add -b chore/linked "$outside_wt" main >/dev/null
+"$audit" "$projects" >"$tmp/changelog-outside.out" 2>&1 || true
+grep -q "WARN $outside_wt declares serverPolicy.publishesVersions but has no CHANGELOG.md" \
+  "$tmp/changelog-outside.out" || {
+  cat "$tmp/changelog-outside.out" >&2
+  printf '%s\n' 'FAIL a publishing repository outside the scan root went unchecked' >&2
+  exit 1
+}
+# The declaration is still validated on that path — a malformed value must not
+# read as undeclared just because the main checkout is out of reach.
+git -C "$outside_repo" config serverPolicy.publishesVersions yes
+if "$audit" "$projects" >"$tmp/changelog-outside-invalid.out" 2>&1; then
+  printf '%s\n' 'FAIL invalid declaration outside the scan root was accepted' >&2
+  exit 1
+fi
+grep -q "FAIL $outside_wt serverPolicy.publishesVersions must be true or false, got: yes" \
+  "$tmp/changelog-outside-invalid.out"
+git -C "$outside_repo" worktree remove --force "$outside_wt" >/dev/null 2>&1
+rm -rf "$outside_repo"
 rm -rf "$publishing_repo"
 
 # Runner working directories ------------------------------------------------------

@@ -252,11 +252,37 @@ fi
 write_lefthook_template() {
   cat >"$1" <<'HOOK'
 #!/bin/sh
+
+if [ "$LEFTHOOK_VERBOSE" = "1" -o "$LEFTHOOK_VERBOSE" = "true" ]; then
+  set -x
+fi
+
+if [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
 call_lefthook()
 {
-  echo "Can't find lefthook in PATH"
+  if test -n "$LEFTHOOK_BIN"
+  then
+    "$LEFTHOOK_BIN" "$@"
+  elif lefthook -h >/dev/null 2>&1
+  then
+    lefthook "$@"
+  else
+    dir="$(git rev-parse --show-toplevel)"
+    osArch=$(uname | tr '[:upper:]' '[:lower:]')
+    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
+    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook"
+    then
+      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook" "$@"
+    else
+      echo "Can't find lefthook in PATH"
+    fi
+  fi
 }
-call_lefthook run "$0" "$@"
+
+call_lefthook run "pre-commit" "$@"
 HOOK
   chmod +x "$1"
 }
@@ -309,5 +335,19 @@ chmod +x "$lefthook_chain_after/pre-push"
 lefthook_chain_final=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
 [ -e "$lefthook_chain_final/pre-push" ]
 grep -q 'scripts/lint.sh' "$lefthook_chain_final/pre-push"
+
+# The sweep only considers names Git runs. A pre-change copy of the template
+# sitting beside the hooks is the operator's record, not live configuration.
+write_lefthook_template "$HOME/.config/git/hooks/pre-commit.backup"
+cp -a "$HOME/.config/git/hooks/pre-commit.backup" "$HOME/custom-hooks/pre-commit.backup"
+git config --global --unset-all serverPolicy.globalChainedHooksPath 2>/dev/null || true
+git config --global core.hooksPath "$HOME/custom-hooks"
+rm -f "$HOME/.config/server-development-consensus/managed-hooks.sha256"
+"$installer" >/dev/null
+chain_with_backup=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -e "$chain_with_backup/pre-commit.backup" ] || {
+  printf '%s\n' 'FAIL the sweep deleted a non-hook file from the chain' >&2
+  exit 1
+}
 
 printf '%s\n' 'installer integration tests passed'

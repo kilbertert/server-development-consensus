@@ -501,12 +501,16 @@ sweep_owned_chain_for_lefthook_templates() {
     *) return 0 ;;
   esac
   [ -d "$sweep_chain" ] || return 0
-  while IFS= read -r sweep_hook; do
-    if known_lefthook_template "$sweep_hook"; then
+  # Only names Git actually runs are candidates. A chain directory may also hold
+  # the operator's own notes or pre-change copies beside the hooks, and a backup
+  # of the template matching the signature is not something to delete.
+  while IFS= read -r sweep_name; do
+    sweep_hook=$sweep_chain/$sweep_name
+    if [ -f "$sweep_hook" ] && known_lefthook_template "$sweep_hook"; then
       rm -f "$sweep_hook"
     fi
   done <<EOF
-$(find "$sweep_chain/" -mindepth 1 -maxdepth 1 -type f)
+$(git_hook_names)
 EOF
 }
 
@@ -526,16 +530,6 @@ if [ -n "$previous_global_chain" ]; then
     printf '%s\n' 'error: global chained hooks path points to the managed hooks directory' >&2
     exit 1
   fi
-fi
-
-# An earlier install may have adopted a lefthook bootstrap as the chained layer,
-# in which case the current hooks directory is already managed and adoption
-# never runs again -- the template would otherwise sit in that chain forever. It
-# is not a hook this host wants, so it is filtered out of the chain when the
-# chain is carried forward below.
-previous_chain_hooks=
-if [ -n "$previous_global_chain" ]; then
-  previous_chain_hooks=$canonical_previous_chain
 fi
 
 legacy_policy_hooks=false

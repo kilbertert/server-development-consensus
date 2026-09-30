@@ -353,21 +353,38 @@ canonical_directory() {
 canonical_hooks_dir=$(canonical_directory "$hooks_dir" 2>/dev/null || printf '%s\n' "$hooks_dir")
 
 # A lefthook bootstrap that some earlier project's `lefthook install` left in
-# the global hooks directory. It is not a hook anyone here wrote or wants: it
-# only looks for a lefthook binary, and when none of its fallbacks exist it
-# prints "Can't find lefthook in PATH" and exits 0 -- on every commit and push,
-# in every repository. Adopting it as the global chained-hook layer makes that
-# message permanent fleet-wide noise, so the template is recognized and dropped
-# at adoption time instead. Detection is by signature, not by hash: lefthook
-# bakes a machine-specific path into the file, so every host's copy differs. An
-# unrecognized file is still adopted untouched.
+# the global hooks directory. It is not a hook anyone here wrote or wants: every
+# line of it either guards on a lefthook environment variable or probes for the
+# binary, and when none of its fallbacks exist it prints "Can't find lefthook in
+# PATH" and exits 0 -- on every commit and push, in every repository. Adopting
+# it as the global chained-hook layer makes that message permanent fleet-wide
+# noise.
+#
+# Detection is structural rather than by hash, because lefthook bakes a
+# machine-specific node_modules path into the file and every host's copy
+# differs. It is deliberately strict: the file must match the template's
+# signature AND contain no line outside the bootstrap's own vocabulary -- the
+# handful of control tokens and path-assembly assignments the bootstrap uses to
+# look for the binary, all listed below. A hook that carries the same signature
+# and also runs anything of its own therefore fails the check and is kept,
+# because silently dropping a real check is the failure that matters here.
 known_lefthook_template() {
   template_file=$1
   [ -f "$template_file" ] || return 1
   grep -q 'call_lefthook' "$template_file" 2>/dev/null || return 1
   grep -q "Can't find lefthook in PATH" "$template_file" 2>/dev/null || return 1
-  # A hook that sources the policy library is this host's own, never lefthook's.
-  grep -q 'dev-git-common.sh' "$template_file" 2>/dev/null && return 1
+  # `read` without IFS strips the indentation, so the control tokens below are
+  # matched in their bare form.
+  while read -r module_line; do
+    case $module_line in
+      *lefthook*|*LEFTHOOK*) ;;
+      set\ -x|exit\ 0|\{|\}|then|else|fi) ;;
+      dir=*|osArch=*|cpuArch=*) ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$(grep -v '^[[:space:]]*\(#\|$\)' "$template_file")
+EOF
   return 0
 }
 
@@ -470,6 +487,29 @@ EOF
   chain_target=$new_chain_target
 }
 
+# Sweep a chain this installer owns for lefthook templates a previous install
+# left there. Adoption only runs while the hooks directory is unmanaged, so on
+# an already-governed host the template is never revisited -- it just keeps
+# printing "Can't find lefthook in PATH" forever. Only the installer's own
+# chained-global-hooks directory is swept: a chain pointing at the operator's
+# own hooks is theirs to keep, template or not.
+sweep_owned_chain_for_lefthook_templates() {
+  sweep_chain=$1
+  [ -n "$sweep_chain" ] || return 0
+  case $sweep_chain in
+    "$policy_dir"/chained-global-hooks/*) ;;
+    *) return 0 ;;
+  esac
+  [ -d "$sweep_chain" ] || return 0
+  while IFS= read -r sweep_hook; do
+    if known_lefthook_template "$sweep_hook"; then
+      rm -f "$sweep_hook"
+    fi
+  done <<EOF
+$(find "$sweep_chain/" -mindepth 1 -maxdepth 1 -type f)
+EOF
+}
+
 if [ -n "$previous_global_chain" ]; then
   case $previous_global_chain in
     /*) ;;
@@ -486,6 +526,16 @@ if [ -n "$previous_global_chain" ]; then
     printf '%s\n' 'error: global chained hooks path points to the managed hooks directory' >&2
     exit 1
   fi
+fi
+
+# An earlier install may have adopted a lefthook bootstrap as the chained layer,
+# in which case the current hooks directory is already managed and adoption
+# never runs again -- the template would otherwise sit in that chain forever. It
+# is not a hook this host wants, so it is filtered out of the chain when the
+# chain is carried forward below.
+previous_chain_hooks=
+if [ -n "$previous_global_chain" ]; then
+  previous_chain_hooks=$canonical_previous_chain
 fi
 
 legacy_policy_hooks=false
@@ -636,6 +686,7 @@ if [ -n "$chain_target" ]; then
     exit 1
   fi
   chain_target=$canonical_chain_target
+  sweep_owned_chain_for_lefthook_templates "$chain_target"
 fi
 
 install -d -m 700 "$policy_dir"

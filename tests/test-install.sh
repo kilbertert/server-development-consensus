@@ -281,4 +281,33 @@ for adopted in "$lefthook_chain"/pre-commit "$lefthook_chain"/pre-push \
   fi
 done
 
+# Reinstalling is the case that made the noise permanent: the hooks directory is
+# already managed, so adoption never runs again and only the carried-forward old
+# chain could still hold the template. It must be filtered on the way through.
+write_lefthook_template "$lefthook_chain/pre-commit"
+"$installer" >/dev/null
+lefthook_chain_after=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+if [ -e "$lefthook_chain_after/pre-commit" ] &&
+   grep -q "Can't find lefthook in PATH" "$lefthook_chain_after/pre-commit"; then
+  printf '%s\n' 'FAIL lefthook template still chained after a reinstall' >&2
+  exit 1
+fi
+
+# A hook that only mentions lefthook and carries that message as part of a real
+# check is the operator's own. Dropping it would silently remove a check, so it
+# has to survive both adoption and the reinstall sweep.
+cat >"$lefthook_chain_after/pre-push" <<'HOOK'
+#!/bin/sh
+call_lefthook()
+{
+  echo "Can't find lefthook in PATH"
+}
+./scripts/lint.sh
+HOOK
+chmod +x "$lefthook_chain_after/pre-push"
+"$installer" >/dev/null
+lefthook_chain_final=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -e "$lefthook_chain_final/pre-push" ]
+grep -q 'scripts/lint.sh' "$lefthook_chain_final/pre-push"
+
 printf '%s\n' 'installer integration tests passed'

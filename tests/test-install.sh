@@ -245,4 +245,109 @@ fi
 [ "$(cat "$tmp/gitconfig-target")" = gitconfig-sentinel ]
 [ ! -e "$symlink_home/Projects" ]
 
+# A lefthook bootstrap left in the global hooks directory must not become the
+# chained layer: it exists only to print "Can't find lefthook in PATH" on every
+# commit and push. The templates are unknown to the installer, so without the
+# recognition rule they are exactly what gets adopted here.
+write_lefthook_template() {
+  cat >"$1" <<'HOOK'
+#!/bin/sh
+
+if [ "$LEFTHOOK_VERBOSE" = "1" -o "$LEFTHOOK_VERBOSE" = "true" ]; then
+  set -x
+fi
+
+if [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
+call_lefthook()
+{
+  if test -n "$LEFTHOOK_BIN"
+  then
+    "$LEFTHOOK_BIN" "$@"
+  elif lefthook -h >/dev/null 2>&1
+  then
+    lefthook "$@"
+  else
+    dir="$(git rev-parse --show-toplevel)"
+    osArch=$(uname | tr '[:upper:]' '[:lower:]')
+    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
+    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook"
+    then
+      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook" "$@"
+    else
+      echo "Can't find lefthook in PATH"
+    fi
+  fi
+}
+
+call_lefthook run "pre-commit" "$@"
+HOOK
+  chmod +x "$1"
+}
+git config --global --unset-all serverPolicy.globalChainedHooksPath 2>/dev/null || true
+rm -f "$HOME/.config/server-development-consensus/managed-hooks.sha256"
+write_lefthook_template "$HOME/.config/git/hooks/pre-commit"
+write_lefthook_template "$HOME/.config/git/hooks/pre-push"
+write_lefthook_template "$HOME/.config/git/hooks/pre-merge-commit"
+write_lefthook_template "$HOME/.config/git/hooks/commit-msg"
+# An earlier case parks core.hooksPath on a custom directory to prove the
+# rollback path; adoption only runs from the managed location, so restore it.
+git config --global core.hooksPath "$HOME/.config/git/hooks"
+"$installer" >/dev/null
+lefthook_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -n "$lefthook_chain" ]
+[ "$lefthook_chain" != "$HOME/custom-hooks" ]
+for adopted in "$lefthook_chain"/pre-commit "$lefthook_chain"/pre-push \
+                "$lefthook_chain"/pre-merge-commit "$lefthook_chain"/commit-msg; do
+  if [ -e "$adopted" ] && grep -q "Can't find lefthook in PATH" "$adopted"; then
+    printf '%s\n' "FAIL lefthook template was adopted as the chain: $adopted" >&2
+    exit 1
+  fi
+done
+
+# Reinstalling is the case that made the noise permanent: the hooks directory is
+# already managed, so adoption never runs again and only the carried-forward old
+# chain could still hold the template. It must be filtered on the way through.
+write_lefthook_template "$lefthook_chain/pre-commit"
+"$installer" >/dev/null
+lefthook_chain_after=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+if [ -e "$lefthook_chain_after/pre-commit" ] &&
+   grep -q "Can't find lefthook in PATH" "$lefthook_chain_after/pre-commit"; then
+  printf '%s\n' 'FAIL lefthook template still chained after a reinstall' >&2
+  exit 1
+fi
+
+# A hook that only mentions lefthook and carries that message as part of a real
+# check is the operator's own. Dropping it would silently remove a check, so it
+# has to survive both adoption and the reinstall sweep.
+cat >"$lefthook_chain_after/pre-push" <<'HOOK'
+#!/bin/sh
+call_lefthook()
+{
+  echo "Can't find lefthook in PATH"
+}
+./scripts/lint.sh
+HOOK
+chmod +x "$lefthook_chain_after/pre-push"
+"$installer" >/dev/null
+lefthook_chain_final=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -e "$lefthook_chain_final/pre-push" ]
+grep -q 'scripts/lint.sh' "$lefthook_chain_final/pre-push"
+
+# The sweep only considers names Git runs. A pre-change copy of the template
+# sitting beside the hooks is the operator's record, not live configuration.
+write_lefthook_template "$HOME/.config/git/hooks/pre-commit.backup"
+cp -a "$HOME/.config/git/hooks/pre-commit.backup" "$HOME/custom-hooks/pre-commit.backup"
+git config --global --unset-all serverPolicy.globalChainedHooksPath 2>/dev/null || true
+git config --global core.hooksPath "$HOME/custom-hooks"
+rm -f "$HOME/.config/server-development-consensus/managed-hooks.sha256"
+"$installer" >/dev/null
+chain_with_backup=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -e "$chain_with_backup/pre-commit.backup" ] || {
+  printf '%s\n' 'FAIL the sweep deleted a non-hook file from the chain' >&2
+  exit 1
+}
+
 printf '%s\n' 'installer integration tests passed'

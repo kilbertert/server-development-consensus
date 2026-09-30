@@ -351,6 +351,26 @@ canonical_directory() {
 }
 
 canonical_hooks_dir=$(canonical_directory "$hooks_dir" 2>/dev/null || printf '%s\n' "$hooks_dir")
+
+# A lefthook bootstrap that some earlier project's `lefthook install` left in
+# the global hooks directory. It is not a hook anyone here wrote or wants: it
+# only looks for a lefthook binary, and when none of its fallbacks exist it
+# prints "Can't find lefthook in PATH" and exits 0 -- on every commit and push,
+# in every repository. Adopting it as the global chained-hook layer makes that
+# message permanent fleet-wide noise, so the template is recognized and dropped
+# at adoption time instead. Detection is by signature, not by hash: lefthook
+# bakes a machine-specific path into the file, so every host's copy differs. An
+# unrecognized file is still adopted untouched.
+known_lefthook_template() {
+  template_file=$1
+  [ -f "$template_file" ] || return 1
+  grep -q 'call_lefthook' "$template_file" 2>/dev/null || return 1
+  grep -q "Can't find lefthook in PATH" "$template_file" 2>/dev/null || return 1
+  # A hook that sources the policy library is this host's own, never lefthook's.
+  grep -q 'dev-git-common.sh' "$template_file" 2>/dev/null && return 1
+  return 0
+}
+
 known_legacy_policy_hook_pair() {
   commit_hash=$(sha256sum "$hooks_dir/pre-commit" | awk '{print $1}') || return 1
   push_hash=$(sha256sum "$hooks_dir/pre-push" | awk '{print $1}') || return 1
@@ -415,16 +435,24 @@ preserve_managed_hooks_as_chain() {
   while IFS= read -r hook; do
     case $hook in
       pre-commit)
-        $pre_commit_hook_known && rm -f "$new_chain_target/$hook"
+        if $pre_commit_hook_known || known_lefthook_template "$hooks_dir/$hook"; then
+          rm -f "$new_chain_target/$hook"
+        fi
         ;;
       pre-push)
-        $pre_push_hook_known && rm -f "$new_chain_target/$hook"
+        if $pre_push_hook_known || known_lefthook_template "$hooks_dir/$hook"; then
+          rm -f "$new_chain_target/$hook"
+        fi
         ;;
       pre-merge-commit)
-        $pre_merge_hook_known && rm -f "$new_chain_target/$hook"
+        if $pre_merge_hook_known || known_lefthook_template "$hooks_dir/$hook"; then
+          rm -f "$new_chain_target/$hook"
+        fi
         ;;
       commit-msg)
-        $commit_msg_hook_known && rm -f "$new_chain_target/$hook"
+        if $commit_msg_hook_known || known_lefthook_template "$hooks_dir/$hook"; then
+          rm -f "$new_chain_target/$hook"
+        fi
         ;;
       *)
         if [ -L "$new_chain_target/$hook" ] &&

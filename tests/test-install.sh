@@ -245,4 +245,40 @@ fi
 [ "$(cat "$tmp/gitconfig-target")" = gitconfig-sentinel ]
 [ ! -e "$symlink_home/Projects" ]
 
+# A lefthook bootstrap left in the global hooks directory must not become the
+# chained layer: it exists only to print "Can't find lefthook in PATH" on every
+# commit and push. The templates are unknown to the installer, so without the
+# recognition rule they are exactly what gets adopted here.
+write_lefthook_template() {
+  cat >"$1" <<'HOOK'
+#!/bin/sh
+call_lefthook()
+{
+  echo "Can't find lefthook in PATH"
+}
+call_lefthook run "$0" "$@"
+HOOK
+  chmod +x "$1"
+}
+git config --global --unset-all serverPolicy.globalChainedHooksPath 2>/dev/null || true
+rm -f "$HOME/.config/server-development-consensus/managed-hooks.sha256"
+write_lefthook_template "$HOME/.config/git/hooks/pre-commit"
+write_lefthook_template "$HOME/.config/git/hooks/pre-push"
+write_lefthook_template "$HOME/.config/git/hooks/pre-merge-commit"
+write_lefthook_template "$HOME/.config/git/hooks/commit-msg"
+# An earlier case parks core.hooksPath on a custom directory to prove the
+# rollback path; adoption only runs from the managed location, so restore it.
+git config --global core.hooksPath "$HOME/.config/git/hooks"
+"$installer" >/dev/null
+lefthook_chain=$(git config --global --path --get serverPolicy.globalChainedHooksPath)
+[ -n "$lefthook_chain" ]
+[ "$lefthook_chain" != "$HOME/custom-hooks" ]
+for adopted in "$lefthook_chain"/pre-commit "$lefthook_chain"/pre-push \
+                "$lefthook_chain"/pre-merge-commit "$lefthook_chain"/commit-msg; do
+  if [ -e "$adopted" ] && grep -q "Can't find lefthook in PATH" "$adopted"; then
+    printf '%s\n' "FAIL lefthook template was adopted as the chain: $adopted" >&2
+    exit 1
+  fi
+done
+
 printf '%s\n' 'installer integration tests passed'

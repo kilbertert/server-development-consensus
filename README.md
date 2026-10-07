@@ -19,9 +19,28 @@ commits as merge ancestry of the import commit.
 `SERVER-DEVELOPMENT-CONSENSUS.md` is the canonical human and agent policy. All
 development must live below `/home/claude/Projects`, whose inherited copies are:
 
-- `~/Projects/AGENTS.md`
-- `~/Projects/CLAUDE.md`
-- `~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md`
+- `~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md` — the full canonical text
+- `~/Projects/AGENTS.md` — a workspace pointer, not a second copy
+- `~/Projects/CLAUDE.md` — a workspace pointer, not a second copy
+
+The workspace top level is a Project memory location: a `CLAUDE.md` or
+`AGENTS.md` there is loaded into every session started below `~/Projects`, so
+those two files are deliberately short pointers to the full text rather than
+duplicates of it. The same reasoning bounds the always-on global agent files:
+every session loads `~/.claude/CLAUDE.md` and (for Codex) `~/.codex/AGENTS.md`,
+and each loader warns past a per-file size — roughly 40,000 characters for
+Claude Code and 32,768 bytes for Codex. Those files therefore carry only the
+policy's **always-on excerpt**, the text before the `## Mandatory Git Workflow`
+gate: identity, host fleet, repository classes, files and runtimes, workspace
+layout, and standards. The delivery and review sections still bind — read the
+full text before any commit, push, pull request, merge, release, or
+deployment.
+
+The installer derives the excerpt from `SERVER-DEVELOPMENT-CONSENSUS.md` itself,
+and `bin/dev-policy-audit` compares the installed mirrors against the same
+derivation and fails when a user-writable mirror drifts or exceeds its bound. A
+root-maintained mirror that drifts is reported as a warning, because only
+`sync-privileged-policy` can bring it back into line.
 
 `DEVELOPMENT-PORT-REGISTRY.md` is the separate source of truth for fixed
 development host-port allocations. The installer publishes it to:
@@ -271,7 +290,10 @@ append-only JSONL audit record, uses atomic replacement, and rolls back all
 targets if a replacement or post-write verification fails. The four mirrors
 are `/etc/agent-governance/server-development-consensus.md`,
 `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md`, and
-`~/.claude/CLAUDE.md` (with `~` meaning `/home/claude`).
+`~/.claude/CLAUDE.md` (with `~` meaning `/home/claude`). The `/etc` mirror keeps
+the full canonical text — it is never loaded by a model and exists for
+auditors — while the three always-on mirrors carry the bounded excerpt
+described above.
 
 Rollback requires an explicit policy change. Restore the backed-up global Git
 configuration, remove the installed hook/tools, restore the prior global agent

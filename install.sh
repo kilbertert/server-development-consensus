@@ -69,6 +69,52 @@ backup_file() {
   fi
 }
 
+# One instruction file over ~40,000 characters trips the loader's per-file
+# warning in every session, and the global agent files are loaded by every
+# session on this host. They therefore carry only the policy's always-on
+# excerpt; the delivery sections stay in the full text at $policy_dir.
+#
+# The always-on excerpt is the policy text before the delivery gate. The
+# installer and the policy audit derive it from the same helper, so a mirror
+# that no longer matches its canonical source is something the audit can see.
+always_on_excerpt() {
+  python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+gate = "\n## Mandatory Git Workflow\n"
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+if gate not in text:
+    raise SystemExit(f"policy is missing the always-on excerpt gate: {sys.argv[1]}")
+sys.stdout.write(text.split(gate, 1)[0] + "\n")
+PY
+}
+
+write_always_on_excerpt() {
+  always_on_excerpt "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" >"$1"
+}
+
+# The curated workspace top level is a Project memory location: a CLAUDE.md or
+# AGENTS.md there loads into every session started below ~/Projects. The
+# published text is therefore a pointer, not a second copy, so a nested project
+# never inherits a stale duplicate of the policy.
+write_projects_workspace_docs() {
+  for workspace_doc in CLAUDE.md AGENTS.md; do
+    destination=$HOME/Projects/$workspace_doc
+    cat >"$destination" <<EOF
+# Projects Workspace
+
+This file is a workspace-wide pointer, not a copy of the policy.
+
+The workspace top level contributes no instructions of its own. The policy that
+governs work under \`$HOME/Projects\` is the full text at
+\`$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md\`; each project checkout carries
+its own \`CLAUDE.md\` for project-specific instructions. Read the policy before
+any commit, push, pull request, merge, release, or deployment.
+EOF
+  done
+}
+
 backup_directory_state() {
   directory_path=$1
   backup_name=$2
@@ -705,10 +751,9 @@ install -m 600 "$base_dir/CODEX-DEVELOPER-INSTRUCTIONS.md" \
   "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
 backup_file "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md" \
   installed-codex-policy.installed
-install -m 640 "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$HOME/Projects/AGENTS.md"
-backup_file "$HOME/Projects/AGENTS.md" projects-AGENTS.installed
-install -m 640 "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$HOME/Projects/CLAUDE.md"
+write_projects_workspace_docs
 backup_file "$HOME/Projects/CLAUDE.md" projects-CLAUDE.installed
+backup_file "$HOME/Projects/AGENTS.md" projects-AGENTS.installed
 install -m 640 "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" \
   "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md"
 backup_file "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md" projects-consensus.installed
@@ -721,7 +766,8 @@ for global_agent_file in \
   "$HOME/.codex/AGENTS.override.md" \
   "$HOME/.claude/CLAUDE.md"; do
   if [ ! -e "$global_agent_file" ] || [ -w "$global_agent_file" ]; then
-    install -m 600 "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$global_agent_file"
+    write_always_on_excerpt "$global_agent_file"
+    chmod 600 "$global_agent_file"
     case $global_agent_file in
       "$HOME/.codex/AGENTS.md")
         backup_file "$global_agent_file" codex-AGENTS.installed

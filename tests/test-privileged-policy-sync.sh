@@ -24,11 +24,25 @@ mode_for_index() {
   esac
 }
 mkdir -p "$(dirname "$canonical")"
-printf '%s\n' \
-  '# Server Development Consensus' \
-  '## Internal Knowledge And Public Projection Boundary' \
-  'private by default' >"$canonical"
-expected_sha256=$(sha256sum "$canonical" | awk '{print $1}')
+# The canonical policy carries the always-on excerpt markers; the excerpt is
+# everything before the delivery-gate section, and the mirrors must equal it.
+write_canonical() {
+  {
+    printf '%s\n' \
+      '# Server Development Consensus' \
+      '## Account Boundary' \
+      '## Internal Knowledge And Public Projection Boundary'
+    printf '%s' "$1"
+    printf '%s\n' \
+      '' \
+      '## Mandatory Git Workflow' \
+      '## Pull Request Gate' \
+      'delivery sections stay out of the always-on mirrors'
+  } >"$canonical"
+  expected_sha256=$(sha256sum "$canonical" | awk '{print $1}')
+}
+excerpt_of() { sed '/^## Mandatory Git Workflow$/,$d' "$canonical"; }
+write_canonical 'private by default'
 
 index=0
 printf '%s\n' "$targets" | while IFS= read -r relative; do
@@ -58,7 +72,11 @@ index=0
 printf '%s\n' "$targets" | while IFS= read -r relative; do
   index=$((index + 1))
   target=$tmp/root/$relative
-  cmp "$canonical" "$target"
+  if [ "$index" = 1 ]; then
+    cmp "$canonical" "$target"
+  else
+    excerpt_of | cmp - "$target"
+  fi
   [ "$(stat -c '%a' "$target")" = "$(mode_for_index "$index")" ]
 done
 
@@ -87,7 +105,11 @@ import sys
 manifest = json.loads(Path(sys.argv[1]).read_text())
 assert manifest["status"] == "completed"
 assert len(manifest["targets"]) == 4
-assert all(item["after"]["sha256"] == manifest["source"]["sha256"] for item in manifest["targets"])
+assert manifest["targets"][0]["after"]["sha256"] == manifest["source"]["sha256"], \
+    "the auditor mirror keeps the full canonical text"
+assert manifest["source"]["excerpt_sha256"] != manifest["source"]["sha256"]
+assert all(item["after"]["sha256"] == manifest["source"]["excerpt_sha256"]
+           for item in manifest["targets"][1:]), "always-on mirrors carry the excerpt"
 for index, item in enumerate(manifest["targets"], start=1):
     backup = Path(sys.argv[1]).parent / item["backup"]
     assert backup.read_text() == f"old-{index}\n"
@@ -100,11 +122,7 @@ PY
 printf '%s\n' "$targets" | while IFS= read -r relative; do
   printf '%s\n' rollback-old >"$tmp/root/$relative"
 done
-printf '%s\n' \
-  '# Server Development Consensus' \
-  '## Internal Knowledge And Public Projection Boundary' \
-  'new private boundary' >"$canonical"
-expected_sha256=$(sha256sum "$canonical" | awk '{print $1}')
+write_canonical 'new private boundary'
 export SERVER_POLICY_PRIVILEGED_SYNC_FAIL_AFTER=2
 if "$sync_tool" --expected-sha256 "$expected_sha256" >/dev/null 2>&1; then
   printf '%s\n' 'FAIL injected privileged sync failure returned success' >&2
@@ -119,11 +137,7 @@ done
 printf '%s\n' "$targets" | while IFS= read -r relative; do
   printf '%s\n' rollback-again >"$tmp/root/$relative"
 done
-printf '%s\n' \
-  '# Server Development Consensus' \
-  '## Internal Knowledge And Public Projection Boundary' \
-  'third private boundary' >"$canonical"
-expected_sha256=$(sha256sum "$canonical" | awk '{print $1}')
+write_canonical 'third private boundary'
 export SERVER_POLICY_PRIVILEGED_SYNC_FAIL_AFTER=2
 export SERVER_POLICY_PRIVILEGED_SYNC_FAIL_RESTORE_INDEX=1
 if "$sync_tool" --expected-sha256 "$expected_sha256" >/dev/null 2>&1; then
@@ -143,11 +157,7 @@ printf '%s\n' "$targets" | while IFS= read -r relative; do
   index=$((index + 1))
   printf 'post-replace-old-%s\n' "$index" >"$tmp/root/$relative"
 done
-printf '%s\n' \
-  '# Server Development Consensus' \
-  '## Internal Knowledge And Public Projection Boundary' \
-  'post-replace private boundary' >"$canonical"
-expected_sha256=$(sha256sum "$canonical" | awk '{print $1}')
+write_canonical 'post-replace private boundary'
 export SERVER_POLICY_PRIVILEGED_SYNC_FAIL_REPLACE_POST_INDEX=2
 if "$sync_tool" --expected-sha256 "$expected_sha256" >/dev/null 2>&1; then
   printf '%s\n' 'FAIL post-replace failure injection returned success' >&2
@@ -166,11 +176,7 @@ printf '%s\n' "$targets" | while IFS= read -r relative; do
   index=$((index + 1))
   printf 'swap-old-%s\n' "$index" >"$tmp/root/$relative"
 done
-printf '%s\n' \
-  '# Server Development Consensus' \
-  '## Internal Knowledge And Public Projection Boundary' \
-  'swap protected boundary' >"$canonical"
-expected_sha256=$(sha256sum "$canonical" | awk '{print $1}')
+write_canonical 'swap protected boundary'
 export SERVER_POLICY_PRIVILEGED_SYNC_SWAP_PREPARED_INDEX=1
 if "$sync_tool" --expected-sha256 "$expected_sha256" >/dev/null 2>&1; then
   printf '%s\n' 'FAIL swapped prepared replacement was installed' >&2

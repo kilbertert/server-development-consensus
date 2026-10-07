@@ -32,6 +32,8 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B19 | Repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread; all required checks pass | A real pull request against a gated repository (`AI-Ops#371`, merged `229cc194`) | Read `mergeStateStatus` with all required checks passing while threads are unresolved and again once resolved; attempt the merge while blocked; resolve a thread by hand; post the triage record and request the re-review | `BLOCKED` with unresolved threads under all-checks-passing and `CLEAN` once every thread is resolved (`14 of 14` at merge); `gh pr merge` refused with `the base branch policy prohibits the merge`; a write-access user resolves a thread and returns `resolvedBy: kilbertert`; after the re-review Devin resolves the thread it considers fixed and leaves the accepted-limitation thread unresolved | None (the gate is the state under test) |
 | GOV-B20 | Installer test fixture home with a repository declaring `serverPolicy.publishesVersions` | The changelog generator is installed and the fixture repository carries conventional commits and the declaration | A marked repository with no `CHANGELOG.md`; a marked repository whose changelog is regenerated, then receives one more `feat` commit; a repository with the key absent or `false`; a repository with the key set to a non-boolean | Run `dev-changelog` and `dev-changelog --check` against each, then run `dev-policy-audit` over the fixture root | The unmarked repository is skipped with no file written; the marked repository without a changelog is reported `WARN ... but has no CHANGELOG.md` and the audit is not failed by it; generation produces Keep a Changelog headings with `feat` under Added and `chore` omitted, and a second run is byte-identical; the commit added afterwards makes `--check` exit non-zero with `does not match the commits` while writing nothing; the absent and `false` cases produce no finding; the non-boolean value fails the audit | Remove the fixture repositories |
 | GOV-B21 | Development host with a pull request carrying Devin Review threads; `gh` authenticated to the account that owns the PR | Recording a disposition is possible without a reviewer service, so the loop can be exercised against a pull request whose threads are already resolved as well as one that is not | A `gh` stub returning two unresolved threads (one bot-only, one bot plus a reply from the authenticated account) and one resolved thread; a real enrolled pull request for the end-to-end pass | Run `dev-pr-review status`, then `resolve` on the bot-only thread, then `reply` and `resolve` on it, then `close-loop`, then `close-loop` again | `status` lists only the unresolved threads and marks which carry a reply from the running account; `resolve` on the bot-only thread exits 77, prints `has no reply`, and **sends no `resolveReviewThread`**; after `reply`, `resolve` sends `resolveReviewThread` for that thread id; `close-loop` refuses while any thread is unanswered and posts no comment, then with every thread answered resolves them and posts exactly one `/devin review`; the second `close-loop` reports `nothing to close` and spends no review; an externally governed repository reaches no `gh` call on `resolve`, `reply`, or `close-loop`; a missing `--body-file` exits 65 with no traceback | None (the stub is a temporary fixture; the end-to-end pass mutates only thread state) |
+| GOV-B22 | Installer test fixture home; privileged-sync test fixture | The canonical policy carries the always-on excerpt gate and is larger than the loader's per-file warning | A canonical source with the delivery gate, plus the same source with the gate removed | Run `install.sh`, then `dev-policy-audit --excerpt`, then `sync-privileged-policy`; run each again against a source missing the gate | The installed always-on mirrors (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md`) byte-equal the canonical excerpt and stay below 40,000 characters / 32,768 bytes; the `/etc` mirror and `~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md` keep the full text; a source without the gate is refused rather than truncated silently | Remove the fixture home |
+| GOV-B23 | Installer test fixture home; policy-audit test fixture | A session started below the projects workspace loads the workspace top level | A pointer document, a pointer carrying policy text, a pointer without the marker, a drifted user-writable mirror, and an oversized mirror | Run `install.sh`, then `dev-policy-audit` over the fixture root with each variant | The installed `~/Projects/CLAUDE.md` and `~/Projects/AGENTS.md` carry the pointer marker and no policy section; a pointer without the marker, a pointer carrying policy text, a drifted writable mirror, and an oversized mirror all fail the audit; a drifted root-maintained mirror is reported as a warning because the audit cannot repair it | Remove the fixture home |
 
 ## Traceability
 
@@ -58,6 +60,8 @@ repository scope that decides which of those rules a repository is subject to.
 | Triage is gated, the reviewer is not | An untriaged finding cannot be merged past | GOV-B19 |
 | A publisher keeps its changelog | A publishing repository's changelog tracks its commits | GOV-B20 |
 | The agent owns the thread loop | The responsible agent closes the triage loop without a human per thread | GOV-B21 |
+| Always-on instruction files stay bounded | The always-on policy mirror carries the bounded excerpt | GOV-B22 |
+| The workspace top level points, not duplicates | The workspace top level points at the policy instead of duplicating it | GOV-B23 |
 
 ## Execution Results
 
@@ -607,13 +611,61 @@ opening — so there was no thread to run `status`, `reply`, `resolve`, or
 than as passed. The end-to-end case stays open and is executed on the first pull
 request that carries real review threads.
 
+### GOV-B22 - the always-on mirror is a bounded excerpt
+
+Verified on 2026-10-08 against `tests/test-install.sh` and
+`tests/test-privileged-policy-sync.sh`, both green.
+
+- The canonical policy (`SERVER-DEVELOPMENT-CONSENSUS.md`, 52,634 characters)
+  carries an explicit `## Mandatory Git Workflow` gate. The excerpt is
+  20,126 characters — below both the Claude Code 40,000-character warning and
+  the Codex 32,768-byte default, the two separate per-file bounds that made the
+  original 50,142-character mirror warn on one loader and truncate on the other.
+- The installer, the policy audit (`--excerpt`), and the privileged sync derive
+  the excerpt from the same gate; the test asserts the installed mirrors
+  byte-equal the derivation, so the three cannot drift apart silently.
+- The privileged sync keeps the full text at `/etc/agent-governance/…`
+  (auditor copy, never model-loaded) and writes the excerpt to its three
+  always-on targets; the test asserts both halves of that split.
+- A source without the gate is refused (`canonical policy is missing the
+  always-on excerpt markers`) rather than truncated at an arbitrary offset.
+
+Boundary of the evidence, stated rather than implied: the excerpt size and the
+mirror equality are measured here. The 40,000-character warning itself is read
+out of the shipped Claude Code binary, not from public documentation, so the
+end-to-end disappearance of the warning on a fresh session is an observation
+for the operator after the `sudo sync-privileged-policy` step below, not
+something this plan can assert.
+
+### GOV-B23 - the workspace top level points instead of duplicating
+
+Verified on 2026-10-08 against `tests/test-install.sh` and
+`tests/test-dev-policy-audit.sh`, both green.
+
+- `~/Projects/CLAUDE.md` and `~/Projects/AGENTS.md` are published as pointers.
+  The audit fails a pointer that lacks the marker line or that carries a policy
+  section, so a duplicate cannot be reintroduced by hand and pass.
+- The audit compares each always-on mirror against the canonical excerpt and
+  fails a user-writable mirror that drifted or exceeds its bound. A
+  root-maintained mirror that drifted is reported as a warning: it is outside
+  the audit's write boundary, and `sync-privileged-policy` is what brings it
+  back.
+- The installer rollback path was exercised with an injected failure after the
+  workspace documents were written; the pre-install content of
+  `~/Projects/AGENTS.md` and `~/Projects/CLAUDE.md` is restored, which is the
+  ordering the backup now has to respect.
+
 ## Risk Checks
 
 - Complexity/coverage: not applicable; the checker is a small portable script
   covered by executable smoke cases.
 - Mutation testing: performed for GOV-B21 above (the reply-before-resolve
   precondition is the change's authorization-shaped rule). Not applicable to the
-  governance-text edits, which the fail-closed policy test covers.
+  governance-text edits, which the fail-closed policy test covers. For this
+  change the excerpt gate is the load-bearing rule, and the suites already
+  assert the two failure modes that matter — a missing gate in the source and a
+  mirror that no longer matches the derivation — so no separate mutation run is
+  recorded.
 
 ## Execution Status
 | DH-B01 | Real target with a recorded host key | A project declaration resolves to a recorded host; the recorded key is deliberately wrong | Any read against that target | Run the read | Refused with a host-identity failure; no command output; the host is not contacted | None |

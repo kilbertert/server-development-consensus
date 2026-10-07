@@ -32,10 +32,21 @@ TARGET_PATHS = (
     Path("/home/claude/.claude/CLAUDE.md"),
 )
 IMMUTABLE_TARGET_PATHS = frozenset(TARGET_PATHS[1:])
+# The /etc mirror is never loaded by a model: it exists for auditors, so it
+# keeps the full canonical text while the three always-on mirrors carry the
+# bounded excerpt.
+FULL_TEXT_TARGETS = frozenset(TARGET_PATHS[:1])
 BACKUP_ROOT = Path("/var/backups/server-development-consensus")
 AUDIT_LOG = Path("/var/log/server-development-consensus/privileged-sync.jsonl")
 LOCK_PATH = Path("/run/lock/server-development-consensus-privileged-sync.lock")
 REQUIRED_HEADING = b"## Internal Knowledge And Public Projection Boundary\n"
+# The always-on mirrors carry only the policy's identity/host/layout excerpt so a
+# single instruction file stays under the loader's per-file character warning.
+# This is the exact delimiter between the excerpt and the delivery sections, the
+# first section the excerpt omits, and the opening of the excerpt itself: the
+# split is a fixed marker in the reviewed canonical text, not a heuristic.
+EXCERPT_GATE = b"\n## Mandatory Git Workflow\n"
+EXCERPT_FIRST_SECTION = b"## Account Boundary\n"
 FS_IOC_GETFLAGS = 0x80086601
 FS_IOC_SETFLAGS = 0x40086602
 FS_IMMUTABLE_FL = 0x00000010
@@ -433,7 +444,9 @@ def cleanup_replacement(target: TargetHandle, replacement: PreparedReplacement) 
 
 
 def prepare_replacement(
-    target: TargetHandle, source: FileSnapshot, original: FileSnapshot
+    target: TargetHandle,
+    payload: bytes,
+    original: FileSnapshot,
 ) -> PreparedReplacement:
     validate_target_parent(target)
     staging_name = (
@@ -480,7 +493,7 @@ def prepare_replacement(
             dir_fd=staging_fd,
         )
         try:
-            write_all(descriptor, source.data)
+            write_all(descriptor, payload)
             apply_metadata(descriptor, original, target.logical_path)
             temp_stat = os.fstat(descriptor)
             temp_identity = (temp_stat.st_dev, temp_stat.st_ino)
@@ -580,7 +593,7 @@ def restore_target(target: TargetHandle, original: FileSnapshot) -> None:
         target.index
     ):
         raise PolicySyncError(f"injected restore failure for {target.logical_path}")
-    replacement = prepare_replacement(target, original, original)
+    replacement = prepare_replacement(target, original.data, original)
     try:
         replace_target(target, replacement, allow_test_injection=False)
     finally:
@@ -682,7 +695,26 @@ def source_snapshot(expected_sha256: str) -> FileSnapshot:
         )
     if REQUIRED_HEADING not in source.data:
         raise PolicySyncError(f"canonical policy is missing the required boundary: {source_path}")
+    if EXCERPT_GATE not in source.data or EXCERPT_FIRST_SECTION not in source.data:
+        raise PolicySyncError(
+            f"canonical policy is missing the always-on excerpt markers: {source_path}"
+        )
     return source
+
+
+def excerpt_sha256(source: FileSnapshot) -> str:
+    """Digest of the excerpt mirror bytes for the reviewed canonical policy."""
+    return hashlib.sha256(excerpt_bytes(source)).hexdigest()
+
+
+def excerpt_bytes(source: FileSnapshot) -> bytes:
+    """The always-on excerpt of the canonical policy: everything before the gate.
+
+    Bounded by construction: the excerpt is the identity, host, and layout
+    sections, and the delivery sections are omitted so one loaded instruction
+    file stays under the loader's per-file character warning.
+    """
+    return source.data.split(EXCERPT_GATE, 1)[0] + b"\n"
 
 
 def open_targets() -> dict[Path, TargetHandle]:
@@ -715,7 +747,12 @@ def verify_locked(expected_sha256: str) -> bool:
                 failures += 1
                 continue
             target_failed = False
-            if current.data != source.data:
+            expected_data = (
+                source.data
+                if logical_path in FULL_TEXT_TARGETS
+                else excerpt_bytes(source)
+            )
+            if current.data != expected_data:
                 print(f"FAIL policy mirror drifted: {logical_path}")
                 failures += 1
                 target_failed = True
@@ -729,7 +766,8 @@ def verify_locked(expected_sha256: str) -> bool:
                 failures += 1
                 target_failed = True
             if not target_failed:
-                print(f"ok policy mirror {logical_path}")
+                kind = "full text" if logical_path in FULL_TEXT_TARGETS else "excerpt"
+                print(f"ok policy mirror {logical_path} ({kind})")
     finally:
         close_targets(handles)
     print(f"privileged policy verification: failures={failures}")
@@ -762,6 +800,7 @@ def record_failure(
                 "backup": str(backup_dir),
                 "result": status,
                 "source_sha256": source.sha256,
+                "excerpt_sha256": excerpt_sha256(source),
                 "timestamp": manifest["finished_at"],
             })
         except Exception as exc:
@@ -780,7 +819,11 @@ def synchronize_locked(expected_sha256: str) -> Path:
     manifest: dict[str, Any] = {
         "version": 1,
         "status": "preparing",
-        "source": {"path": str(CANONICAL_PATH), **metadata(source)},
+        "source": {
+            "path": str(CANONICAL_PATH),
+            "excerpt_sha256": excerpt_sha256(source),
+            **metadata(source),
+        },
         "targets": [],
     }
     try:
@@ -813,7 +856,9 @@ def synchronize_locked(expected_sha256: str) -> Path:
 
         for logical_path, target in handles.items():
             prepared[logical_path] = prepare_replacement(
-                target, source, target_snapshots[logical_path]
+                target,
+                source.data if logical_path in FULL_TEXT_TARGETS else excerpt_bytes(source),
+                target_snapshots[logical_path],
             )
         for logical_path, target in handles.items():
             current = snapshot_target(target)
@@ -850,7 +895,12 @@ def synchronize_locked(expected_sha256: str) -> Path:
         for entry, logical_path in zip(manifest["targets"], TARGET_PATHS, strict=True):
             current = snapshot_target(handles[logical_path])
             original = target_snapshots[logical_path]
-            if current.data != source.data:
+            expected_data = (
+                source.data
+                if logical_path in FULL_TEXT_TARGETS
+                else excerpt_bytes(source)
+            )
+            if current.data != expected_data:
                 raise PolicySyncError(f"policy mirror verification failed: {logical_path}")
             if (current.mode, current.uid, current.gid) != (
                 original.mode,
@@ -871,6 +921,7 @@ def synchronize_locked(expected_sha256: str) -> Path:
             "backup": str(backup_dir),
             "result": "completed",
             "source_sha256": source.sha256,
+            "excerpt_sha256": excerpt_sha256(source),
             "timestamp": manifest["finished_at"],
         })
         return backup_dir

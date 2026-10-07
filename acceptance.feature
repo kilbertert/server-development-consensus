@@ -180,3 +180,18 @@ Feature: Layered consensus and AFK governance
       And it is not held to the managed-repository delivery metadata rules
       And a checkout a job reclaims mid-audit is skipped rather than reported as an inspection failure
       And a repository outside `_runners/` is still held to those rules, including one in a `_work` directory
+
+  Rule: An always-on instruction file stays bounded, and the full policy still binds
+
+    Scenario: The always-on policy mirror carries the bounded excerpt
+      Given the canonical policy text is larger than one instruction file may carry
+      When the installer or the privileged sync publishes an always-on agent file
+      Then that file contains only the policy text before the delivery gate
+      And it is smaller than the loader's per-file size warning
+      And the full canonical text remains installed beside it
+
+    Scenario: The workspace top level points at the policy instead of duplicating it
+      Given a session is started below `/home/claude/Projects`
+      When its instruction files are loaded
+      Then the workspace-level `CLAUDE.md` and `AGENTS.md` carry a pointer, not a policy copy
+      And a drifted or oversized mirror is reported by the policy audit rather than merged silently

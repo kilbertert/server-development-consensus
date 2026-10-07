@@ -29,10 +29,23 @@ chmod +x "$HOME/.local/bin/update-codex-config"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md"
 cp "$base_dir/CODEX-DEVELOPER-INSTRUCTIONS.md" "$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md"
 cp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" "$policy_dir/DEVELOPMENT-PORT-REGISTRY.md"
-cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/AGENTS.md"
-cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/CLAUDE.md"
+cat >"$projects/AGENTS.md" <<'POINTER'
+# Projects Workspace
+
+This file is a workspace-wide pointer, not a copy of the policy.
+
+Policy text lives in the workspace consensus copy.
+POINTER
+cp "$projects/AGENTS.md" "$projects/CLAUDE.md"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/SERVER-DEVELOPMENT-CONSENSUS.md"
 cp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" "$projects/DEVELOPMENT-PORT-REGISTRY.md"
+mkdir -p "$HOME/.claude"
+for always_on_mirror in \
+  "$HOME/.claude/CLAUDE.md" \
+  "$HOME/.codex/AGENTS.md" \
+  "$HOME/.codex/AGENTS.override.md"; do
+  "$audit" --excerpt "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md" >"$always_on_mirror"
+done
 python3 "$HOME/.local/bin/update-codex-config" "$HOME/.codex/config.toml" \
   "$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md"
 cp "$base_dir/git-hooks/hook-forwarder" "$hooks/hook-forwarder"
@@ -188,10 +201,57 @@ git config --global --unset-all serverPolicy.globalChainedHooksPath
 
 printf '%s\n' drift >"$projects/AGENTS.md"
 if "$audit" "$projects" >/dev/null 2>&1; then
-  printf '%s\n' 'FAIL drifted global policy copy passed audit' >&2
+  printf '%s\n' 'FAIL workspace policy pointer without the marker passed audit' >&2
   exit 1
 fi
-cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/AGENTS.md"
+cat >"$projects/AGENTS.md" <<'POINTER'
+# Projects Workspace
+
+This file is a workspace-wide pointer, not a copy of the policy.
+
+## Internal Knowledge And Public Projection Boundary
+POINTER
+if "$audit" "$projects" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL workspace policy pointer carrying policy text passed audit' >&2
+  exit 1
+fi
+cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/SERVER-DEVELOPMENT-CONSENSUS.md"
+cat >"$projects/AGENTS.md" <<'POINTER'
+# Projects Workspace
+
+This file is a workspace-wide pointer, not a copy of the policy.
+
+Policy text lives in the workspace consensus copy.
+POINTER
+cp "$projects/AGENTS.md" "$projects/CLAUDE.md"
+
+printf '%s\n' drift >"$projects/SERVER-DEVELOPMENT-CONSENSUS.md"
+if "$audit" "$projects" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL drifted workspace consensus copy passed audit' >&2
+  exit 1
+fi
+cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$projects/SERVER-DEVELOPMENT-CONSENSUS.md"
+
+printf '%s\n' drift >"$HOME/.claude/CLAUDE.md"
+if "$audit" "$projects" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL drifted always-on policy mirror passed audit' >&2
+  exit 1
+fi
+"$audit" --excerpt "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md" \
+  >"$HOME/.claude/CLAUDE.md"
+python3 - "$HOME/.claude/CLAUDE.md" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+path.write_text(path.read_text(encoding="utf-8") + "x" * 40000, encoding="utf-8")
+PY
+if "$audit" "$projects" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL oversized always-on policy mirror passed audit' >&2
+  exit 1
+fi
+"$audit" --excerpt "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md" \
+  >"$HOME/.claude/CLAUDE.md"
 
 printf '%s\n' drift >"$projects/DEVELOPMENT-PORT-REGISTRY.md"
 if "$audit" "$projects" >/dev/null 2>&1; then

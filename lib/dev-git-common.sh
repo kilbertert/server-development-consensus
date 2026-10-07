@@ -68,6 +68,17 @@ git_hook_names() {
     p4-post-changelist p4-pre-submit post-index-change
 }
 
+# The pre-scan walks every directory below the projects root, so it prunes the
+# directory classes that hold something other than a managed checkout: tool
+# caches, build output, private agent state, container volumes, and the
+# repository-local scratch area. `.scratch/` belongs here because it is where a
+# repository keeps bulky or sensitive non-source material - company code
+# clones, baseline documents - under its own `.gitignore`. A clone left there
+# can be a linked worktree whose administrative directory is later removed,
+# and then its `.git` is a gitfile pointing at nothing: resolvable by neither
+# `git` nor this scan, which would fail closed on a path that was never a
+# managed repository and stop the installer. Pruning the class, not the one
+# directory, is what keeps that from recurring under another name.
 find_project_git_entries() (
   projects_root=$1
   find "$projects_root" \
@@ -75,7 +86,7 @@ find_project_git_entries() (
       \( -name .cache -o -name .uv-cache -o -name .venv -o -name venv -o \
          -name node_modules -o -name vendor -o -name dist -o -name build -o \
          -name .tox -o -name .nox -o -name __pycache__ -o \
-         -name .pytest_cache -o -name .agent-private -o \
+         -name .pytest_cache -o -name .agent-private -o -name .scratch -o \
          -path '*/docker/volumes' \) \) -prune -o \
     -name .git -prune -print0
 )

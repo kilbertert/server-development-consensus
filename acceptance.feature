@@ -195,3 +195,12 @@ Feature: Layered consensus and AFK governance
       When its instruction files are loaded
       Then the workspace-level `CLAUDE.md` and `AGENTS.md` carry a pointer, not a policy copy
       And a drifted or oversized mirror is reported by the policy audit rather than merged silently
+
+  Rule: The pre-scan never resolves a path that is not a managed checkout
+
+    Scenario: The repository-local scratch area is not scanned
+      Given a repository keeps a code clone or a dead worktree pointer under its `.scratch/` area
+      When the policy audit and the installer inventory the projects root
+      Then the scratch area is pruned before any Git command runs
+      And a checkout or an unresolvable `.git` elsewhere is still reported
+      And an unreadable path stops the scan only when it is a managed checkout

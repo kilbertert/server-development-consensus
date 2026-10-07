@@ -34,6 +34,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B21 | Development host with a pull request carrying Devin Review threads; `gh` authenticated to the account that owns the PR | Recording a disposition is possible without a reviewer service, so the loop can be exercised against a pull request whose threads are already resolved as well as one that is not | A `gh` stub returning two unresolved threads (one bot-only, one bot plus a reply from the authenticated account) and one resolved thread; a real enrolled pull request for the end-to-end pass | Run `dev-pr-review status`, then `resolve` on the bot-only thread, then `reply` and `resolve` on it, then `close-loop`, then `close-loop` again | `status` lists only the unresolved threads and marks which carry a reply from the running account; `resolve` on the bot-only thread exits 77, prints `has no reply`, and **sends no `resolveReviewThread`**; after `reply`, `resolve` sends `resolveReviewThread` for that thread id; `close-loop` refuses while any thread is unanswered and posts no comment, then with every thread answered resolves them and posts exactly one `/devin review`; the second `close-loop` reports `nothing to close` and spends no review; an externally governed repository reaches no `gh` call on `resolve`, `reply`, or `close-loop`; a missing `--body-file` exits 65 with no traceback | None (the stub is a temporary fixture; the end-to-end pass mutates only thread state) |
 | GOV-B22 | Installer test fixture home; privileged-sync test fixture | The canonical policy carries the always-on excerpt gate and is larger than the loader's per-file warning | A canonical source with the delivery gate, plus the same source with the gate removed | Run `install.sh`, then `dev-policy-audit --excerpt`, then `sync-privileged-policy`; run each again against a source missing the gate | The installed always-on mirrors (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md`) byte-equal the canonical excerpt and stay below 40,000 characters / 32,768 bytes; the `/etc` mirror and `~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md` keep the full text; a source without the gate is refused rather than truncated silently | Remove the fixture home |
 | GOV-B23 | Installer test fixture home; policy-audit test fixture | A session started below the projects workspace loads the workspace top level | A pointer document, a pointer carrying policy text, a pointer without the marker, a drifted user-writable mirror, and an oversized mirror | Run `install.sh`, then `dev-policy-audit` over the fixture root with each variant | The installed `~/Projects/CLAUDE.md` and `~/Projects/AGENTS.md` carry the pointer marker and no policy section; a pointer without the marker, a pointer carrying policy text, a drifted writable mirror, and an oversized mirror all fail the audit; a drifted root-maintained mirror is reported as a warning because the audit cannot repair it | Remove the fixture home |
+| GOV-B24 | Installer test fixture home; policy-audit test fixture | A repository keeps non-source material under its own `.scratch/` area, and the scan walks every directory below the projects root before any Git command | A clone under `customer/.scratch/company-repos/`, a `.git` there pointing at a removed worktree administration directory, and the same two shapes under a directory not named `.scratch` | Run `dev-policy-audit` over the fixture root, then `install.sh` over a fixture home | `.scratch` and its contents are never reported and never reached by a Git command; the two control fixtures outside `.scratch` still fail, one as `default-branch expected=main actual=unset` and one as `cannot inspect repository state`, so the exemption is scoped to the path rather than to the shape; the installer completes instead of aborting on an unresolvable entry | Remove the fixture repositories |
 
 ## Traceability
 
@@ -62,6 +63,7 @@ repository scope that decides which of those rules a repository is subject to.
 | The agent owns the thread loop | The responsible agent closes the triage loop without a human per thread | GOV-B21 |
 | Always-on instruction files stay bounded | The always-on policy mirror carries the bounded excerpt | GOV-B22 |
 | The workspace top level points, not duplicates | The workspace top level points at the policy instead of duplicating it | GOV-B23 |
+| The pre-scan resolves only managed checkouts | The repository-local scratch area is not scanned | GOV-B24 |
 
 ## Execution Results
 
@@ -655,12 +657,39 @@ Verified on 2026-10-08 against `tests/test-install.sh` and
   `~/Projects/AGENTS.md` and `~/Projects/CLAUDE.md` is restored, which is the
   ordering the backup now has to respect.
 
+### GOV-B24 - the pre-scan resolves only managed checkouts
+
+Verified on 2026-10-08 against `tests/test-dev-policy-audit.sh` and
+`tests/test-install.sh`, both green.
+
+- The `find` pre-scan prunes `.scratch` alongside the other non-source classes
+  (`.cache`, node_modules, virtualenvs, `.agent-private`, container volumes).
+  The prune happens before any `git` command runs, so a pruned path is never
+  resolved at all — which is what an unresolvable `.git` under `.scratch` used
+  to break on.
+- Two control fixtures sit outside `.scratch` with the same two shapes: a
+  clone with no delivery metadata, and a `.git` pointing at a removed worktree
+  administration directory. Both still fail the audit, so the change is scoped
+  to the path and does not widen into "ignore anything that fails to resolve".
+- Mutation-tested so the assertion is measured rather than assumed. Removing
+  the `.scratch` prune makes the scratch fixture fail with `FAIL .../.scratch/company-repos/api
+  default-branch expected=main actual=unset` and
+  `FAIL .../.scratch/company-repos/gone cannot inspect repository state`;
+  renaming the prune to a different directory leaves the same failures. Both
+  mutants are killed by the suite.
+- The gap was pre-existing, not a regression from PR #50: the same `find`
+  invocation is byte-identical at `01cdef9` (the commit before it). It surfaced
+  only because a real scratch clone on this host had its worktree administration
+  directory removed since the last successful install.
+
 ## Risk Checks
 
 - Complexity/coverage: not applicable; the checker is a small portable script
   covered by executable smoke cases.
 - Mutation testing: performed for GOV-B21 above (the reply-before-resolve
-  precondition is the change's authorization-shaped rule). Not applicable to the
+  precondition is the change's authorization-shaped rule), and for GOV-B24 (the
+  prune that keeps the scan away from files that are not checkouts — two mutants,
+  both killed). Not applicable to the
   governance-text edits, which the fail-closed policy test covers. For this
   change the excerpt gate is the load-bearing rule, and the suites already
   assert the two failure modes that matter — a missing gate in the source and a

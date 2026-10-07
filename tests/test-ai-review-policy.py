@@ -9,6 +9,8 @@ CODERABBIT = ROOT / ".coderabbit.yaml"
 POLICY = ROOT / "SERVER-DEVELOPMENT-CONSENSUS.md"
 README = ROOT / "README.md"
 CODEX_INSTRUCTIONS = ROOT / "CODEX-DEVELOPER-INSTRUCTIONS.md"
+ACCEPTANCE = ROOT / "acceptance.feature"
+REVIEW_TOOL = ROOT / "bin/dev-pr-review"
 
 
 def load_yaml(path: Path) -> dict:
@@ -67,6 +69,8 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "Triage is gated; the reviewer's check is not" in normalized_policy
     assert "requires conversation resolution" in normalized_policy
     assert "posts `/devin review` after addressing findings" in normalized_policy
+    assert "the responsible agent owns the loop end to end" in normalized_policy
+    assert "the operator audits the recorded dispositions" in normalized_policy
 
     assert "server's three-layer architecture is explicit" in normalized_readme
     assert "Devin Review automatically reviews the initial ready PR" in normalized_readme
@@ -96,6 +100,67 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "PR-Agent" not in normalized_policy
     assert "PR-Agent" not in normalized_readme
     assert "PR-Agent" not in normalized_codex_instructions
+
+
+def test_the_responsible_agent_owns_the_review_thread_loop() -> None:
+    # The ruleset blocks a merge on an unresolved thread, and the reviewer only
+    # resolves what it considers addressed. The residual threads used to wait
+    # for a human, which meant every agent run ended with open threads it could
+    # not close. The loop is now the agent's, and the precondition it rests on
+    # is mechanical rather than a convention: dev-pr-review refuses to resolve a
+    # thread that carries no reply from the account running it.
+    policy = " ".join(POLICY.read_text(encoding="utf-8").split())
+    readme = " ".join(README.read_text(encoding="utf-8").split())
+    codex_instructions = " ".join(CODEX_INSTRUCTIONS.read_text(encoding="utf-8").split())
+    acceptance = ACCEPTANCE.read_text(encoding="utf-8")
+    normalized_acceptance = " ".join(acceptance.split())
+    tool = REVIEW_TOOL.read_text(encoding="utf-8")
+
+    for normalized, name in (
+        (policy, "policy"),
+        (readme, "README"),
+        (codex_instructions, "Codex instructions"),
+    ):
+        assert "dev-pr-review" in normalized, name
+        assert "answered in the thread" in normalized, name
+
+    assert "resolves that thread itself" in policy or "resolved by the responsible agent" in policy
+    assert "becomes an after-the-fact audit" in readme
+    assert "owns the loop end to end" in readme
+    assert "the responsible agent" in codex_instructions
+
+    # The thread loop and the review budget are two different limits and the
+    # text has to say so: the loop is bounded by the budget, not by the tool, so
+    # a milestone cannot read as an unbounded re-review sequence. The old
+    # wording ("repeats ... until no new finding") stated a termination the tool
+    # does not provide.
+    for normalized, name in (
+        (policy, "policy"),
+        (readme, "README"),
+        (codex_instructions, "Codex instructions"),
+    ):
+        assert "up to the milestone's review budget" in normalized, name
+    assert "until no new finding and no unanswered thread remain" not in policy
+
+    assert "the agent is refused if it tries to resolve a thread that carries no reply" in normalized_acceptance
+    assert "and resolves them itself" in normalized_acceptance
+
+    # The tool, not the prose, is what makes the precondition enforceable.
+    assert "resolveReviewThread" in tool
+    assert "has no reply" in tool
+    assert "close-loop" in tool
+
+    # The human-resolver gate is gone from the governing text. Leaving one
+    # sentence behind would let the loop be read as still requiring an operator.
+    for normalized, name in (
+        (policy, "policy"),
+        (readme, "README"),
+        (codex_instructions, "Codex instructions"),
+        (normalized_acceptance, "acceptance.feature"),
+    ):
+        assert "resolved by a human" not in normalized, name
+        assert "resolved by the reviewer" not in normalized, name
+        assert "resolved by its author" not in normalized, name
 
 
 def test_ocr_coverage_is_measured_rather_than_assumed() -> None:

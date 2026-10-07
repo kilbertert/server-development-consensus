@@ -41,6 +41,9 @@ jobs:
       - name: Server development pre-push tests
         shell: sh
         run: sh tests/test-pre-push.sh
+      - name: Server development PR review tests
+        shell: sh
+        run: sh tests/test-dev-pr-review.sh
       - name: Server development commit-msg tests
         shell: sh
         run: sh tests/test-commit-msg.sh

@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+"""dev-pr-review - close the pull-request review loop without a human per thread.
+
+The Ruleset blocks a merge while any review thread is unresolved, and the
+reviewer only resolves the threads it considers addressed when a re-review is
+requested. That leaves the residual threads (false positive, accepted risk, not
+applicable) to whatever closes them - which used to be a human, per thread.
+
+This tool replaces that gate with a mechanical one: a thread may be resolved
+only once the authenticated account has posted a reply on it. The reply carries
+the disposition, so triage is still recorded; a human audits the record instead
+of gating each thread.
+
+Exit codes: 0 ok / 2 usage / 65 missing prerequisite / 77 refused.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+PROG = "dev-pr-review"
+
+THREADS_QUERY = """
+query($owner:String!, $name:String!, $number:Int!) {
+  repository(owner:$owner, name:$name) {
+    pullRequest(number:$number) {
+      reviewThreads(first:100) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          comments(first:100) {
+            nodes { author { login } body }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+RESOLVE_MUTATION = """
+mutation($id:ID!) {
+  resolveReviewThread(input:{threadId:$id}) { thread { id isResolved } }
+}
+"""
+
+REPLY_MUTATION = """
+mutation($id:ID!, $body:String!) {
+  addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id, body:$body}) {
+    comment { id }
+  }
+}
+"""
+
+
+class Refused(Exception):
+    """A precondition the operator must satisfy before the action is allowed."""
+
+
+class Missing(Exception):
+    """A prerequisite of the environment is absent."""
+
+
+def die(message: str, code: int) -> "NoReturn":  # type: ignore[valid-type]
+    print(f"{PROG}: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def run_gh(args: list[str], stdin: str | None = None) -> str:
+    try:
+        completed = subprocess.run(
+            ["gh", *args],
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise Missing("gh is required and was not found on PATH") from None
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise Missing(f"gh {' '.join(args)} failed: {detail}")
+    return completed.stdout
+
+
+def graphql(query: str, **variables: object) -> dict:
+    args = ["api", "graphql", "-f", f"query={query}"]
+    for key, value in variables.items():
+        args += ["-F", f"{key}={value}"]
+    return json.loads(run_gh(args))
+
+
+def current_login() -> str:
+    return run_gh(["api", "user", "--jq", ".login"]).strip()
+
+
+def resolve_repo(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    try:
+        return run_gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).strip()
+    except Missing as error:
+        raise Missing(
+            "could not determine the repository; run inside a checkout or pass --repo OWNER/REPO"
+        ) from error
+
+
+def resolve_pr(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    try:
+        return run_gh(["pr", "view", "--json", "number", "--jq", ".number"]).strip()
+    except Missing as error:
+        raise Missing(
+            "could not determine the pull request; pass --pr NUMBER or run on a branch with a PR"
+        ) from error
+
+
+def require_managed_repository() -> None:
+    """Externally governed repositories keep their own delivery process."""
+    completed = subprocess.run(
+        ["git", "config", "--local", "--get", "serverPolicy.repositoryClass"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # Absent means managed, matching lib/dev-git-common.sh.
+    if completed.returncode == 1:
+        return
+    if completed.returncode != 0:
+        # The class marker is local to the checkout, so an explicit --repo does
+        # not remove the need to run from inside the repository.
+        raise Missing(
+            "cannot read the repository class from a local checkout; run "
+            "dev-pr-review inside the repository (dev-policy-audit --repair "
+            "fixes a corrupt marker)"
+        )
+    if completed.stdout.strip() == "external":
+        raise Refused(
+            "externally governed repositories keep their own review process; "
+            "the server review loop does not apply"
+        )
+
+
+def fetch_threads(owner: str, name: str, number: str) -> list[dict]:
+    data = graphql(THREADS_QUERY, owner=owner, name=name, number=number)
+    try:
+        return data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+    except (KeyError, TypeError):
+        raise Missing(f"could not read review threads for {owner}/{name}#{number}") from None
+
+
+def find_thread(threads: list[dict], thread_id: str) -> dict:
+    for thread in threads:
+        if thread.get("id") == thread_id:
+            return thread
+    raise Missing(f"thread {thread_id} is not on this pull request")
+
+
+def commenters(thread: dict) -> list[str]:
+    logins = []
+    for comment in thread.get("comments", {}).get("nodes", []):
+        author = comment.get("author") or {}
+        login = author.get("login")
+        if login:
+            logins.append(login)
+    return logins
+
+
+def has_reply_from(thread: dict, login: str) -> bool:
+    return login in commenters(thread)
+
+
+def summarize(thread: dict) -> str:
+    nodes = thread.get("comments", {}).get("nodes", [])
+    if not nodes:
+        return ""
+    body = " ".join((nodes[0].get("body") or "").split())
+    return body[:120]
+
+
+def thread_line(thread: dict, me: str) -> str:
+    location = thread.get("path") or "(no file)"
+    line = thread.get("line")
+    anchor = f"{location}:{line}" if line else location
+    answered = "answered" if has_reply_from(thread, me) else "UNANSWERED"
+    return f"  {thread['id']}  [{answered}]  {anchor}\n      {summarize(thread)}"
+
+
+def common_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--repo", metavar="OWNER/REPO", help="repository (default: current checkout)")
+    parser.add_argument("--pr", metavar="NUMBER", help="pull request (default: current branch's)")
+
+
+def unresolved(owner: str, name: str, number: str) -> tuple[list[dict], str]:
+    me = current_login()
+    threads = [t for t in fetch_threads(owner, name, number) if not t.get("isResolved")]
+    return threads, me
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    repo = resolve_repo(args.repo)
+    owner, _, name = repo.partition("/")
+    if not name:
+        die(f"--repo expects OWNER/REPO, got {repo!r}", 2)
+    number = resolve_pr(args.pr)
+    threads, me = unresolved(owner, name, number)
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "threadId": t["id"],
+                        "path": t.get("path"),
+                        "line": t.get("line"),
+                        "outdated": bool(t.get("isOutdated")),
+                        "answeredByYou": has_reply_from(t, me),
+                        "authors": commenters(t),
+                    }
+                    for t in threads
+                ],
+                indent=2,
+            )
+        )
+        return 0
+    if not threads:
+        print(f"{repo}#{number}: no unresolved review threads")
+        return 0
+    print(f"{repo}#{number}: {len(threads)} unresolved review thread(s) as {me}")
+    for thread in threads:
+        print(thread_line(thread, me))
+    return 0
+
+
+def read_body(path: str) -> str:
+    if path == "-":
+        return sys.stdin.read()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError as error:
+        raise Missing(f"cannot read --body-file {path}: {error.strerror or error}") from None
+
+
+def cmd_reply(args: argparse.Namespace) -> int:
+    require_managed_repository()
+    if args.body_file:
+        body = read_body(args.body_file)
+    elif args.body is not None:
+        body = args.body
+    else:
+        die("reply needs --body TEXT or --body-file PATH|-", 2)
+    if not body.strip():
+        die("refusing to post an empty reply; the reply is the triage record", 77)
+    graphql(REPLY_MUTATION, id=args.thread_id, body=body)
+    print(f"replied on {args.thread_id}")
+    return 0
+
+
+def cmd_resolve(args: argparse.Namespace) -> int:
+    require_managed_repository()
+    repo = resolve_repo(args.repo)
+    owner, _, name = repo.partition("/")
+    if not name:
+        die(f"--repo expects OWNER/REPO, got {repo!r}", 2)
+    number = resolve_pr(args.pr)
+    me = current_login()
+    thread = find_thread(fetch_threads(owner, name, number), args.thread_id)
+    if thread.get("isResolved"):
+        print(f"{args.thread_id} is already resolved")
+        return 0
+    if not has_reply_from(thread, me):
+        print(
+            f"{PROG}: 拒绝 — {args.thread_id} has no reply from {me}.\n"
+            "  Post the disposition in the thread first: fixed, accepted risk, "
+            "false positive, or not applicable.\n"
+            f"  dev-pr-review reply {args.thread_id} --body '...'",
+            file=sys.stderr,
+        )
+        return 77
+    graphql(RESOLVE_MUTATION, id=args.thread_id)
+    print(f"resolved {args.thread_id}")
+    return 0
+
+
+def cmd_close_loop(args: argparse.Namespace) -> int:
+    """Resolve every answered thread, then ask for exactly one re-review.
+
+    This pass cannot loop on its own: the re-review is requested only when it
+    actually resolved something, so a re-review that opens no new thread leaves
+    nothing for the next invocation to resolve and it is a no-op. Whether a
+    re-review opens a new thread is the reviewer's decision, not something this
+    tool bounds.
+    """
+    require_managed_repository()
+    repo = resolve_repo(args.repo)
+    owner, _, name = repo.partition("/")
+    if not name:
+        die(f"--repo expects OWNER/REPO, got {repo!r}", 2)
+    number = resolve_pr(args.pr)
+    threads, me = unresolved(owner, name, number)
+    if not threads:
+        print(f"{repo}#{number}: no unresolved review threads; nothing to close")
+        return 0
+    unanswered = [t for t in threads if not has_reply_from(t, me)]
+    if unanswered:
+        print(
+            f"{PROG}: 拒绝 — {len(unanswered)} of {len(threads)} unresolved thread(s) "
+            f"have no reply from {me}:",
+            file=sys.stderr,
+        )
+        for thread in unanswered:
+            print(thread_line(thread, me), file=sys.stderr)
+        print("  Answer each one with its disposition, then re-run close-loop.", file=sys.stderr)
+        return 77
+    if args.dry_run:
+        print(f"would resolve {len(threads)} thread(s) and request one re-review:")
+        for thread in threads:
+            print(thread_line(thread, me))
+        return 0
+    for thread in threads:
+        graphql(RESOLVE_MUTATION, id=thread["id"])
+        print(f"resolved {thread['id']}")
+    run_gh(["pr", "comment", number, "--repo", repo, "--body", "/devin review"])
+    print(f"requested one re-review on {repo}#{number}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=PROG,
+        description="Close the pull-request review loop: reply, resolve, request one re-review.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    status = sub.add_parser("status", help="list unresolved review threads and whether you replied")
+    common_args(status)
+    status.add_argument("--json", action="store_true", help="machine-readable output")
+    status.set_defaults(func=cmd_status)
+
+    reply = sub.add_parser("reply", help="post the disposition on a thread")
+    reply.add_argument("thread_id")
+    reply.add_argument("--body")
+    reply.add_argument("--body-file", metavar="PATH", help="read the body from PATH, or - for stdin")
+    reply.set_defaults(func=cmd_reply)
+
+    resolve = sub.add_parser("resolve", help="resolve a thread that already carries your reply")
+    resolve.add_argument("thread_id")
+    common_args(resolve)
+    resolve.set_defaults(func=cmd_resolve)
+
+    close = sub.add_parser(
+        "close-loop", help="resolve every answered thread, then request one re-review"
+    )
+    common_args(close)
+    close.add_argument("--dry-run", action="store_true")
+    close.set_defaults(func=cmd_close_loop)
+
+    return parser
+
+
+def main(argv: list[str]) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except Refused as error:
+        die(f"拒绝 — {error}", 77)
+    except Missing as error:
+        die(str(error), 65)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

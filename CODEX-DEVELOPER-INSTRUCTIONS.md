@@ -91,8 +91,15 @@ the normal review loop manually. Posting that request is also what unblocks the
 branch: the Ruleset requires conversation resolution, and Devin resolves the
 threads it considers addressed only at re-review. Fixing findings without
 requesting the re-review leaves your own merge blocked. A finding triaged as not
-applicable is answered in the thread and resolved by a human, with the reasoning
-recorded — that is triage, and it is the only sanctioned way past the gate.
+applicable is answered in the thread with the disposition recorded and resolved
+by the responsible agent, with the reasoning recorded — that is triage, and it
+is the only sanctioned way past the gate. You own that loop end to end: answer
+and resolve every residual thread, then request one re-review and repeat that
+pass while the re-review keeps opening findings, up to the milestone's review
+budget. `dev-pr-review` enforces the precondition — it
+will not resolve a thread that carries no reply from the account running it — so
+`dev-pr-review status`, `reply`, and `close-loop` are the loop; the operator
+audits the recorded dispositions instead of approving each thread.
 Devin Review's own status check stays **non-required**, which is what keeps the
 vendor out of the merge path, and any user with write access can resolve a
 thread, so the reviewer cannot hold a branch hostage.

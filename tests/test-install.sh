@@ -55,11 +55,28 @@ first_output=$("$installer" 2>&1)
 printf '%s\n' "$first_output" | grep -q 'server development consensus installed'
 [ "$(git config --global --path --get core.hooksPath)" = "$HOME/.config/git/hooks" ]
 [ "$(git config --global --path --get serverPolicy.globalChainedHooksPath)" = "$HOME/custom-hooks" ]
-grep -q '^## Internal Knowledge And Public Projection Boundary$' "$HOME/Projects/AGENTS.md"
-grep -q '^## Standards-Based Engineering$' "$HOME/Projects/AGENTS.md"
+# The workspace top level is a Project memory location, so it carries a pointer
+# rather than a policy copy; the consensus copy keeps the full text.
+grep -q '^This file is a workspace-wide pointer, not a copy of the policy\.$' \
+  "$HOME/Projects/AGENTS.md"
+grep -q '^This file is a workspace-wide pointer, not a copy of the policy\.$' \
+  "$HOME/Projects/CLAUDE.md"
+! grep -q '^## Internal Knowledge And Public Projection Boundary$' \
+  "$HOME/Projects/AGENTS.md"
+cmp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" \
+  "$HOME/Projects/SERVER-DEVELOPMENT-CONSENSUS.md"
+# An always-on global agent file is the bounded excerpt, not the full policy.
+for excerpt_file in "$HOME/Projects/CLAUDE.md" "$HOME/Projects/AGENTS.md"; do
+  [ "$(wc -c <"$excerpt_file")" -lt 40000 ]
+done
 [ "$(cat "$HOME/.codex/AGENTS.md")" = root-maintained ]
 python3 "$HOME/.local/bin/update-codex-config" --verify "$HOME/.codex/config.toml" \
   "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
+# The always-on Claude file is the excerpt, and the delivery sections stay out.
+grep -q '^## Account Boundary$' "$HOME/.claude/CLAUDE.md"
+grep -q '^## Standards-Based Engineering$' "$HOME/.claude/CLAUDE.md"
+! grep -q '^## Mandatory Git Workflow$' "$HOME/.claude/CLAUDE.md"
+[ "$(wc -c <"$HOME/.claude/CLAUDE.md")" -lt 40000 ]
 python3 - "$HOME/.codex/config.toml" <<'PY'
 import sys
 import tomlkit

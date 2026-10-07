@@ -2,6 +2,21 @@
 set -u
 
 repair=false
+if [[ ${1:-} == --excerpt ]]; then
+  # Print the policy's always-on excerpt (the text before the delivery gate) so
+  # the mirror check compares against the same derivation the installer uses.
+  python3 - "${2:?usage: dev-policy-audit --excerpt POLICY_FILE}" <<'PY'
+from pathlib import Path
+import sys
+
+gate = "\n## Mandatory Git Workflow\n"
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+if gate not in text:
+    raise SystemExit(f"policy is missing the always-on excerpt gate: {sys.argv[1]}")
+sys.stdout.write(text.split(gate, 1)[0] + "\n")
+PY
+  exit $?
+fi
 if [[ ${1:-} == --repair ]]; then
   repair=true
   shift
@@ -214,15 +229,68 @@ if [[ ! -r $policy_file ]] ||
   printf 'FAIL canonical server policy is missing the internal/public knowledge boundary\n'
   failures=$((failures + 1))
 else
+  # Only the full-text copies owe the canonical text. The workspace top level is
+  # a Project memory location loaded into every session below it, so its
+  # CLAUDE.md and AGENTS.md are deliberately short pointers instead; holding
+  # them to the canonical text would reinstate the oversized always-on file the
+  # pointer exists to avoid.
   for policy_copy in \
-    "$projects_root/AGENTS.md" \
-    "$projects_root/CLAUDE.md" \
     "$projects_root/SERVER-DEVELOPMENT-CONSENSUS.md"; do
     if ! cmp -s "$policy_file" "$policy_copy"; then
       printf 'FAIL policy copy drifted from canonical source: %s\n' "$policy_copy"
       failures=$((failures + 1))
     fi
   done
+  for workspace_pointer in \
+    "$projects_root/CLAUDE.md" \
+    "$projects_root/AGENTS.md"; do
+    if ! grep -q '^This file is a workspace-wide pointer, not a copy of the policy\.$' \
+        "$workspace_pointer" 2>/dev/null ||
+       grep -q '^## Internal Knowledge And Public Projection Boundary$' \
+        "$workspace_pointer" 2>/dev/null; then
+      printf 'FAIL workspace policy pointer is missing or carries policy text: %s\n' \
+        "$workspace_pointer"
+      failures=$((failures + 1))
+    fi
+  done
+  # The global agent files are loaded into every session, and the loaders warn
+  # past a per-file size (40,000 characters for Claude Code, 32,768 bytes for
+  # Codex). They carry the always-on excerpt, so the observable check is that
+  # each one still matches the canonical excerpt and stays under both bounds.
+  excerpt_file=$(mktemp)
+  if ! "${BASH_SOURCE[0]}" --excerpt "$policy_file" >"$excerpt_file" 2>/dev/null; then
+    printf 'FAIL cannot derive the always-on policy excerpt\n'
+    failures=$((failures + 1))
+  else
+    while IFS=$'\t' read -r mirror max_bytes; do
+      if [[ ! -r $mirror ]]; then
+        printf 'FAIL always-on policy mirror is missing: %s\n' "$mirror"
+        failures=$((failures + 1))
+      elif ! cmp -s "$excerpt_file" "$mirror"; then
+        # A root-maintained mirror is outside this audit's reach: the installer
+        # deliberately preserves it, and sync-privileged-policy is what brings
+        # it into line. Report the drift without failing a check the auditor
+        # cannot repair.
+        if [[ -w $mirror ]]; then
+          printf 'FAIL always-on policy mirror drifted from canonical excerpt: %s\n' \
+            "$mirror"
+          failures=$((failures + 1))
+        else
+          printf 'WARN always-on policy mirror is root-maintained and drifted; run sync-privileged-policy: %s\n' \
+            "$mirror"
+        fi
+      elif [[ $(wc -c <"$mirror") -ge $max_bytes ]]; then
+        printf 'FAIL always-on policy mirror exceeds the %s-byte load limit: %s\n' \
+          "$max_bytes" "$mirror"
+        failures=$((failures + 1))
+      fi
+    done <<EOF
+$policy_home/.claude/CLAUDE.md	40000
+$policy_home/.codex/AGENTS.md	32768
+$policy_home/.codex/AGENTS.override.md	32768
+EOF
+  fi
+  rm -f "$excerpt_file"
 fi
 if [[ ! -r $port_registry ]] ||
    ! grep -q '^## Static Pool$' "$port_registry" ||

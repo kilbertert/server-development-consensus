@@ -313,6 +313,18 @@ a glance.
 - Routine local naming and implementation details do not require external
   research unless ambiguity or interoperability risk makes it useful.
 
+> **Always-on excerpt — bounded on purpose.** Every Claude Code session loads
+> this file, and Claude Code warns when one instruction file passes ~40,000
+> characters. The always-on copy is therefore the identity, host, and layout
+> sections only. The delivery and review sections — `Mandatory Git Workflow`,
+> `Git And Worktree Delivery Invariants`, `Acceptance And System-Test Evidence`,
+> `Pull Request Gate`, `Agent Behavior`, `Development Review Sequence`,
+> `Internal Knowledge And Public Projection Boundary`, `Engineering Article
+> Publication`, `Services And Docker`, `Emergency Changes` — are the full
+> policy at `/home/claude/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md`.
+> They still bind: read that file before any commit, push, pull request, merge,
+> release, or deployment.
+
 ## Mandatory Git Workflow
 
 The default branch (`main`, `master`, or the remote's configured default) is a

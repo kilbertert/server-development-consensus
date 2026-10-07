@@ -586,6 +586,58 @@ grep -q "FAIL $control_repo default-branch expected=main actual=unset" \
   <<<"$control_output"
 rm -rf "$runner_repo" "$deploy_repo" "$control_repo"
 
+# The repository-local scratch area -------------------------------------------------
+# `.scratch/` holds bulky or sensitive non-source material under the
+# repository's own `.gitignore` - company code clones, baseline documents. A
+# clone left there can be a linked worktree whose administrative directory was
+# later removed, and its `.git` is then a gitfile pointing at nothing: not a
+# managed repository, but a path the scan cannot resolve, which failed closed
+# and stopped the installer. The whole directory class is pruned, so the same
+# two shapes are exercised outside `.scratch/` as controls: if those stopped
+# failing, the exemption would have widened past the path it is scoped to.
+scratch_clone=$projects/customer/.scratch/company-repos/api
+scratch_vanished=$projects/customer/.scratch/company-repos/gone
+for fixture in "$scratch_clone" "$scratch_vanished"; do
+  mkdir -p "$fixture"
+done
+git init --initial-branch=main "$scratch_clone" >/dev/null
+git -C "$scratch_clone" config user.name test
+git -C "$scratch_clone" config user.email test@example.com
+git -C "$scratch_clone" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m scratch >/dev/null
+mkdir -p "$scratch_vanished"
+printf 'gitdir: %s\n' "$tmp/removed-worktree-admin" >"$scratch_vanished/.git"
+scratch_output=$("$audit" "$projects" 2>&1) || {
+  printf 'FAIL the scratch area failed the policy audit:\n%s\n' \
+    "$scratch_output" >&2
+  exit 1
+}
+if grep -q "$projects/customer/.scratch" <<<"$scratch_output"; then
+  printf 'FAIL the scratch area was audited as a managed repository:\n%s\n' \
+    "$scratch_output" >&2
+  exit 1
+fi
+rm -rf "$projects/customer"
+
+scratch_shape_clone=$projects/plain-scratch-shape/api
+scratch_shape_vanished=$projects/plain-scratch-shape/gone
+mkdir -p "$scratch_shape_clone" "$scratch_shape_vanished"
+git init --initial-branch=main "$scratch_shape_clone" >/dev/null
+git -C "$scratch_shape_clone" config user.name test
+git -C "$scratch_shape_clone" config user.email test@example.com
+git -C "$scratch_shape_clone" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m plain >/dev/null
+printf 'gitdir: %s\n' "$tmp/removed-worktree-admin" >"$scratch_shape_vanished/.git"
+if scratch_shape_output=$("$audit" "$projects" 2>&1); then
+  printf '%s\n' 'FAIL the scratch exemption widened to a directory not named .scratch' >&2
+  exit 1
+fi
+grep -q "FAIL $scratch_shape_clone default-branch expected=main actual=unset" \
+  <<<"$scratch_shape_output"
+grep -q "FAIL $scratch_shape_vanished cannot inspect repository state" \
+  <<<"$scratch_shape_output"
+rm -rf "$projects/plain-scratch-shape"
+
 git init --initial-branch=main "$projects/broken" >/dev/null
 printf '%s\n' '[broken' >"$projects/broken/.git/config"
 if "$audit" "$projects" >"$tmp/broken.out" 2>&1; then

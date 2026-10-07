@@ -31,7 +31,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B18 | Development host with a self-hosted runner | A job checkout exists under `_runners/<runner>/_work/` and a deploy checkout exists under `_runners/`, neither carrying delivery metadata; one runner checkout is unreadable; two controls sit outside `_runners/` | The runner, deploy and unreadable fixtures in `tests/test-dev-policy-audit.sh`, plus a repository in a `_work` directory and a project with no metadata, both outside `_runners/` | Run `dev-policy-audit` over the projects root | All `_runners/` artifacts are reported as `skip runner working directory` and none fails, including the unreadable one, while both controls still fail with `default-branch expected=main actual=unset` | Remove the fixture repositories |
 | GOV-B19 | Repository whose Ruleset requires conversation resolution | A pull request carries an unresolved Devin Review thread; all required checks pass | A real pull request against a gated repository (`AI-Ops#371`, merged `229cc194`) | Read `mergeStateStatus` with all required checks passing while threads are unresolved and again once resolved; attempt the merge while blocked; resolve a thread by hand; post the triage record and request the re-review | `BLOCKED` with unresolved threads under all-checks-passing and `CLEAN` once every thread is resolved (`14 of 14` at merge); `gh pr merge` refused with `the base branch policy prohibits the merge`; a write-access user resolves a thread and returns `resolvedBy: kilbertert`; after the re-review Devin resolves the thread it considers fixed and leaves the accepted-limitation thread unresolved | None (the gate is the state under test) |
 | GOV-B20 | Installer test fixture home with a repository declaring `serverPolicy.publishesVersions` | The changelog generator is installed and the fixture repository carries conventional commits and the declaration | A marked repository with no `CHANGELOG.md`; a marked repository whose changelog is regenerated, then receives one more `feat` commit; a repository with the key absent or `false`; a repository with the key set to a non-boolean | Run `dev-changelog` and `dev-changelog --check` against each, then run `dev-policy-audit` over the fixture root | The unmarked repository is skipped with no file written; the marked repository without a changelog is reported `WARN ... but has no CHANGELOG.md` and the audit is not failed by it; generation produces Keep a Changelog headings with `feat` under Added and `chore` omitted, and a second run is byte-identical; the commit added afterwards makes `--check` exit non-zero with `does not match the commits` while writing nothing; the absent and `false` cases produce no finding; the non-boolean value fails the audit | Remove the fixture repositories |
-| GOV-B21 | Development host with a pull request carrying Devin Review threads; `gh` authenticated to the account that owns the PR | Recording a disposition is possible without a reviewer service, so the loop can be exercised against a pull request whose threads are already resolved as well as one that is not | A `gh` stub returning two unresolved threads (one bot-only, one bot plus a reply from the authenticated account) and one resolved thread; a real enrolled pull request for the end-to-end pass | Run `dev-pr-review status`, then `resolve` on the bot-only thread, then `reply` and `resolve` on it, then `close-loop`, then `close-loop` again | `status` lists only the unresolved threads and marks which carry a reply from the running account; `resolve` on the bot-only thread exits 77, prints `has no reply`, and **sends no `resolveReviewThread`**; after `reply`, `resolve` sends `resolveReviewThread` for that thread id; `close-loop` refuses while any thread is unanswered and posts no comment, then with every thread answered resolves them and posts exactly one `/devin review`; the second `close-loop` reports `nothing to close` and spends no review; an externally governed repository reaches no `gh` call | None (the stub is a temporary fixture; the end-to-end pass mutates only thread state) |
+| GOV-B21 | Development host with a pull request carrying Devin Review threads; `gh` authenticated to the account that owns the PR | Recording a disposition is possible without a reviewer service, so the loop can be exercised against a pull request whose threads are already resolved as well as one that is not | A `gh` stub returning two unresolved threads (one bot-only, one bot plus a reply from the authenticated account) and one resolved thread; a real enrolled pull request for the end-to-end pass | Run `dev-pr-review status`, then `resolve` on the bot-only thread, then `reply` and `resolve` on it, then `close-loop`, then `close-loop` again | `status` lists only the unresolved threads and marks which carry a reply from the running account; `resolve` on the bot-only thread exits 77, prints `has no reply`, and **sends no `resolveReviewThread`**; after `reply`, `resolve` sends `resolveReviewThread` for that thread id; `close-loop` refuses while any thread is unanswered and posts no comment, then with every thread answered resolves them and posts exactly one `/devin review`; the second `close-loop` reports `nothing to close` and spends no review; an externally governed repository reaches no `gh` call on `resolve`, `reply`, or `close-loop`; a missing `--body-file` exits 65 with no traceback | None (the stub is a temporary fixture; the end-to-end pass mutates only thread state) |
 
 ## Traceability
 
@@ -90,9 +90,19 @@ matters and is recorded in that order below rather than rewritten as one
 completed state: the intermediate "canary only" status was true when written.
 
 GOV-B21 was added with the change that gives the review loop to the responsible
-agent. Its stub cases run in `tests/test-dev-pr-review.sh` on every CI pass; the
-end-to-end pass is recorded below once it has been run against a real pull
-request. Until that record exists, the case is executable but not evidence.
+agent. Its stub cases run in `tests/test-dev-pr-review.sh` on every CI pass and
+are mutation-checked below; the end-to-end pass is recorded below once it has
+been run against a real pull request. Until that record exists, the case is
+executable but not evidence.
+
+The first pass over this change found the case's central assertion to be
+vacuous and is recorded rather than quietly repaired. `assert_no_call` greps the
+raw `gh` argv log, and the GraphQL query text is itself an argument, so the
+constant `resolveReviewThread` appeared in every logged query and the assertion
+passed whether or not the mutation was sent. The test now separates a mutation
+log from the argv log, asserts the exit code the case claims, and is checked by
+mutation: deleting `cmd_resolve`'s precondition, and separately moving the
+mutation ahead of the refusal, each make the suite fail.
 
 GOV-B15's expected result was corrected in the same change: it previously said
 deterministic CI and the Ruleset *alone* decide the merge, which the triage gate
@@ -565,12 +575,45 @@ contract, so it has no rule at that grain to belong to. The policy text change i
 does depend on is already covered by the existing scenario asserting that every
 installed policy copy matches the canonical source with no audit drift.
 
+### GOV-B21 - the responsible agent closes the thread loop
+
+Stub cases executed on `2026-10-07` on the `claude` development host, branch
+`feat/agent-owned-review-loop` at `35cc32a`, by `sh tests/test-dev-pr-review.sh`
+under the fixture `gh` stub. Result: `dev-pr-review tests passed`, exit 0.
+Thirteen cases (T1-T13) cover `status` filtering, the refusal path, the resolve
+path, the empty-reply refusal, `close-loop` in both directions, the externally
+governed repository gate, the `--body-file` error path, and usage errors.
+
+Mutation testing, required because the precondition is the authorization-shaped
+rule of this change. Five mutants, each run against the same suite:
+
+| Mutant | Suite result |
+| --- | --- |
+| `cmd_resolve`'s reply precondition deleted | FAIL `resolve accepted a thread with no reply from the authenticated account` |
+| `resolveReviewThread` sent before the refusal (still exits 77) | FAIL `resolve sent the mutation despite the missing reply` |
+| `close-loop`'s unanswered-thread refusal removed | FAIL `close-loop closed a loop with an unanswered thread` |
+| `reply` loses `require_managed_repository()` | FAIL `reply ran in an externally governed repository` |
+| `--body-file` error handling removed | FAIL `expected exit 65, got 1` |
+
+The second mutant is the one that motivated the repair: the original assertion
+matched the query text, so a mutation sent before the refusal passed. The
+suite's coverage of the refusal path is therefore measured, not assumed.
+
+End-to-end pass: not executed. The pull request for this change (`#49`) had
+received no Devin Review at the time of writing — no review, no comment, and no
+review thread, where `#47` and `#48` were both reviewed within 90 seconds of
+opening — so there was no thread to run `status`, `reply`, `resolve`, or
+`close-loop` against, and the layer is recorded as **not applicable** rather
+than as passed. The end-to-end case stays open and is executed on the first pull
+request that carries real review threads.
+
 ## Risk Checks
 
 - Complexity/coverage: not applicable; the checker is a small portable script
   covered by executable smoke cases.
-- Mutation testing: not applicable; no business rule, authorization code, or
-  persistence implementation changes in this decision record.
+- Mutation testing: performed for GOV-B21 above (the reply-before-resolve
+  precondition is the change's authorization-shaped rule). Not applicable to the
+  governance-text edits, which the fail-closed policy test covers.
 
 ## Execution Status
 | DH-B01 | Real target with a recorded host key | A project declaration resolves to a recorded host; the recorded key is deliberately wrong | Any read against that target | Run the read | Refused with a host-identity failure; no command output; the host is not contacted | None |

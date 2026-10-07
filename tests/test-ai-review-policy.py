@@ -125,10 +125,22 @@ def test_the_responsible_agent_owns_the_review_thread_loop() -> None:
         assert "answered in the thread" in normalized, name
 
     assert "resolves that thread itself" in policy or "resolved by the responsible agent" in policy
-    assert "until no new finding" in policy
     assert "becomes an after-the-fact audit" in readme
     assert "owns the loop end to end" in readme
     assert "the responsible agent" in codex_instructions
+
+    # The thread loop and the review budget are two different limits and the
+    # text has to say so: the loop is bounded by the budget, not by the tool, so
+    # a milestone cannot read as an unbounded re-review sequence. The old
+    # wording ("repeats ... until no new finding") stated a termination the tool
+    # does not provide.
+    for normalized, name in (
+        (policy, "policy"),
+        (readme, "README"),
+        (codex_instructions, "Codex instructions"),
+    ):
+        assert "up to the milestone's review budget" in normalized, name
+    assert "until no new finding and no unanswered thread remain" not in policy
 
     assert "the agent is refused if it tries to resolve a thread that carries no reply" in normalized_acceptance
     assert "and resolves them itself" in normalized_acceptance

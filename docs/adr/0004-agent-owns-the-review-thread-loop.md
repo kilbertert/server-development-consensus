@@ -26,8 +26,8 @@ The responsible agent owns the review loop end to end. Devin Review remains the
 first-pass reviewer and the Ruleset still requires conversation resolution; what
 changes is who satisfies that gate. The agent answers every residual thread with
 a recorded disposition — fixed, accepted risk, false positive, or not applicable
-— resolves the threads it has answered, and repeats the re-review until no new
-finding and no unanswered thread remain. Human triage does not disappear: it
+— resolves the threads it has answered, and repeats the re-review while it keeps
+opening findings. Human triage does not disappear: it
 becomes an after-the-fact audit of the recorded dispositions rather than a
 per-thread approving click.
 
@@ -44,10 +44,15 @@ Nothing else about the layer moves. `Devin Review`'s own status check stays
 non-required, so a Cognition outage still costs no merge availability; any user
 with write access can still resolve a thread, so the reviewer cannot hold a
 branch hostage; CI and the Ruleset remain the only mandatory merge gates; and AI
-findings are still candidates, not verdicts. The loop terminating is a property
-of the design rather than of the agent's patience: `close-loop` requests a
+findings are still candidates, not verdicts. The loop does not terminate by
+itself, and the design does not pretend it does: `close-loop` requests a
 re-review only when that pass actually resolved something, so a re-review that
-opens no new thread leaves nothing for the next pass to do.
+opens no new thread leaves nothing for the next pass to do, but a re-review that
+opens one re-enters the loop. Termination is therefore bounded by the review
+budget the policy already sets for a milestone, and a thread still open when that
+budget is spent is answered and resolved with the budget as its recorded reason
+rather than left for the operator — which is the same end state the old rule
+reached, minus the per-thread human click.
 
 ## Consequences
 

@@ -563,8 +563,11 @@ reactivated with `dev-worktree activate PATH`.
     gaps Devin leaves are the responsible agent's to close, not the operator's:
     every residual finding — false positive, accepted risk, or not applicable —
     is answered in the thread with the disposition recorded, and the agent then
-    resolves that thread itself and repeats the re-review until no new finding
-    and no unanswered thread remain. `dev-pr-review` is that loop in one tool: it
+    resolves that thread itself. The loop ends when a re-review opens no new
+    finding and no thread is left unanswered; the review budget below bounds how
+    many re-reviews a milestone spends reaching that state, and a thread left
+    open by that budget is answered and resolved with the budget as its recorded
+    reason. `dev-pr-review` is that loop in one tool: it
     refuses to resolve a thread that carries no reply from the account running
     it, so the gate is satisfied by a recorded answer rather than by a second
     person. Human triage does not disappear; it becomes an after-the-fact audit
@@ -597,7 +600,10 @@ reactivated with `dev-worktree activate PATH`.
   confirm severity and applicability. A local OCR pass, one automatic Devin
   Review, and at most one re-review are the default budgets for a logical
   milestone; the re-review is allowed after a material change or explicit human
-  request. Stop when review cost,
+  request. This budget, not the thread loop, is what bounds the loop: the agent
+  closes the threads it has answered, and when the budget is spent with a thread
+  still open, that thread is answered and resolved with the budget as its
+  recorded reason rather than left for the operator. Stop when review cost,
   latency, or noise exceeds likely value.
 - **Triage is gated; the reviewer's check is not.** A finding that is never
   triaged is a finding the server paid for and did not read, and "a human must
@@ -683,10 +689,11 @@ For normal work led by Codex or Claude Code:
    first, then fetch and rebase on the remote task branch; never
    force-push it, and never discard uncommitted work to make a rebase run. The
    agent then answers every remaining thread with its disposition and resolves
-   it; the agent requests one re-review with `/devin review`, repeating until no
-   new finding and no unanswered thread remain — the human operator does not
-   manually drive the review loop or close its threads. Run `dev-pr-review
-   status` to see what is open and `dev-pr-review close-loop` to finish the pass.
+   it; the agent requests one re-review with `/devin review` and repeats that
+   pass while the re-review keeps opening findings, up to the milestone's review
+   budget — the human operator does not manually drive the review loop or close
+   its threads. Run `dev-pr-review status` to see what is open and
+   `dev-pr-review close-loop` to finish the pass.
 9. Execute the QA plan when required and attach its deterministic result
    artifact. A missing, failed, or blocked required case stops the handoff.
 10. Wait for deterministic CI and merge only through the hosting service after

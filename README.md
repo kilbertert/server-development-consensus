@@ -147,7 +147,9 @@ write access can resolve a thread. Devin only resolves threads it considers
 addressed when a re-review is requested, so posting `/devin review` after the
 fixes is what unblocks the branch; a finding triaged as not applicable is
 answered in the thread with its disposition recorded and resolved by the
-responsible agent, which owns the loop end to end. `dev-pr-review` is that loop:
+responsible agent, which owns the loop end to end and repeats the re-review
+while it keeps opening findings, up to the milestone's review budget.
+`dev-pr-review` is that loop:
 `status` lists the open threads, `reply` records the disposition, `resolve`
 refuses a thread with no reply from the account running it, and `close-loop`
 resolves the answered threads and requests exactly one re-review. Human triage
@@ -182,7 +184,9 @@ fleet, Cloudflare state, repair, push, close, or automerge infrastructure.
 The retired OpenCodeReview workflow is not part of this architecture and must
 not be re-enabled. A local OCR pass, one automatic Devin Review, and at most one
 agent-requested re-review after a material change are the default budget for one
-logical milestone.
+logical milestone; the review-thread loop above is bounded by that budget rather
+than by the reviewer, so a thread still open when it is spent is answered and
+resolved with the budget as its recorded reason.
 
 Repositories that configure a local `core.hooksPath` are migrated by storing
 the old path in `serverPolicy.chainedHooksPath` and using the global wrappers.

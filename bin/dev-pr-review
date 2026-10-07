@@ -135,7 +135,13 @@ def require_managed_repository() -> None:
     if completed.returncode == 1:
         return
     if completed.returncode != 0:
-        raise Missing("cannot determine the repository class; run dev-policy-audit --repair")
+        # The class marker is local to the checkout, so an explicit --repo does
+        # not remove the need to run from inside the repository.
+        raise Missing(
+            "cannot read the repository class from a local checkout; run "
+            "dev-pr-review inside the repository (dev-policy-audit --repair "
+            "fixes a corrupt marker)"
+        )
     if completed.stdout.strip() == "external":
         raise Refused(
             "externally governed repositories keep their own review process; "
@@ -233,9 +239,20 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def read_body(path: str) -> str:
+    if path == "-":
+        return sys.stdin.read()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError as error:
+        raise Missing(f"cannot read --body-file {path}: {error.strerror or error}") from None
+
+
 def cmd_reply(args: argparse.Namespace) -> int:
+    require_managed_repository()
     if args.body_file:
-        body = sys.stdin.read() if args.body_file == "-" else open(args.body_file, encoding="utf-8").read()
+        body = read_body(args.body_file)
     elif args.body is not None:
         body = args.body
     else:
@@ -276,9 +293,11 @@ def cmd_resolve(args: argparse.Namespace) -> int:
 def cmd_close_loop(args: argparse.Namespace) -> int:
     """Resolve every answered thread, then ask for exactly one re-review.
 
-    Terminates because the re-review is requested only when this pass actually
-    resolved something: a re-review that produces no new thread leaves nothing
-    to resolve, so the next pass is a no-op.
+    This pass cannot loop on its own: the re-review is requested only when it
+    actually resolved something, so a re-review that opens no new thread leaves
+    nothing for the next invocation to resolve and it is a no-op. Whether a
+    re-review opens a new thread is the reviewer's decision, not something this
+    tool bounds.
     """
     require_managed_repository()
     repo = resolve_repo(args.repo)

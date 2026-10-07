@@ -258,6 +258,8 @@ rollback_install() {
     installed-dev-start installed-dev-start.installed
   restore_file_conditionally "$HOME/.local/bin/dev-pr" \
     installed-dev-pr installed-dev-pr.installed
+  restore_file_conditionally "$HOME/.local/bin/dev-pr-review" \
+    installed-dev-pr-review installed-dev-pr-review.installed
   restore_file_conditionally "$HOME/.local/bin/dev-worktree" \
     installed-dev-worktree installed-dev-worktree.installed
   restore_file_conditionally "$HOME/.local/bin/dev-policy-audit" \
@@ -602,6 +604,7 @@ backup_file "$HOME/.config/server-development-consensus/managed-hooks.sha256" in
 backup_file "$HOME/.local/lib/server-development-consensus/dev-git-common.sh" installed-common.sh
 backup_file "$HOME/.local/bin/dev-start" installed-dev-start
 backup_file "$HOME/.local/bin/dev-pr" installed-dev-pr
+backup_file "$HOME/.local/bin/dev-pr-review" installed-dev-pr-review
 backup_file "$HOME/.local/bin/dev-worktree" installed-dev-worktree
 backup_file "$HOME/.local/bin/dev-policy-audit" installed-dev-policy-audit
 backup_file "$HOME/.local/bin/dev-reap-sandbox" installed-dev-reap-sandbox
@@ -767,6 +770,8 @@ install -m 700 "$base_dir/bin/dev-start" "$HOME/.local/bin/dev-start"
 backup_file "$HOME/.local/bin/dev-start" installed-dev-start.installed
 install -m 700 "$base_dir/bin/dev-pr" "$HOME/.local/bin/dev-pr"
 backup_file "$HOME/.local/bin/dev-pr" installed-dev-pr.installed
+install -m 700 "$base_dir/bin/dev-pr-review" "$HOME/.local/bin/dev-pr-review"
+backup_file "$HOME/.local/bin/dev-pr-review" installed-dev-pr-review.installed
 install -m 700 "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
 backup_file "$HOME/.local/bin/dev-worktree" installed-dev-worktree.installed
 install -m 700 "$base_dir/bin/dev-policy-audit" "$HOME/.local/bin/dev-policy-audit"

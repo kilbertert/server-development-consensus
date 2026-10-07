@@ -76,6 +76,7 @@ The local enforcement layer is installed at:
 - `~/.local/lib/server-development-consensus/dev-git-common.sh`
 - `~/.local/bin/dev-start`
 - `~/.local/bin/dev-pr`
+- `~/.local/bin/dev-pr-review`
 - `~/.local/bin/dev-worktree`
 - `~/.local/bin/dev-policy-audit`
 - `~/.local/bin/dev-changelog`
@@ -135,7 +136,7 @@ commit to the task branch, so the agent commits its own work first, then fetches
 and rebases on the remote task branch; it never force-pushes, and
 never discards uncommitted work to make a rebase run. After a material change,
 the agent requests one re-review with `/devin review`; the human operator does
-not manually drive the normal review loop.
+not manually drive the normal review loop or close its threads.
 
 Devin Review remains advisory, and CI and Rulesets remain the only mandatory
 merge gates. What the Ruleset additionally requires is conversation resolution:
@@ -145,7 +146,13 @@ vendor out of the merge path — no reviewer means no thread, and any user with
 write access can resolve a thread. Devin only resolves threads it considers
 addressed when a re-review is requested, so posting `/devin review` after the
 fixes is what unblocks the branch; a finding triaged as not applicable is
-answered in the thread and resolved by a human. CodeRabbit is the rollback path
+answered in the thread with its disposition recorded and resolved by the
+responsible agent, which owns the loop end to end. `dev-pr-review` is that loop:
+`status` lists the open threads, `reply` records the disposition, `resolve`
+refuses a thread with no reply from the account running it, and `close-loop`
+resolves the answered threads and requests exactly one re-review. Human triage
+does not disappear; it becomes an after-the-fact audit of the recorded
+dispositions. CodeRabbit is the rollback path
 for this layer: it is stood down through its GitHub App installation rather than
 by deleting its configuration.
 

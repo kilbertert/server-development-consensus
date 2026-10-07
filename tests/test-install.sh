@@ -70,6 +70,8 @@ assert config["model_auto_compact_token_limit"] == 700000
 assert config["model"] == "gpt-test"
 PY
 cmp "$base_dir/bin/sync-privileged-policy" "$HOME/.local/bin/sync-privileged-policy"
+cmp "$base_dir/bin/dev-pr-review" "$HOME/.local/bin/dev-pr-review"
+[ "$(head -n 1 "$HOME/.local/bin/dev-pr-review")" = '#!/usr/bin/env python3' ]
 cmp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \
   "$HOME/.config/server-development-consensus/DEVELOPMENT-PORT-REGISTRY.md"
 cmp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" \

@@ -148,11 +148,12 @@ Feature: Layered consensus and AFK governance
       And resolving the thread is what unblocks it
       And any user with write access can resolve a thread, so the reviewer cannot hold the branch hostage
 
-    Scenario: Requesting the re-review is what closes the triage loop
+    Scenario: The responsible agent closes the triage loop without a human per thread
       Given the responsible agent has addressed the findings on the head
       When the agent posts `/devin review`
       Then Devin re-evaluates the head and resolves the threads it considers addressed
-      And a finding triaged as not applicable is answered and resolved by a human
+      And the agent answers every remaining thread with its disposition and resolves them itself
+      And the agent is refused if it tries to resolve a thread that carries no reply from its own account
       And the merge is unblocked only once no unresolved thread remains
 
     Scenario: An auto-fix commit does not strand the task branch

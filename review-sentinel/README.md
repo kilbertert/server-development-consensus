@@ -1,8 +1,8 @@
 # Review Sentinel
 
 Review Sentinel is the server's minimal self-hosted ClawSweeper-like PR layer.
-It is deliberately review-only and is separate from the local OpenCodeReview
-CLI and from CodeRabbit.
+It is deliberately review-only and is separate from the automatic Devin Review
+layer and from CodeRabbit.
 
 ## Current boundary
 

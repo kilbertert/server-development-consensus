@@ -101,6 +101,9 @@ private and is not enrolled; it is not a reason to weaken the phase.
    stay in place; deleting them is a separate decision.
 4. **`ocr review`** — retained as the local, pre-PR development tool. It is not
    a PR-level reviewer and does not occupy the slot this migration targets.
+   *Superseded 2026-10-08:* it was retired outright rather than retained — see
+   `docs/adr/0006-retire-opencodereview.md`. The phase above records what this
+   migration decided; that ADR records what replaced it.
 
 ## Phase 3 — Governance change (task branch to pull request)
 

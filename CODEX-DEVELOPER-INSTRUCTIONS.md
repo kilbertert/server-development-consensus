@@ -63,26 +63,20 @@ merge` selects a local merge path because another worktree has the default
 branch checked out, use the hosting merge API or UI after the gates pass instead
 of moving or resetting that worktree.
 
-The server's three review layers are fixed: **OpenCodeReview CLI +
-delegation** for local development; **Devin Review** for automatic GitHub PR
-review; and **CI/Ruleset** as the only mandatory quality
-gate. At a meaningful implementation milestone, run local `ocr review` against
-the workspace, commit, or task branch only with an approved local provider;
-otherwise invoke OpenCodeReview's delegation mode as a bounded second opinion.
-Do not run it after every edit, agent turn, or push. Always run `--preview`
-first and read the selected-file count: OCR filters by extension and path rules,
-so a change it filters out is reported as a clean run rather than as an
-unreviewed one. Preview and review the same change set — the workspace form
-while the milestone is uncommitted, the branch range once it is committed.
-Record the layer as not applicable when it selects nothing (a
-documentation-only change, for example), and state the count when it covers only
-part of the change. Triage its findings once: fix verified defects, explicitly
-record false positives or accepted risks, and do not turn speculative model
-suggestions into an open-ended repair loop.
+The server's two review layers are fixed: **Devin Review** for automatic GitHub
+PR review; and **CI/Ruleset** as the only mandatory quality
+gate. The local development loop has no dedicated review tool — OpenCodeReview
+was retired on 2026-10-08, so do not run `ocr review` and do not invoke its
+delegation mode. At a meaningful implementation milestone your own reading of
+the diff, the tests, and the static checks are the local review; the automatic
+review arrives with the pull request. Reintroducing a local reviewer is a
+separate decision with its own acceptance evidence, not something to reinstall
+in passing.
 Devin Review automatically reviews a PR when it is opened, reopened, or marked
 ready for review. It does not rerun after every push. The responsible agent
-waits for the result, triages it once, fixes verified defects, and records false
-positives or accepted risks. When auto-fix is enabled it may push a fix commit
+waits for the result, triages it once, fixes verified defects, and explicitly
+records false positives or accepted risks. Do not turn speculative model
+suggestions into an open-ended repair loop. When auto-fix is enabled it may push a fix commit
 to the task branch: commit your own work first, then fetch and rebase on the
 remote task branch; never force-push it, and never discard uncommitted
 work to make a rebase run. After a material change, the agent requests
@@ -107,9 +101,9 @@ A self-hosted ClawSweeper-like service, if adopted, is a separate PR/issue
 evidence reviewer with its own least-privilege GitHub App and queue; installing
 the public App alone is insufficient. It may receive only an explicitly allowed
 PR/repository context, never TEAM-MEMORY, host configuration, logs, or
-credentials; public comments need human approval after redaction. Neither
-Devin Review nor OCR may be a required merge check. The OpenCodeReview
-GitHub Action is retired and must not be re-enabled.
+credentials; public comments need human approval after redaction. Devin Review
+may not be a required merge check. OpenCodeReview is retired and must not be
+reinstalled, invoked, or re-enabled.
 The self-hosted `review-sentinel/` service remains disabled until it has a
 dedicated Codex executable/home and separately managed App credentials; never
 point it at the interactive `~/.codex` home.

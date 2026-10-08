@@ -141,6 +141,14 @@ Feature: Layered consensus and AFK governance
       And the reviewer's own status check is never required
       And the deterministic CI checks and the Ruleset decide the merge
 
+    Scenario: The local review layer is retired rather than retained
+      Given the development loop's dedicated local reviewer has been retired
+      When an agent works a milestone on a task branch
+      Then no `ocr review` runs and no delegated review skill is invoked
+      And no governance document still presents a local review pass as part of the loop
+      And the milestone's review is Devin Review at the pull request, the tests, and the agent's own reading of the diff
+      And reinstalling a local reviewer is a separate decision that must bring its own acceptance evidence
+
     Scenario: An untriaged finding cannot be merged past
       Given a pull request carries an unresolved Devin Review thread
       When the merge is attempted

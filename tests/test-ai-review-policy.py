@@ -42,9 +42,11 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     normalized_codex_instructions = " ".join(codex_instructions.split())
 
     assert "## Development Review Sequence" in policy
-    assert "`ocr review` is the server's local development review tool" in normalized_policy
-    assert "Run it with an approved local provider, or use its delegation mode" in normalized_policy
-    assert "OpenCodeReview's GitHub Action is not part of the server architecture" in normalized_policy
+    assert "The server uses a two-layer code-review architecture" in normalized_policy
+    assert "OpenCodeReview is retired: its CLI, its delegated skill, and its GitHub Action are gone" in normalized_policy
+    assert "Reintroducing a local reviewer is a separate decision" in normalized_policy
+    assert "its own acceptance evidence" in normalized_policy
+    assert "One automatic Devin Review and at most one re-review are the default budgets" in normalized_policy
     assert "ClawSweeper is a separate GitHub PR/issue queue and evidence reviewer" in normalized_policy
     assert "Devin Review automatically reviews the PR" in normalized_policy
     assert "opened, reopened, or ready for review" in normalized_policy
@@ -72,11 +74,11 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "the responsible agent owns the loop end to end" in normalized_policy
     assert "the operator audits the recorded dispositions" in normalized_policy
 
-    assert "server's three-layer architecture is explicit" in normalized_readme
+    assert "server's two-layer architecture is explicit" in normalized_readme
     assert "Devin Review automatically reviews the initial ready PR" in normalized_readme
     assert "CI and Rulesets remain the only mandatory merge gates" in normalized_readme
-    assert "It does not use a GitHub Action and does not depend on an OCR gateway" in normalized_readme
-    assert "delegation mode when one is not" in normalized_readme
+    assert "The local development loop has no dedicated review tool" in normalized_readme
+    assert "Reintroducing a local reviewer is a separate decision" in normalized_readme
     assert "OpenClaw-hosted instance is not a public service" in normalized_readme
     assert "must begin as review-only" in normalized_readme
     assert "approve the model provider and retention boundary" in normalized_readme
@@ -85,14 +87,15 @@ def test_review_roles_and_budget_are_explicit_across_governance_files() -> None:
     assert "dedicated Codex home" in normalized_policy
     assert "never point it at the interactive `~/.codex` home" in normalized_codex_instructions
 
-    assert "run local `ocr review`" in normalized_codex_instructions
-    assert "otherwise invoke OpenCodeReview's delegation mode" in normalized_codex_instructions
+    assert "The server's two review layers are fixed" in normalized_codex_instructions
+    assert "do not run `ocr review` and do not invoke its delegation mode" in normalized_codex_instructions
     assert "Devin Review automatically reviews a PR" in normalized_codex_instructions
     assert "the agent requests one re-review" in normalized_codex_instructions
     assert "fetch and rebase on the remote task branch" in normalized_codex_instructions
-    assert "do not turn speculative model suggestions into an open-ended repair loop" in normalized_codex_instructions
+    assert "not turn speculative model suggestions into an open-ended repair loop" in normalized_codex_instructions
     assert "public comments need human approval after redaction" in normalized_codex_instructions
-    assert "Neither Devin Review nor OCR may be a required merge check" in normalized_codex_instructions
+    assert "Devin Review may not be a required merge check" in normalized_codex_instructions
+    assert "OpenCodeReview is retired and must not be reinstalled, invoked, or re-enabled" in normalized_codex_instructions
 
     # The retired reviewer must not survive as a named layer in any governance
     # document: a policy that names a component that no longer runs is the
@@ -163,32 +166,65 @@ def test_the_responsible_agent_owns_the_review_thread_loop() -> None:
         assert "resolved by its author" not in normalized, name
 
 
-def test_ocr_coverage_is_measured_rather_than_assumed() -> None:
-    # OCR selects files by extension and path rules, so a change it filters out
-    # is reported as a clean run rather than as an unreviewed one. Without this
-    # discipline an unreviewed documentation change reads as three green layers.
+def test_the_retired_local_reviewer_cannot_be_read_back_in() -> None:
+    # A retired layer that survives as prose is the defect this file exists to
+    # prevent, and this one is unusually easy to reintroduce: reinstalling the
+    # CLI is one npm command, and the instruction that pointed agents at it is
+    # in a file the installer writes. The assertions below are fail-closed in
+    # both directions — the retirement has to stay stated, and no governance
+    # file may still present a local review pass as part of the loop.
     policy = POLICY.read_text(encoding="utf-8")
     readme = README.read_text(encoding="utf-8")
     codex_instructions = CODEX_INSTRUCTIONS.read_text(encoding="utf-8")
-    normalized_policy = " ".join(policy.split())
-    normalized_readme = " ".join(readme.split())
-    normalized_codex_instructions = " ".join(codex_instructions.split())
 
-    assert "Coverage must be measured, not assumed" in normalized_policy
-    assert "selects files by extension and path rules" in normalized_policy
-    assert "reported as a clean run rather than as an unreviewed one" in normalized_policy
-    assert "`ocr review --from <default> --to <branch> --preview`" in normalized_policy
-    assert "run `ocr review --preview` first" in normalized_readme
-    assert "record the layer as **not applicable**" in normalized_readme
-    assert "Always run `--preview` first" in normalized_policy
-    assert "Always run `--preview` first" in normalized_codex_instructions
-    assert "Record the layer as not applicable when it selects nothing" in normalized_policy
-    assert "a branch range sees commits only" in normalized_policy
-    assert "Preview and review the same change set" in normalized_policy
-    assert "Preview and review the same change set" in normalized_readme
-    assert "Preview and review the same change set" in normalized_codex_instructions
-    assert "measures one change set and reviews another" in normalized_policy
-    assert "the workspace form (`ocr review --preview`, then `ocr review`)" in normalized_policy
+    retired = (
+        "three-layer code-review architecture",
+        "server's three-layer architecture is explicit",
+        "The server's three review layers are fixed",
+        "`ocr review` is the server's local development review tool",
+        "run local `ocr review`",
+        "otherwise invoke OpenCodeReview's delegation mode",
+        "otherwise invoke its delegation mode as a bounded second opinion",
+        "Coverage must be measured, not assumed",
+        "run `ocr review --preview` first",
+        "A local OCR pass, one automatic Devin Review",
+        "Neither Devin Review nor OCR may be a required merge check",
+        "OpenCodeReview's GitHub Action is not part of the server architecture",
+    )
+    for document, name in (
+        (policy, "policy"),
+        (readme, "README"),
+        (codex_instructions, "Codex instructions"),
+    ):
+        for phrase in retired:
+            assert phrase not in document, f"{name} still names the retired local reviewer: {phrase}"
+
+    normalized_policy = " ".join(policy.split())
+    assert "OpenCodeReview is retired" in normalized_policy
+    assert "no CLI, no delegated skill, and no GitHub Action" in normalized_policy
+    assert "migration debt to be removed through a focused pull request" in normalized_policy
+    assert "There is no local review pass at this milestone" in normalized_policy
+    assert "no `ocr review` runs and no delegated skill is invoked" in normalized_policy
+    assert "Triage Devin Review's findings once" in normalized_policy
+
+    normalized_readme = " ".join(readme.split())
+    assert "OpenCodeReview was retired on 2026-10-08" in normalized_readme
+    assert "are gone rather than merely uninstalled" in normalized_readme
+
+    normalized_codex_instructions = " ".join(codex_instructions.split())
+    assert "OpenCodeReview was retired on 2026-10-08" in normalized_codex_instructions
+
+    # The ADR is the record of the decision, not a governance document the
+    # installer projects, so it is deliberately exempt from the sweep above.
+    adr = (ROOT / "docs/adr/0006-retire-opencodereview.md").read_text(encoding="utf-8")
+    assert "OpenCodeReview is retired from the server" in " ".join(adr.split())
+
+    # The acceptance contract carries the retirement too, so a later change that
+    # quietly reinstates a local pass has to move the contract, not only prose.
+    normalized_acceptance = " ".join(ACCEPTANCE.read_text(encoding="utf-8").split())
+    assert "The local review layer is retired rather than retained" in normalized_acceptance
+    assert "no `ocr review` runs and no delegated review skill is invoked" in normalized_acceptance
+    assert "separate decision that must bring its own acceptance evidence" in normalized_acceptance
 
 
 def test_engineering_article_release_contract_is_explicit() -> None:

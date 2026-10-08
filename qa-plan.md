@@ -686,24 +686,48 @@ Verified on 2026-10-08 against `tests/test-dev-policy-audit.sh` and
 
 ### GOV-B25 - the local review layer is retired rather than retained
 
-Executed on `2026-10-08` on the `claude` development host, task branch
-`chore/remove-ocr`.
+Executed on `2026-10-08` on the `claude` development host at `172d27c`, the
+merge commit of pull request #52.
 
 Governance half, in the consensus checkout: `python3 -m pytest
 tests/test-ai-review-policy.py -q` reports `11 passed`, including
 `test_the_retired_local_reviewer_cannot_be_read_back_in`, which is fail-closed
 in both directions — the retirement must stay stated, and no governance file
-may still present a local review pass as part of the loop. A sweep confirms the
-only surviving mentions of the retired tool are the sentences that state its
-retirement (`SERVER-DEVELOPMENT-CONSENSUS.md` twice, `README.md` once,
+may still present a local review pass as part of the loop. The sweep confirms
+the only surviving mentions of the retired tool are the sentences that state
+its retirement (`SERVER-DEVELOPMENT-CONSENSUS.md` twice, `README.md` once,
 `CODEX-DEVELOPER-INSTRUCTIONS.md` once, `acceptance.feature` once), and that no
 file still says "three-layer".
 
-Local half: `npm ls -g --depth=0`, the `~/.local/bin/ocr` link, the
-`[marketplaces.open-code-review]` / `[plugins."open-code-review-codex@…"]`
-entries in `~/.codex/config.toml`, and `~/.opencode/` are all inspected before
-and after removal; the PATH exports the `~/.opencode` installer appended to
-`~/.zshrc` and `~/.bashrc` are removed with it.
+Local half, observed rather than assumed. Removed: the npm global
+`@alibaba-group/open-code-review@1.12.12` plus its `~/.local/bin/ocr` link
+(removed automatically), the Codex plugin `open-code-review-codex@open-code-review`
+and its marketplace (`codex plugin remove` / `codex plugin marketplace remove`,
+which also deleted `~/.codex/.tmp/marketplaces/open-code-review/` and both
+`config.toml` blocks), and `~/.opencode/` (the `opencode` CLI) together with
+the PATH exports its installer had appended to `~/.zshrc:41-42` and
+`~/.bashrc:151-153`. After removal, `which ocr` and `which opencode` report
+nothing, `npm ls -g` lists no OpenCodeReview package, and `grep -i
+open-code-review ~/.codex/config.toml` matches only the new retirement
+sentence inside `developer_instructions`.
+
+Deployment half: `sh install.sh` from the canonical checkout completes with
+`failures=0` and `server development consensus installed`. The installed
+surfaces carry the change — `~/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md`,
+`~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md`, and the live
+`~/.codex/config.toml` `developer_instructions` all say "two-layer" /
+"two review layers are fixed", and the always-on excerpt files
+(`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md`)
+carry no mention at all, which is correct: they are the identity/host/layout
+excerpt, not the delivery policy.
+
+The installer failed on its first run and the reason is recorded rather than
+tidied away: the policy audit reports `FAIL worktree lifecycle
+…/.worktrees/server-development-consensus-remove-ocr` while the task worktree
+is still registered, the installer rolls back, and the retry after `dev-worktree
+retire` succeeds. Installing the release unit therefore requires the change's
+own worktree to be retired first — a sequencing fact about `install.sh`, not a
+defect in the retirement.
 
 Why retirement rather than a defect finding is recorded in
 `docs/adr/0006-retire-opencodereview.md`: the gateway log shows the CLI working
@@ -713,6 +737,12 @@ relay), so this is an owner decision, not a repair. The review budget drops to
 review now happens at the pull request rather than at the milestone, and a
 change Devin Review filters out has no second machine opinion — is stated in
 the ADR's Consequences rather than argued away.
+
+Not covered by this case: the legacy `.github/workflows/open-code-review.yml`
+on `ranlei-blog-ledger-operations`, a checkout of private `kilbertert/Blog`.
+The policy already classifies a legacy action file as migration debt to be
+removed by its own focused pull request; it exists only on the parked
+`codex/ledger-operations` branch and not on that repository's default branch.
 
 ## Risk Checks
 

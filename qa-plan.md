@@ -35,6 +35,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B22 | Installer test fixture home; privileged-sync test fixture | The canonical policy carries the always-on excerpt gate and is larger than the loader's per-file warning | A canonical source with the delivery gate, plus the same source with the gate removed | Run `install.sh`, then `dev-policy-audit --excerpt`, then `sync-privileged-policy`; run each again against a source missing the gate | The installed always-on mirrors (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md`) byte-equal the canonical excerpt and stay below 40,000 characters / 32,768 bytes; the `/etc` mirror and `~/Projects/SERVER-DEVELOPMENT-CONSENSUS.md` keep the full text; a source without the gate is refused rather than truncated silently | Remove the fixture home |
 | GOV-B23 | Installer test fixture home; policy-audit test fixture | A session started below the projects workspace loads the workspace top level | A pointer document, a pointer carrying policy text, a pointer without the marker, a drifted user-writable mirror, and an oversized mirror | Run `install.sh`, then `dev-policy-audit` over the fixture root with each variant | The installed `~/Projects/CLAUDE.md` and `~/Projects/AGENTS.md` carry the pointer marker and no policy section; a pointer without the marker, a pointer carrying policy text, a drifted writable mirror, and an oversized mirror all fail the audit; a drifted root-maintained mirror is reported as a warning because the audit cannot repair it | Remove the fixture home |
 | GOV-B24 | Installer test fixture home; policy-audit test fixture | A repository keeps non-source material under its own `.scratch/` area, and the scan walks every directory below the projects root before any Git command | A clone under `customer/.scratch/company-repos/`, a `.git` there pointing at a removed worktree administration directory, and the same two shapes under a directory not named `.scratch` | Run `dev-policy-audit` over the fixture root, then `install.sh` over a fixture home | `.scratch` and its contents are never reported and never reached by a Git command; the two control fixtures outside `.scratch` still fail, one as `default-branch expected=main actual=unset` and one as `cannot inspect repository state`, so the exemption is scoped to the path rather than to the shape; the installer completes instead of aborting on an unresolvable entry | Remove the fixture repositories |
+| GOV-B25 | Consensus checkout; `claude` development host with a local OpenCodeReview install | OpenCodeReview is retired in the canonical source and the installer has deployed it | The three governance files, `acceptance.feature`, the ADR, and the live local install | Run `python -m pytest tests/test-ai-review-policy.py`, confirm the retired words are absent, run `install.sh`, then inspect the npm global list, `~/.local/bin/ocr`, the Codex marketplace/plugin registration and `~/.opencode/` | The policy and both agent documents present a two-layer architecture and no retired phrase reappears; the test that asserts the retirement stays green; the local CLI, its binary link, the Codex registration and the `opencode` CLI are all absent; `which ocr` finds nothing | Reinstall is a separate decision carrying its own acceptance evidence, not a cleanup step |
 
 ## Traceability
 
@@ -64,6 +65,7 @@ repository scope that decides which of those rules a repository is subject to.
 | Always-on instruction files stay bounded | The always-on policy mirror carries the bounded excerpt | GOV-B22 |
 | The workspace top level points, not duplicates | The workspace top level points at the policy instead of duplicating it | GOV-B23 |
 | The pre-scan resolves only managed checkouts | The repository-local scratch area is not scanned | GOV-B24 |
+| The local review layer is retired | The local review layer is retired rather than retained | GOV-B25 |
 
 ## Execution Results
 
@@ -681,6 +683,36 @@ Verified on 2026-10-08 against `tests/test-dev-policy-audit.sh` and
   invocation is byte-identical at `01cdef9` (the commit before it). It surfaced
   only because a real scratch clone on this host had its worktree administration
   directory removed since the last successful install.
+
+### GOV-B25 - the local review layer is retired rather than retained
+
+Executed on `2026-10-08` on the `claude` development host, task branch
+`chore/remove-ocr`.
+
+Governance half, in the consensus checkout: `python3 -m pytest
+tests/test-ai-review-policy.py -q` reports `11 passed`, including
+`test_the_retired_local_reviewer_cannot_be_read_back_in`, which is fail-closed
+in both directions — the retirement must stay stated, and no governance file
+may still present a local review pass as part of the loop. A sweep confirms the
+only surviving mentions of the retired tool are the sentences that state its
+retirement (`SERVER-DEVELOPMENT-CONSENSUS.md` twice, `README.md` once,
+`CODEX-DEVELOPER-INSTRUCTIONS.md` once, `acceptance.feature` once), and that no
+file still says "three-layer".
+
+Local half: `npm ls -g --depth=0`, the `~/.local/bin/ocr` link, the
+`[marketplaces.open-code-review]` / `[plugins."open-code-review-codex@…"]`
+entries in `~/.codex/config.toml`, and `~/.opencode/` are all inspected before
+and after removal; the PATH exports the `~/.opencode` installer appended to
+`~/.zshrc` and `~/.bashrc` are removed with it.
+
+Why retirement rather than a defect finding is recorded in
+`docs/adr/0006-retire-opencodereview.md`: the gateway log shows the CLI working
+end to end (`User-Agent: open-code-review/v1.12.12` answered through the local
+relay), so this is an owner decision, not a repair. The review budget drops to
+"one automatic Devin Review and at most one re-review". The accepted cost — a
+review now happens at the pull request rather than at the milestone, and a
+change Devin Review filters out has no second machine opinion — is stated in
+the ADR's Consequences rather than argued away.
 
 ## Risk Checks
 

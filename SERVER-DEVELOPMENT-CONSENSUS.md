@@ -530,38 +530,19 @@ reactivated with `dev-worktree activate PATH`.
 
 - Required merge gates are deterministic repository checks: tests, build,
   formatting, static analysis, migrations, and other project-specific CI.
-- The server uses a three-layer code-review architecture:
-  1. **OpenCodeReview CLI + delegation**: Codex or Claude runs a bounded local
-     review during the development loop, preferably through delegation so the
-     newly opened review context drives the inspection. It does not use a
-     GitHub Action and does not depend on an OCR gateway.
-  2. **Devin Review**: the server's Devin Review connection automatically
+- The server uses a two-layer code-review architecture:
+  1. **Devin Review**: the server's Devin Review connection automatically
      reviews a PR when it is opened, reopened, or marked ready for review.
-  3. **CI/Ruleset**: deterministic CI and the hosting service's Ruleset are the
+  2. **CI/Ruleset**: deterministic CI and the hosting service's Ruleset are the
      only mandatory quality and merge gates. AI output never becomes an
      authoritative required check.
+- The local development loop has no dedicated review tool. OpenCodeReview is
+  retired: its CLI, its delegated skill, and its GitHub Action are gone, and a
+  milestone is reviewed through Devin Review at the pull request plus its own
+  tests and the review the responsible agent performs. Reintroducing a local
+  reviewer is a separate decision with its own acceptance evidence, not a
+  repair to make in passing.
 - Each layer has one owner and a separate budget:
-  - `ocr review` is the server's local development review tool. It runs as the
-    `claude` user against the workspace, commit, or branch range and can be
-    delegated to Codex or Claude Code. Run it with an approved local provider,
-    or use its delegation mode when no provider is configured. It is advisory
-    and must be run at a meaningful milestone, not after every edit or every
-    agent turn. It must not invoke the GitHub Action. **Coverage must be
-    measured, not assumed:** OpenCodeReview selects files by extension and path
-    rules, so a change it filters out is reported as a clean run rather than as
-    an unreviewed one. Measure coverage against the change set actually under
-    review, because the two ways of naming it are not interchangeable: a branch
-    range sees commits only. Preview and review the same change set — the
-    workspace form (`ocr review --preview`, then `ocr review`) while the
-    milestone is uncommitted, the range form
-    (`ocr review --from <default> --to <branch> --preview`, then without
-    `--preview`) once it is committed — and read the selected-file count before
-    opening the PR. A milestone that switches form between preview and review
-    measures one change set and reviews another. When it selects nothing (a
-    documentation-only change, for example), record the layer as
-    **not applicable**, never as passed. A change that mixes code and prose is
-    only partly covered — the filtered files still need human or Devin Review
-    triage.
   - Devin Review is the server's automatic PR advisory reviewer. It reviews the
     initial ready PR, does not rerun after every push, and never replaces
     deterministic CI or human triage. When auto-fix is enabled it may push a fix
@@ -604,15 +585,15 @@ reactivated with `dev-worktree activate PATH`.
     workflows, administration, merge, push, and autofix operations. With Devin
     Review holding the automatic review layer it stays disabled rather than
     being brought into service.
-- OpenCodeReview's GitHub Action is not part of the server architecture and must
-  not be installed or triggered for normal development. Existing legacy action
-  files are migration debt and should be removed through focused PRs. The
-  `review-ready` label must not trigger OpenCodeReview.
+- OpenCodeReview is retired and must not be reinstalled, invoked, or triggered:
+  no CLI, no delegated skill, and no GitHub Action. Its GitHub Action stays out
+  of the server architecture, and the `review-ready` label must not trigger it.
+  A repository that still carries a legacy action file is migration debt to be
+  removed through a focused pull request.
 - AI findings are review candidates, not authoritative verdicts. A human must
-  confirm severity and applicability. A local OCR pass, one automatic Devin
-  Review, and at most one re-review are the default budgets for a logical
-  milestone; the re-review is allowed after a material change or explicit human
-  request. This budget, not the thread loop, is what bounds the loop: the agent
+  confirm severity and applicability. One automatic Devin Review and at most one
+  re-review are the default budgets for a logical milestone; the re-review is
+  allowed after a material change or explicit human request. This budget, not the thread loop, is what bounds the loop: the agent
   closes the threads it has answered, and when the budget is spent with a thread
   still open, that thread is answered and resolved with the budget as its
   recorded reason rather than left for the operator. Stop when review cost,
@@ -677,21 +658,13 @@ For normal work led by Codex or Claude Code:
    local checks.
 4. Run risk-triggered complexity/coverage or mutation checks and retain their
    reports, or record the explicit non-applicability reason.
-5. At a meaningful milestone, run `ocr review --from <default> --to <branch>`
-   only when an approved local provider is configured; otherwise invoke the
-   installed OpenCodeReview delegation skill. **Always run `--preview` first**
-   and check how many files it actually selected: OCR filters by extension and
-   path rules, so a documentation-only change is reported as skipped, not as
-   reviewed. Preview and review the same change set: while the milestone is
-   uncommitted run the workspace form (`ocr review --preview`, then
-   `ocr review`), once it is committed run the range form
-   (`ocr review --from <default> --to <branch> --preview`, then without
-   `--preview`). Since a range sees only commits, an uncommitted milestone would
-   otherwise measure as zero files and then be reviewed as nothing. Record the
-   layer as not applicable when it selects nothing, and state the count when it
-   selects only part of the change. Do not run OCR after every turn.
-6. Triage local findings once. Fix confirmed defects, record accepted risks and
-   false positives, and do not turn every model suggestion into added complexity.
+5. There is no local review pass at this milestone: OpenCodeReview is retired,
+   so no `ocr review` runs and no delegated skill is invoked. The milestone's
+   review is the responsible agent's own reading of the diff plus the tools in
+   steps 3 and 4; the automatic review arrives with the pull request.
+6. Triage Devin Review's findings once. Fix confirmed defects, record accepted
+   risks and false positives, and do not turn every model suggestion into added
+   complexity.
 7. Commit, push, and open the PR. Devin Review automatically reviews the PR when
    it is opened, reopened, or ready for review; it does not rerun after every
    push.

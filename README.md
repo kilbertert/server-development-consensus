@@ -130,22 +130,14 @@ keeps the check on the default branch and allows legacy messages on task
 branches during migration).
 
 AI review is deliberately separate from the deterministic merge gate. The
-server's three-layer architecture is explicit: **OpenCodeReview CLI +
-delegation** for local development; **Devin Review** for automatic GitHub PR
-review; and **CI/Ruleset** as the only mandatory quality
-gate. The default development-time review uses local OpenCodeReview: `ocr review`
-inspects a workspace, commit, or branch range as the `claude` user when an
-approved local provider is configured, while the agent integrations use
-delegation mode when one is not. It is useful as a focused second opinion after
-a coherent implementation milestone, but must not run after every edit, agent
-turn, or push. It does not use a GitHub Action and does not depend on an OCR
-gateway. OCR selects files by extension and path rules, so a change it filters
-out is reported as a clean run rather than as an unreviewed one: run
-`ocr review --preview` first and read the selected-file count. Preview and
-review the same change set — the workspace form while the milestone is
-uncommitted, the branch range once it is committed — and for a
-documentation-only change record the layer as **not applicable** rather than
-passed. A change that mixes code and prose is only partly covered.
+server's two-layer architecture is explicit: **Devin Review** for automatic
+GitHub PR review; and **CI/Ruleset** as the only mandatory quality
+gate. The local development loop has no dedicated review tool: OpenCodeReview
+was retired on 2026-10-08, so its CLI, its delegated skill and its GitHub Action
+are gone rather than merely uninstalled, and a milestone is reviewed by the
+responsible agent's own reading of the diff plus Devin Review at the pull
+request. Reintroducing a local reviewer is a separate decision that has to
+bring its own acceptance evidence.
 
 Devin Review automatically reviews the initial ready PR when it is opened,
 reopened, or marked ready for review. It does not rerun after every push. The
@@ -201,7 +193,7 @@ fills the allowlist and secret files. It does not copy ClawSweeper's worker
 fleet, Cloudflare state, repair, push, close, or automerge infrastructure.
 
 The retired OpenCodeReview workflow is not part of this architecture and must
-not be re-enabled. A local OCR pass, one automatic Devin Review, and at most one
+not be re-enabled. One automatic Devin Review and at most one
 agent-requested re-review after a material change are the default budget for one
 logical milestone; the review-thread loop above is bounded by that budget rather
 than by the reviewer, so a thread still open when it is spent is answered and

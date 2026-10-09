@@ -53,11 +53,15 @@ fi
 systemd_user_available=false
 timer_enabled_state=not-found
 timer_active_state=inactive
+reap_timer_enabled_state=not-found
+reap_timer_active_state=inactive
 if command -v systemctl >/dev/null 2>&1 &&
    systemctl --user show-environment >/dev/null 2>&1; then
   systemd_user_available=true
   timer_enabled_state=$(systemctl --user is-enabled dev-policy-audit.timer 2>/dev/null || true)
   timer_active_state=$(systemctl --user is-active dev-policy-audit.timer 2>/dev/null || true)
+  reap_timer_enabled_state=$(systemctl --user is-enabled dev-reap-sandbox.timer 2>/dev/null || true)
+  reap_timer_active_state=$(systemctl --user is-active dev-reap-sandbox.timer 2>/dev/null || true)
 fi
 
 backup_file() {
@@ -266,6 +270,24 @@ restore_timer_state() {
   else
     systemctl --user stop dev-policy-audit.timer >/dev/null 2>&1 || true
   fi
+  # Same treatment for the reaper's timer, so a rollback leaves the host
+  # exactly as it was rather than silently dropping a timer it never had.
+  case $reap_timer_enabled_state in
+    enabled|enabled-runtime|linked|linked-runtime|alias)
+      systemctl --user enable dev-reap-sandbox.timer >/dev/null 2>&1 || true
+      ;;
+    masked|masked-runtime)
+      systemctl --user mask dev-reap-sandbox.timer >/dev/null 2>&1 || true
+      ;;
+    *)
+      systemctl --user disable dev-reap-sandbox.timer >/dev/null 2>&1 || true
+      ;;
+  esac
+  if [ "$reap_timer_active_state" = active ]; then
+    systemctl --user start dev-reap-sandbox.timer >/dev/null 2>&1 || true
+  else
+    systemctl --user stop dev-reap-sandbox.timer >/dev/null 2>&1 || true
+  fi
 }
 
 rollback_install() {
@@ -326,6 +348,10 @@ rollback_install() {
     installed-audit-service installed-audit-service.installed
   restore_file_conditionally "$HOME/.config/systemd/user/dev-policy-audit.timer" \
     installed-audit-timer installed-audit-timer.installed
+  restore_file_conditionally "$HOME/.config/systemd/user/dev-reap-sandbox.service" \
+    installed-reap-sandbox-service installed-reap-sandbox-service.installed
+  restore_file_conditionally "$HOME/.config/systemd/user/dev-reap-sandbox.timer" \
+    installed-reap-sandbox-timer installed-reap-sandbox-timer.installed
   install -d -m 700 "$hooks_dir"
   restore_managed_hook hook-forwarder
   restore_managed_hook .managed-by-server-development-consensus
@@ -661,6 +687,8 @@ backup_file "$HOME/.local/bin/update-codex-config" installed-update-codex-config
 backup_file "$HOME/.local/bin/sync-privileged-policy" installed-privileged-sync
 backup_file "$HOME/.config/systemd/user/dev-policy-audit.service" installed-audit-service
 backup_file "$HOME/.config/systemd/user/dev-policy-audit.timer" installed-audit-timer
+backup_file "$HOME/.config/systemd/user/dev-reap-sandbox.service" installed-reap-sandbox-service
+backup_file "$HOME/.config/systemd/user/dev-reap-sandbox.timer" installed-reap-sandbox-timer
 install -d -m 700 "$backup_dir/global-hooks-before"
 if [ -d "$hooks_dir" ]; then
   cp -a "$hooks_dir/." "$backup_dir/global-hooks-before/"
@@ -843,6 +871,14 @@ install -m 600 "$base_dir/systemd/dev-policy-audit.timer" \
   "$HOME/.config/systemd/user/dev-policy-audit.timer"
 backup_file "$HOME/.config/systemd/user/dev-policy-audit.timer" \
   installed-audit-timer.installed
+install -m 600 "$base_dir/systemd/dev-reap-sandbox.service" \
+  "$HOME/.config/systemd/user/dev-reap-sandbox.service"
+backup_file "$HOME/.config/systemd/user/dev-reap-sandbox.service" \
+  installed-reap-sandbox-service.installed
+install -m 600 "$base_dir/systemd/dev-reap-sandbox.timer" \
+  "$HOME/.config/systemd/user/dev-reap-sandbox.timer"
+backup_file "$HOME/.config/systemd/user/dev-reap-sandbox.timer" \
+  installed-reap-sandbox-timer.installed
 
 install -d -m 700 "$backup_dir/global-hooks-installed"
 cp -a "$hooks_dir/." "$backup_dir/global-hooks-installed/"
@@ -896,6 +932,12 @@ fi
 if $systemd_user_available; then
   systemctl --user daemon-reload
   systemctl --user enable --now dev-policy-audit.timer
+  # The reaper is enabled only where there are runners to produce sandboxes.
+  # A host without one has nothing to reap, and enabling it anyway would put a
+  # docker-touching timer on a host whose job is not to run CI.
+  if [ -d "$HOME/Projects/_runners" ]; then
+    systemctl --user enable --now dev-reap-sandbox.timer
+  fi
 else
   printf '%s\n' 'warning: systemd user manager unavailable; timer installed but not enabled' >&2
 fi

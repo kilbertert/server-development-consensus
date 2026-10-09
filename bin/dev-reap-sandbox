@@ -138,6 +138,19 @@ candidates=0
 reaped=0
 failed=0
 
+# Enumerate stopped containers as well as running ones.
+#
+# `docker ps` lists only running containers, and that is the wrong set: the
+# SIGKILL this tool exists for leaves the container *stopped* — the library's
+# teardown ran `docker stop` before it was killed, so the orphan's status is
+# `exited`, not `up`. A running-only sweep therefore sees no candidates at all
+# and reports a clean run while the disk fills with dead containers. Observed:
+# four exited containers, the oldest 11 days old, none of them visible to this
+# loop.
+#
+# `docker ps -a` covers both, and the age threshold still does the real work of
+# separating an abandoned sandbox from a live one: a running container younger
+# than MAX_AGE_HOURS is kept either way.
 while read -r name; do
   case "$name" in "$PREFIX"*) ;; *) continue ;; esac
   # `docker ps` CreatedAt appends a timezone NAME ("CST") that `date` cannot
@@ -161,7 +174,7 @@ while read -r name; do
   else
     say "would reap $name (age ${age_hours}h)"
   fi
-done < <(docker ps --format '{{.Names}}' 2>/dev/null)
+done < <(docker ps -a --format '{{.Names}}' 2>/dev/null)
 
 say "candidates: $candidates | reaped: $reaped | failed: $failed | apply: $APPLY"
 [ "$APPLY" = 1 ] || say "(dry run — pass --apply to remove)"

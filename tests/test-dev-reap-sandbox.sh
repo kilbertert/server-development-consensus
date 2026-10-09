@@ -36,14 +36,25 @@ printf '%s\n' "${STUB_ACTIVE_RUNS:-0}"
 exit 0
 EOF
 
-# `docker ps` lists STUB_CONTAINERS (name:age-hours); `docker inspect` answers
-# with a Created timestamp that many hours ago; `docker rm` records the call.
+# `docker ps [-a]` lists STUB_CONTAINERS (name:age-hours); `docker inspect`
+# answers with a Created timestamp that many hours ago; `docker rm` records the
+# call.
+#
+# STUB_STOPPED names the containers that are *stopped*. Plain `ps` must hide
+# them and `ps -a` must show them, because that difference is the bug this test
+# suite has to catch: a running-only sweep sees no exited orphan at all.
 cat >"$tmp/stub/docker" <<'EOF'
 #!/usr/bin/env bash
 case "${1:-}" in
   ps)
     # Expose only the NAME; the age is looked up separately by inspect.
-    printf '%s\n' ${STUB_CONTAINERS:-} | cut -d: -f1
+    all=${2:-}
+    printf '%s\n' ${STUB_CONTAINERS:-} | cut -d: -f1 | while read -r n; do
+      case " ${STUB_STOPPED:-} " in
+        *" $n "*) [ "$all" = "-a" ] && printf '%s\n' "$n" ;;
+        *) printf '%s\n' "$n" ;;
+      esac
+    done
     ;;
   inspect)
     # `docker inspect NAME --format ...`; NAME is the 2nd argument.
@@ -165,6 +176,63 @@ mv "$HOME/Projects/_runners" "$tmp/runners-hidden"
 STUB_CONTAINERS="sandcastle-old:50" "$tool" --apply >/dev/null 2>&1
 check "removed nothing without runner configuration" is_empty "$STUB_RM_LOG"
 mv "$tmp/runners-hidden" "$HOME/Projects/_runners"
+
+# The SIGKILL case, and the reason this suite exists.
+#
+# The library stops the container before teardown and SIGKILL can land between
+# the two, so the leak it cannot cover is an *exited* container with nobody left
+# to remove it. These cases all report the container as stopped, and must come
+# after T10 because T10's docker stub records only `rm`.
+cat >"$tmp/stub/docker" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  ps)
+    # STUB_STOPPED names the containers that are not running: `ps` must hide
+    # them, `ps -a` must show them.
+    all=${2:-}
+    printf '%s\n' ${STUB_CONTAINERS:-} | cut -d: -f1 | while read -r n; do
+      case " ${STUB_STOPPED:-} " in
+        *" $n "*) [ "$all" = "-a" ] && printf '%s\n' "$n" ;;
+        *) printf '%s\n' "$n" ;;
+      esac
+    done
+    ;;
+  inspect)
+    name=$2
+    hours=$(printf '%s\n' ${STUB_CONTAINERS:-} | awk -F: -v n="$name" '$1==n{print $2}')
+    printf '%s\n' "$(date -u -d "-${hours} hours" +%Y-%m-%dT%H:%M:%SZ)"
+    ;;
+  rm)
+    printf '%s\n' "${!#}" >>"$STUB_RM_LOG" ;;
+esac
+exit 0
+EOF
+chmod +x "$tmp/stub/docker"
+
+echo "T12 a running-only sweep cannot see a stopped orphan (the bug)"
+: >"$STUB_RM_LOG"
+out=$(STUB_CONTAINERS="sandcastle-stopped:50" STUB_STOPPED="sandcastle-stopped" \
+  "$tool" 2>&1)
+check "names the stopped orphan as a candidate" grep -q "would reap sandcastle-stopped" <<<"$out"
+
+echo "T13 a stopped orphan is reaped with --apply"
+: >"$STUB_RM_LOG"
+STUB_CONTAINERS="sandcastle-stopped:50" STUB_STOPPED="sandcastle-stopped" \
+  "$tool" --apply >/dev/null 2>&1
+check "removed the stopped orphan" grep -q "sandcastle-stopped" "$STUB_RM_LOG"
+
+echo "T14 a young stopped container is still kept"
+: >"$STUB_RM_LOG"
+out=$(STUB_CONTAINERS="sandcastle-young:1" STUB_STOPPED="sandcastle-young" \
+  "$tool" --apply 2>&1)
+check "kept the young stopped container" is_empty "$STUB_RM_LOG"
+check "said so" grep -q "keep    sandcastle-young" <<<"$out"
+
+echo "T15 a stopped foreign container is never touched"
+: >"$STUB_RM_LOG"
+STUB_CONTAINERS="someone-elses-container:999" STUB_STOPPED="someone-elses-container" \
+  "$tool" --apply >/dev/null 2>&1
+check "left a stopped foreign container alone" is_empty "$STUB_RM_LOG"
 
 echo
 if [ "$fail" -ne 0 ]; then echo "dev-reap-sandbox tests FAILED"; exit 1; fi

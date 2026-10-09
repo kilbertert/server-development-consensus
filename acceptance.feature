@@ -212,3 +212,33 @@ Feature: Layered consensus and AFK governance
       Then the scratch area is pruned before any Git command runs
       And a checkout or an unresolvable `.git` elsewhere is still reported
       And an unreadable path stops the scan only when it is a managed checkout
+
+  Rule: A maintenance tool is only useful once something runs it
+
+    Scenario: The sandbox reaper is scheduled where there are sandboxes
+      Given the host keeps self-hosted runners under the `_runners/` functional directory
+      When the canonical installer deploys the release unit
+      Then the sandbox reaper's service and timer are installed with the same content as the source
+      And the timer is enabled and active with a next elapse
+      And the service runs the reaper with `--apply` under the same hardening as the policy audit
+      And the installer is the only writer, so a host that only ever gets the installer still gets them
+
+    Scenario: A rollback leaves no timer behind
+      Given the installer fails after it has written the reaper's units
+      When the rollback runs
+      Then the units are restored to what the host had, or removed if it had none
+      And the timer's enabled, masked and active states are restored to what they were
+      And no timer is left enabled that the host did not already have
+
+    Scenario: A host with no runners is not given a docker-touching timer
+      Given a host carries no `_runners/` directory
+      When the canonical installer runs
+      Then the reaper's units are installed but its timer is not enabled
+      And the policy audit timer is enabled as before
+
+    Scenario: The reaper is never run by an agent's shell
+      Given an agent runs the reaper from its own tool shell
+      When the reaper reads the process table for a runner worker
+      Then that shell's own command line is present in the process table
+      And the read is treated as an active job, so the reaper refuses
+      And the refusal is the correct fail-closed answer, not a defect to work around

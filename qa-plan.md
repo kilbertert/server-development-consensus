@@ -36,6 +36,7 @@ repository scope that decides which of those rules a repository is subject to.
 | GOV-B23 | Installer test fixture home; policy-audit test fixture | A session started below the projects workspace loads the workspace top level | A pointer document, a pointer carrying policy text, a pointer without the marker, a drifted user-writable mirror, and an oversized mirror | Run `install.sh`, then `dev-policy-audit` over the fixture root with each variant | The installed `~/Projects/CLAUDE.md` and `~/Projects/AGENTS.md` carry the pointer marker and no policy section; a pointer without the marker, a pointer carrying policy text, a drifted writable mirror, and an oversized mirror all fail the audit; a drifted root-maintained mirror is reported as a warning because the audit cannot repair it | Remove the fixture home |
 | GOV-B24 | Installer test fixture home; policy-audit test fixture | A repository keeps non-source material under its own `.scratch/` area, and the scan walks every directory below the projects root before any Git command | A clone under `customer/.scratch/company-repos/`, a `.git` there pointing at a removed worktree administration directory, and the same two shapes under a directory not named `.scratch` | Run `dev-policy-audit` over the fixture root, then `install.sh` over a fixture home | `.scratch` and its contents are never reported and never reached by a Git command; the two control fixtures outside `.scratch` still fail, one as `default-branch expected=main actual=unset` and one as `cannot inspect repository state`, so the exemption is scoped to the path rather than to the shape; the installer completes instead of aborting on an unresolvable entry | Remove the fixture repositories |
 | GOV-B25 | Consensus checkout; `claude` development host with a local OpenCodeReview install | OpenCodeReview is retired in the canonical source and the installer has deployed it | The three governance files, `acceptance.feature`, the ADR, and the live local install | Run `python -m pytest tests/test-ai-review-policy.py`, confirm the retired words are absent, run `install.sh`, then inspect the npm global list, `~/.local/bin/ocr`, the Codex marketplace/plugin registration and `~/.opencode/` | The policy and both agent documents present a two-layer architecture and no retired phrase reappears; the test that asserts the retirement stays green; the local CLI, its binary link, the Codex registration and the `opencode` CLI are all absent; `which ocr` finds nothing | Reinstall is a separate decision carrying its own acceptance evidence, not a cleanup step |
+| GOV-B26 | Installer test fixture home; `claude` development host with five self-hosted runners | The reaper's units exist in the canonical source and are installed | The fixture home's installer run, the live host's units and timer, a stubbed `systemd-run` with the service's hardening set, and an agent shell whose own command line contains the gate's pattern | Run `install.sh` over the fixture home, then `systemd-analyze verify`, then the service's exact command under `systemd-run` with the same hardening set; on the live host read the unit files and the timer's state, then trigger the service by hand and read the journal; separately, run the reaper from a shell whose own command line matches `Runner.Worker` | The fixture's installed units byte-equal the source and the executed command contains `--apply`; removing the install line makes the fixture test fail, so the assertion is not vacuous; `systemd-analyze verify` reports nothing for the unit; the sandboxed run completes with exit 0; the live timer is `enabled` and `active` with a next elapse; the service's run either reaps or refuses, and the journal names which — the 16:20:01 refusal was correct on the merits, `AI-Ops` was running `deploy-41`; the agent-shell run refuses with `a runner worker is present`, which is the self-match described below and is the correct answer under that caller rather than a defect | Remove the fixture home; the live units and timer stay installed |
 
 ## Traceability
 
@@ -66,6 +67,10 @@ repository scope that decides which of those rules a repository is subject to.
 | The workspace top level points, not duplicates | The workspace top level points at the policy instead of duplicating it | GOV-B23 |
 | The pre-scan resolves only managed checkouts | The repository-local scratch area is not scanned | GOV-B24 |
 | The local review layer is retired | The local review layer is retired rather than retained | GOV-B25 |
+| A maintenance tool needs something to run it | The sandbox reaper is scheduled where there are sandboxes | GOV-B26 |
+| A rollback leaves no timer behind | A rollback leaves no timer behind | GOV-B26 |
+| No docker-touching timer without runners | A host with no runners is not given a docker-touching timer | GOV-B26 |
+| Fail-closed reads as refusal, not as failure | The reaper is never run by an agent's shell | GOV-B26 |
 
 ## Execution Results
 
@@ -766,3 +771,41 @@ removed by its own focused pull request; it exists only on the parked
 | DH-B05 | Fixture declaration | Target names a host absent from the private record | Any operation | Run the operation | Refused; the host is not contacted | None |
 | DH-B06 | Fixture declaration | Declaration file is unreadable or not valid TOML | Any operation | Run the operation | Treated as absent and refused, never silently allowed | Restore the declaration |
 | DH-B07 | Real target on a service host | Deployment steps from the project runbook | A built artifact with a known SHA-256 | Follow backup → transfer → verify → restart | Transfer refused without artifact identity and accepted with it; per-file SHA-256 comparison produced by the tooling rather than by hand | Remove temporary files on the target |
+
+### GOV-B26 - the sandbox reaper is scheduled, and refuses safely from an agent shell
+
+Executed on `2026-10-09` on the `claude` development host at `e033ec9`, the
+merge commit of pull request #55.
+
+Install half. The fixture home's installer run installs
+`~/.config/systemd/user/dev-reap-sandbox.{service,timer}` byte-equal to the
+source; `tests/test-install.sh` compares both with `cmp` and greps the
+service for `dev-reap-sandbox --apply`. The assertion was shown to be
+non-vacuous: deleting the `install -m 600 ...` line for the service makes
+the suite fail. All 16 shell suites pass.
+
+Unit half. `systemd-analyze verify` on the service reports nothing for the
+unit. The exact `ExecStart` was run under `systemd-run` with the service's
+own hardening set (`ProtectHome=read-only`, `ProtectSystem=strict`,
+`NoNewPrivileges`, `PrivateTmp`, `RestrictAddressFamilies=AF_UNIX AF_INET
+AF_INET6`): completed, exit 0.
+
+Live half. `dev-reap-sandbox.timer` is `enabled` and `active (waiting)` with
+a next elapse six hours out. Triggering the service by hand at 16:23:25
+produced `candidates: 0 | reaped: 0 | failed: 0 | apply: 1` and exit 0, so
+the scheduled path reaches the reap loop and is not refused by the gate.
+
+The self-match, recorded rather than worked around. Run from an agent's own
+tool shell, the reaper reports `a runner worker is present; refusing to
+reap (fail-closed)` and exits 0. The cause is the gate's own read:
+`ps -eo cmd | grep -c '[R]unner.Worker'` also matches the shell that is
+running the pipeline, because that shell's command line contains the
+pattern. So the answer depends on the caller, and both callers were
+observed. The scheduled run at 16:20:01 refused, and that refusal was
+**correct on the merits**: `AI-Ops` was running `deploy-41` from 16:19:37
+to 16:20:10, so a runner worker really was present. The hand-triggered run
+at 16:23:25, with no job running, reached the reap loop and reported
+`candidates: 0`. The agent-shell run saw only itself and refused. The
+recorded gate stays as it is: it is the conservative one, and the reason it
+can afford to be wrong in the agent-shell direction is the same reason it
+exists.

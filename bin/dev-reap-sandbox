@@ -145,8 +145,8 @@ failed=0
 # teardown ran `docker stop` before it was killed, so the orphan's status is
 # `exited`, not `up`. A running-only sweep therefore sees no candidates at all
 # and reports a clean run while the disk fills with dead containers. Observed:
-# four exited containers, the oldest 11 days old, none of them visible to this
-# loop.
+# four exited containers, the oldest created 16 days before this was written,
+# none of them visible to the loop below.
 #
 # `docker ps -a` covers both, and the age threshold still does the real work of
 # separating an abandoned sandbox from a live one: a running container younger

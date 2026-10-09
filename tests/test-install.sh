@@ -136,6 +136,13 @@ cmp "$base_dir/bin/dev-host" "$HOME/.local/bin/dev-host"
 cmp "$base_dir/bin/dev-changelog" "$HOME/.local/bin/dev-changelog"
 [ -x "$HOME/.local/bin/hash-tree.sh" ]
 cmp "$base_dir/bin/hash-tree.sh" "$HOME/.local/bin/hash-tree.sh"
+# The reaper's units are the release unit too: installed with the same content,
+# so a host that only ever gets the installer still gets them.
+cmp "$base_dir/systemd/dev-reap-sandbox.service" \
+  "$HOME/.config/systemd/user/dev-reap-sandbox.service"
+cmp "$base_dir/systemd/dev-reap-sandbox.timer" \
+  "$HOME/.config/systemd/user/dev-reap-sandbox.timer"
+grep -q 'dev-reap-sandbox --apply' "$HOME/.config/systemd/user/dev-reap-sandbox.service"
 [ "$custom_chain" != "$HOME/.config/git/hooks" ]
 grep -q 'CUSTOM_HOOK_MARKER' "$custom_chain/pre-commit"
 [ ! -e "$custom_chain/pre-push" ]

@@ -1,0 +1,11 @@
+[Unit]
+Description=Reap abandoned Sandcastle sandbox containers every six hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=dev-reap-sandbox.service
+
+[Install]
+WantedBy=timers.target

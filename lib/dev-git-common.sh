@@ -303,6 +303,81 @@ paths_identify_same_file() {
   [ "$1" -ef "$2" ]
 }
 
+# Whether <branch> is already integrated into <default_ref>, and by which route.
+#
+#   usage: branch_integration_route REPO BRANCH DEFAULT_REF
+#   stdout: 'ancestor' | 'cherry' | 'pr#<n>'   (the route that matched)
+#   return: 0 = integrated, 1 = not integrated (or undecidable)
+#
+# `git cherry` compares **each commit's** patch-id against upstream. A squash merge
+# collapses N commits into one commit with a **new** patch-id, so every per-commit
+# patch-id is absent from the default branch and `git cherry` prints all `+` -- the
+# branch is integrated but reads as unintegrated. The evidence for a squash merge is
+# the merged pull request whose head is this branch and whose merge commit is an
+# ancestor of the default branch, so that route is checked too.
+#
+# MUST be parameterized by REPO: the daily audit walks many repositories with
+# `git -C`, so the current directory is not the repository under test.
+#
+# Pure git routes always run; the merged-PR route needs `gh` and is skipped when it
+# is unavailable. Skipping is never worse than before: the route it adds was absent
+# from every prior integration check in the daily audit, and the only caller that did
+# consult a merged PR (dev-worktree's retire) asked a separate question and still
+# does. A caller must never delete a branch on a `1` (undecidable) answer.
+#
+# An empty-commit branch has an empty patch-id, so `git cherry` marks it `+` and it
+# is NOT misread as integrated here; the empty branch is the `head == recorded base`
+# case, which the callers decide before calling this function.
+branch_integration_route() (
+  route_repo=$1
+  route_branch=$2
+  route_default_ref=$3
+
+  route_head=$(git -C "$route_repo" rev-parse --verify -q "$route_branch") || return 1
+
+  # 1. Ancestor: a merge commit, a fast-forward, or work already rebased onto the default.
+  if git -C "$route_repo" merge-base --is-ancestor "$route_branch" "$route_default_ref"; then
+    printf '%s\n' ancestor
+    return 0
+  fi
+
+  # 2. Cherry-pick or rebase: every commit's patch is already upstream under a new hash.
+  #
+  # Fail closed: count the `+` (not-upstream) lines explicitly. `! grep -q '^+'` would
+  # read a grep *error* (exit >1, e.g. grep missing) as "no match" and wrongly report
+  # the branch integrated. Only the exact count 0 counts as integrated; anything else
+  # (including a failed grep, which yields an empty string) falls through to the next
+  # route rather than claiming integration.
+  route_checks=$(git -C "$route_repo" cherry "$route_default_ref" "$route_branch" 2>/dev/null || true)
+  if [ -n "$route_checks" ]; then
+    route_plus=$(printf '%s\n' "$route_checks" | grep -c '^+' 2>/dev/null || true)
+    if [ "$route_plus" = 0 ]; then
+      printf '%s\n' cherry
+      return 0
+    fi
+  fi
+
+  # 3. Squash merge: this branch's head has a merged PR whose merge commit is an ancestor.
+  command -v gh >/dev/null 2>&1 || return 1
+  if ! route_slug=$(git -C "$route_repo" remote get-url origin 2>/dev/null |
+      sed -nE 's#^(https?://|ssh://git@|git@)github\.com[/:]([^/]+/[^/]+)(\.git)?$#\2#p' |
+      sed 's/\.git$//'); then
+    return 1
+  fi
+  [ -n "$route_slug" ] || return 1
+  channel=$(printf '%s\n' "$route_slug" | sed -nE 's#^([^/]+)/.*#\1#p')
+  if ! route_record=$(gh api "repos/$route_slug/pulls?head=$channel:$route_branch&state=closed" \
+      --jq '.[] | select(.merged_at != null and .head.sha == "'"$route_head"'") | [.number, .merge_commit_sha] | @tsv' \
+      2>/dev/null | head -n1); then
+    return 1
+  fi
+  [ -n "$route_record" ] || return 1
+  route_merge=${route_record#*"	"}
+  [ -n "$route_merge" ] && git -C "$route_repo" cat-file -e "$route_merge^{commit}" 2>/dev/null &&
+    git -C "$route_repo" merge-base --is-ancestor "$route_merge" "$route_default_ref" || return 1
+  printf 'pr#%s\n' "${route_record%%"	"*}"
+)
+
 require_repository() {
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf '%s\n' 'error: this command must run inside a Git worktree' >&2

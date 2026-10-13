@@ -137,33 +137,30 @@ branch_config_value() {
   git config --local --get "branch.$branch.$key" 2>/dev/null || true
 }
 
+# Whether this branch's **commits** are already in the default branch, decided by the
+# git-only routes (ancestor, or every patch upstream under another hash).
+#
+# This stays git-only on purpose: the name is about commits, and a squash merge puts
+# no commit of this branch into the default branch -- only its change. `retire` pairs
+# this with `branch_has_verified_merged_pr` to tell a `git` merge from a `pr` merge,
+# so the merged-PR route must not be folded in here. The predicate itself lives once,
+# in `branch_integration_route` (lib/dev-git-common.sh); this only narrows it.
 branch_has_integrated_commits() {
   local branch=$1
   local default_ref=$2
   local base_oid=$3
-  local head
+  local head route
   head=$(git rev-parse "$branch")
+  # The default tip is not "integrated work", and an empty branch is `retire`'s `empty`
+  # case, handled by the caller before this predicate.
   if [[ $head == "$(git rev-parse "$default_ref")" ]]; then
     return 1
   fi
-
-  if [[ -n $base_oid ]] && git cat-file -e "$base_oid^{commit}" 2>/dev/null; then
-    if [[ $head == "$base_oid" ]]; then
-      return 1
-    fi
-  elif git merge-base --is-ancestor "$branch" "$default_ref" &&
-       [[ $head != "$(git rev-parse "$default_ref")" ]]; then
-    return 0
+  if [[ -n $base_oid && $head == "$base_oid" ]]; then
+    return 1
   fi
-
-  if git merge-base --is-ancestor "$branch" "$default_ref"; then
-    return 0
-  fi
-
-  local cherry
-  cherry=$(git cherry "$default_ref" "$branch") || return 1
-  [[ -n $cherry ]] || return 1
-  ! grep -q '^+' <<<"$cherry"
+  route=$(branch_integration_route "$PWD" "$branch" "$default_ref") || return 1
+  [[ $route == ancestor || $route == cherry ]]
 }
 
 verified_pr_number=''

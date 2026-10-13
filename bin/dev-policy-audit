@@ -108,14 +108,21 @@ restore_config() {
 # local half of "delete the agent-owned task branch after merge" is never
 # enforced, and squash merges hide the loss from `git branch --merged`.
 #
-# Detection is content-based, mirroring branch_has_integrated_commits in
-# dev-worktree: `git cherry` reports every commit as `-` when the branch's
-# patches are all present in the default branch.  Silently discarding work is
-# the failure mode this audit exists to prevent, so an excursion beyond the
-# integration guardrails is reported as a finding, never repaired.
+# Detection is content-based, via the shared `branch_integration_route`
+# (lib/dev-git-common.sh), which knows ancestor / cherry-pick / **squash-merge**
+# integration.  Silently discarding work is the failure mode this audit exists to
+# prevent, so an excursion beyond the integration guardrails is reported as a
+# finding, never repaired.
+#
+# Integration is asked **before** the upstream state, because the two are not
+# mutually exclusive and `[gone]` used to pre-empt the integration question
+# entirely: a branch merged with "delete branch on merge" (the normal GitHub
+# outcome) has a `[gone]` upstream, so it was reported as an orphan and never as
+# integrated.  Answering integration first makes the state depend on the strongest
+# evidence rather than on which accidental signal is cheapest to read.
 audit_stale_branches() {
   local repo=$1 default_branch=$2
-  local default_ref branch tracking checks worktree_list integrated=0 gone_count=0
+  local default_ref branch tracking head base_oid worktree_list integrated=0 gone_count=0
   default_ref=$(git -C "$repo" for-each-ref --format='%(refname:short)' \
     "refs/remotes/origin/$default_branch" 2>/dev/null)
   [[ -n $default_ref ]] || return 0
@@ -128,16 +135,19 @@ audit_stale_branches() {
     fi
     tracking=$(git -C "$repo" for-each-ref --format='%(upstream:track)' \
       "refs/heads/$branch" 2>/dev/null)
-    if [[ $tracking == *'[gone]'* ]]; then
-      printf 'WARN repo=%s branch=%s state=upstream_gone\n' "$repo" "$branch"
-      gone_count=$((gone_count + 1))
-      continue
-    fi
-    checks=$(git -C "$repo" cherry "$default_ref" "$branch" 2>/dev/null) || continue
-    if [[ -n $checks ]] && ! grep -q '^+' <<<"$checks"; then
+    head=$(git -C "$repo" rev-parse "$branch" 2>/dev/null)
+    base_oid=$(git -C "$repo" config --get "branch.$branch.serverPolicyBaseOid" 2>/dev/null)
+    # An empty branch (head == the recorded base) carries no patch to find upstream,
+    # so neither `git cherry` nor a pull request can speak for it; integration there
+    # is the base check, which the shared predicate deliberately leaves to callers.
+    if { [[ -n $base_oid ]] && [[ $head == "$base_oid" ]]; } ||
+       branch_integration_route "$repo" "$branch" "$default_ref" >/dev/null; then
       printf 'WARN repo=%s branch=%s state=integrated_not_retired\n' \
         "$repo" "$branch"
       integrated=$((integrated + 1))
+    elif [[ $tracking == *'[gone]'* ]]; then
+      printf 'WARN repo=%s branch=%s state=upstream_gone\n' "$repo" "$branch"
+      gone_count=$((gone_count + 1))
     fi
   done < <(git -C "$repo" for-each-ref --format='%(refname:short)' \
     refs/heads 2>/dev/null)

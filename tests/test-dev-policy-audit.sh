@@ -337,14 +337,72 @@ git -C "$stale_repo" -c core.hooksPath=/dev/null push origin --delete feat/gone 
   >/dev/null 2>&1
 git -C "$stale_repo" fetch --prune >/dev/null 2>&1
 
+# Squash-merged **and** upstream gone: two commits collapsed into one new commit on
+# main, then the remote branch deleted (the normal GitHub "delete on merge").
+#
+# This is the case the audit was blind to.  `git cherry` judges each commit's
+# patch-id: after a squash the branch's per-commit patch-ids exist nowhere upstream,
+# so every line is `+` and the branch reads as unintegrated.  The `[gone]` upstream
+# then used to win the report, so a merged branch was filed as an orphan and could
+# never be retired.  Two independent signals (ancestor/cherry) also cannot see it --
+# only the merged PR can, so this asserts the merged-PR route is consulted.
+git -C "$stale_repo" checkout -b feat/squashed-gone >/dev/null 2>&1
+printf '%s\n' a >"$stale_repo/one.txt"
+git -C "$stale_repo" add one.txt
+git -C "$stale_repo" -c core.hooksPath=/dev/null commit -m 'feat: squashed one' >/dev/null
+printf '%s\n' b >"$stale_repo/two.txt"
+git -C "$stale_repo" add two.txt
+git -C "$stale_repo" -c core.hooksPath=/dev/null commit -m 'feat: squashed two' >/dev/null
+squashed_head=$(git -C "$stale_repo" rev-parse HEAD)
+git -C "$stale_repo" -c core.hooksPath=/dev/null push -u origin feat/squashed-gone \
+  >/dev/null 2>&1
+git -C "$stale_repo" checkout main >/dev/null 2>&1
+# Squash those two commits into a single commit on main (new hash, new patch-id).
+git -C "$stale_repo" -c core.hooksPath=/dev/null merge --squash feat/squashed-gone \
+  >/dev/null 2>&1
+git -C "$stale_repo" -c core.hooksPath=/dev/null commit -m 'feat: squashed gone (merged)' >/dev/null
+squashed_merge=$(git -C "$stale_repo" rev-parse HEAD)
+git -C "$stale_repo" -c core.hooksPath=/dev/null push origin main >/dev/null 2>&1
+git -C "$stale_repo" -c core.hooksPath=/dev/null push origin --delete feat/squashed-gone \
+  >/dev/null 2>&1
+git -C "$stale_repo" fetch --prune >/dev/null 2>&1
+
+# Sanity: this branch is exactly the blind spot -- per-commit cherry reports every
+# commit `+` (unintegrated) even though the change is on main.
+git -C "$stale_repo" cherry origin/main feat/squashed-gone | grep -q '^+' || {
+  printf '%s\n' 'FAIL fixture: squashed branch unexpectedly reads as integrated via git cherry' >&2
+  exit 1
+}
+# The merged-PR route (gh) is the only signal left.  That route derives the repo slug
+# from the `origin` URL, and this fixture pushed to a local path -- so repoint origin
+# at a GitHub-shaped URL now that every commit is already on it (the audit reads the
+# local `origin/main` ref, so the URL only feeds slug extraction, not any fetch).
+git -C "$stale_repo" remote set-url origin https://github.com/example/stale-repo.git
+# Stub `gh` to answer the merged-PR query the way the API does: only the squashed
+# branch has a merged PR, so `feat/gone` (no PR) must stay undecidable.  The stub
+# prints the already-`--jq`-projected TSV the audit consumes.  It is placed on PATH
+# for this one audit run only -- the rest of this test deliberately runs without a
+# `gh` and must keep behaving that way (the merged-PR route is optional).
+cat >"$HOME/.local/bin/gh" <<EOF
+#!/bin/sh
+case "\$*" in
+  *squashed-gone*) printf '%s\t%s\n' 77 "$squashed_merge" ;;
+esac
+EOF
+chmod +x "$HOME/.local/bin/gh"
+
 # Leftover branches are reported without failing the run: deleting unmerged
 # work automatically is the outcome this audit exists to prevent.
-"$audit" "$projects" >"$tmp/stale-branches.out" 2>&1 || true
+PATH="$HOME/.local/bin:$PATH" "$audit" "$projects" \
+  >"$tmp/stale-branches.out" 2>&1 || true
+rm -f "$HOME/.local/bin/gh"
 grep -q "WARN repo=$stale_repo branch=feat/integrated state=integrated_not_retired" \
+  "$tmp/stale-branches.out"
+grep -q "WARN repo=$stale_repo branch=feat/squashed-gone state=integrated_not_retired" \
   "$tmp/stale-branches.out"
 grep -q "WARN repo=$stale_repo branch=feat/gone state=upstream_gone" \
   "$tmp/stale-branches.out"
-grep -q 'stale_branches=2' "$tmp/stale-branches.out"
+grep -q 'stale_branches=3' "$tmp/stale-branches.out"
 
 # A branch still checked out in a registered worktree belongs to dev-worktree,
 # even when its patches are already integrated.  Point it at the integrated
@@ -353,7 +411,11 @@ grep -q 'stale_branches=2' "$tmp/stale-branches.out"
 git -C "$stale_repo" worktree add -b feat/wip "$tmp/stale-wt" feat/integrated \
   >/dev/null
 "$audit" "$projects" >"$tmp/stale-worktree.out" 2>&1 || true
-grep -q 'stale_branches=2' "$tmp/stale-worktree.out"
+# Still three: feat/integrated + feat/squashed-gone + feat/gone.  (This run keeps
+# `gh` off PATH, so feat/squashed-gone falls back to upstream_gone here rather than
+# integrated_not_retired -- the count is the same either way; what this block guards
+# is that feat/wip, checked out in a worktree, is not among them.)
+grep -q 'stale_branches=3' "$tmp/stale-worktree.out"
 if grep -q "state=.*repo=$stale_repo branch=feat/wip\|branch=feat/wip state=" \
   "$tmp/stale-worktree.out"; then
   printf '%s\n' 'FAIL branch checked out in a worktree was reported stale' >&2

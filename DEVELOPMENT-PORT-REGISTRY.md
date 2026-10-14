@@ -28,6 +28,7 @@ Add one row in ascending port order before starting a new fixed service.
 | 12106 | TCP | 127.0.0.1 | healthcare verification instance / relational database | claude | Desensitized copy of the production health database | active |
 | 12107 | TCP | 127.0.0.1 | healthcare verification instance / cache | claude | Cache for the healthcare verification instance | active |
 | 12108 | TCP | 127.0.0.1 | healthcare verification instance / configuration service | claude | Configuration service for the healthcare verification instance | active |
+| 12110 | TCP | 127.0.0.1 | x-following-gallery / OAuth2 callback receiver | claude | One-time X OAuth2 `authorization_code` receiver; public entry is `xauth.ranlei.work` via frps vhost (Basic Auth at the tunnel) | active |
 
 ## Existing Exceptions
 

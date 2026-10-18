@@ -53,6 +53,9 @@ jobs:
       - name: Server development dev-host tests
         shell: bash
         run: bash tests/test-dev-host.sh
+      - name: Server development service inventory tests
+        shell: bash
+        run: bash tests/test-dev-service-inventory.sh
       - name: Server development changelog tests
         shell: sh
         run: sh tests/test-dev-changelog.sh

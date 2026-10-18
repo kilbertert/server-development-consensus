@@ -15,6 +15,12 @@ export SERVER_POLICY_INSTALL_TESTING=1
 export GIT_CONFIG_NOSYSTEM=1
 unset GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT \
   GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
+# 安装器会跑策略审计，而审计现在包含"开发机是否承载对外服务"。
+# 那一项读真实 socket；测试里注入空夹具，使结果不依赖宿主机上正在跑什么。
+: >"$tmp/empty-listen"
+export DEV_SERVICE_INVENTORY_SS_LISTEN="cat $tmp/empty-listen"
+export DEV_SERVICE_INVENTORY_SS_LISTENP="cat $tmp/empty-listen"
 mkdir -p "$HOME/Projects" "$HOME/.codex" "$HOME/custom-hooks" "$tmp/bin"
 PATH=$tmp/bin:$PATH
 export PATH

@@ -99,6 +99,10 @@ private and is not enrolled; it is not a reason to weaken the phase.
    `auto_incremental_review` and `labels: ["review-ready"]` stay as they were.
 3. **`review-sentinel`** — unchanged. It is disabled, and its files and tests
    stay in place; deleting them is a separate decision.
+   *Superseded 2026-10-18:* that separate decision was taken — the tree and its
+   tests were removed and the documents updated together; see
+   `docs/adr/0008-retire-review-sentinel.md`. This phase records what the
+   migration decided at the time.
 4. **`ocr review`** — retained as the local, pre-PR development tool. It is not
    a PR-level reviewer and does not occupy the slot this migration targets.
    *Superseded 2026-10-08:* it was retired outright rather than retained — see

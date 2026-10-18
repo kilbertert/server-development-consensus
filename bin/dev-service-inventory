@@ -117,7 +117,14 @@ owner_of_listener() {
   unit=$(printf '%s\n' "$line" | grep -oE 'cgroup:[^ ]+' | head -1)
   unit=${unit#cgroup:}
   unit=${unit##*/}
+  # socket-activated 服务（如 ssh.socket）没有主进程名可查，但它本身就能说明归属，
+  # 且 `<name>.socket` 对应的服务名就是去掉后缀的 `<name>`。不认这一支的话，
+  # sshd 这类 socket 激活的平台入口会整条退化成 unknown。
   case $unit in
+    *.socket)
+      printf '%s\n' "${unit%.socket}"
+      return 0
+      ;;
     *.service|*.scope)
       pid=$(systemctl show -p MainPID --value "$unit" 2>/dev/null)
       [[ $pid =~ ^[0-9]+$ && $pid -ne 0 ]] ||
@@ -160,6 +167,22 @@ is_non_loopback() {
 # 某些监听属于"网络平面本身"，不是业务服务：VPN/覆盖网络自己绑的接口地址。
 # 把它们算成"应迁往 service host"是错的——把 tailscaled 搬走没有意义。
 # 判据是进程名，不是地址（地址会随节点变化）。
+# 私有覆盖网（Tailscale）的地址段。绑在这些地址上的监听只对编队内可达，
+# 属于开发平面内部通信，不是"承载对外服务"。
+#   IPv4: 100.64.0.0/10  (CGNAT，Tailscale 使用)
+#   IPv6: fd7a:115c:a1e0::/48 (Tailscale ULA)
+is_overlay_address() {
+  local addr=$1
+  # 去掉 ss 在地址后附加的 %interface
+  addr=${addr%%%}
+  [[ $addr == \[* ]] && addr=${addr#[} && addr=${addr%]}
+  case $addr in
+    100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) return 0 ;;
+    fd7a:115c:a1e0::*) return 0 ;;
+  esac
+  return 1
+}
+
 is_network_plane() {
   local owner=$1
   case $owner in
@@ -183,13 +206,21 @@ while IFS='|' read -r local port; do
   # 先归因再判性质：网络平面（VPN/覆盖网络）不算业务服务。
   owner=unknown
   if [[ $attributed == yes ]]; then
-    line=$(grep -F ":$port " "$tmp_dir/listenp" 2>/dev/null | head -1)
+    # 按第 4 列（local address:port）整列精确匹配。
+    # 曾用 `grep -F ":$port "`，它会命中别的字段里的同名子串 ——
+    # `sk:22 ` 让 0.0.0.0:2281 那条拿下 :22 的归属，于是 sshd 被报成 dockerd。
+    line=$(awk -v want="$local" '$4 == want { print; exit }' "$tmp_dir/listenp" 2>/dev/null)
     # 解不出名字时保持 unknown：宁可报告"未知"，也不把它当成安全。
     owner=$(owner_of_listener "$line") || owner=unknown
     [[ -n $owner ]] || owner=unknown
   fi
 
   if is_network_plane "$owner"; then
+    verdict=plane
+  elif is_overlay_address "$addr"; then
+    # 绑在私有覆盖网地址上，等于只对编队内的机器可达，没有对外暴露。
+    # 这与"绑 0.0.0.0"不是一回事：判据是地址，不是程序名 ——
+    # 所以同一个 frps 若改回 0.0.0.0 仍然会被判违规。
     verdict=plane
   elif [[ $PLATFORM_PORTS == *" $port "* ]]; then
     verdict=platform

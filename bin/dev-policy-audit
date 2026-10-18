@@ -34,6 +34,7 @@ managed_hooks_manifest=$policy_dir/managed-hooks.sha256
 codex_updater=$policy_home/.local/bin/update-codex-config
 worktree_tool=$policy_home/.local/bin/dev-worktree
 changelog_tool=$policy_home/.local/bin/dev-changelog
+service_inventory_tool=$policy_home/.local/bin/dev-service-inventory
 failures=0
 repaired=0
 stale_branches=0
@@ -709,6 +710,24 @@ while IFS= read -r -d '' git_path; do
     "$repo" "${branch:-detached}" "${configured_default:-unknown}" "$dirty" \
     "$chain_state" "$repo_class"
 done <"$sorted_scan_file"
+
+# 开发机承载对外服务是一项债务，不是例外。这里只做"报告"，不自动处理：
+# 把服务搬走是迁移决定，不属于审计能替人做的范围。
+# 工具缺失时不静默通过 —— 缺检查本身就是问题。
+if [[ -x $service_inventory_tool ]]; then
+  if inventory_output=$("$service_inventory_tool" --check 2>&1); then
+    printf 'ok service placement: no service binds a non-loopback address\n'
+  else
+    while IFS= read -r line; do
+      [[ -n $line ]] && printf '%s\n' "$line"
+    done <<<"$inventory_output"
+    failures=$((failures + 1))
+  fi
+else
+  printf 'FAIL service placement cannot be verified: %s is not installed\n' \
+    "$service_inventory_tool"
+  failures=$((failures + 1))
+fi
 
 printf 'audit complete: failures=%d repaired=%d stale_branches=%d\n' \
   "$failures" "$repaired" "$stale_branches"

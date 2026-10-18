@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# dev-service-inventory — 列出在本机（development host）上运行的服务，
+# 并标出哪些违反了「开发机不承载对外服务」这条共识。
+#
+# 为什么需要它：共识里已经写明开发机不承载可从公网访问的服务、新服务应直接
+# 部署到 service host。但条文不会自己生效 —— 一台服务悄悄起在开发机上、
+# 绑了 0.0.0.0，要等某次迁移或审计才被发现。这个工具把"该不该在这台机器上"
+# 变成一条每次都能重跑的命令。
+#
+# 两种用法（同一份判据，不同出口）：
+#   dev-service-inventory            人类可读清单（默认）
+#   dev-service-inventory --check    违规即非零退出；可放进审计/钩子
+#   dev-service-inventory --json     机器可读
+#
+# 判据（按共识 Host Fleet 一节）：
+#   - 绑定非环回地址、且不是平台入口（SSH/HTTP/HTTPS）⇒ 违规，应迁往 service host
+#   - 绑定环回 ⇒ 不违规（本机自用/开发工具）
+#   - 无法归因（拿不到监听者）⇒ 报告为 unknown，不当作通过
+#
+# 退避说明：service host 上的服务本就不该出现在这份清单里；本工具只看本机进程。
+
+set -u
+
+mode=report
+case "${1:-}" in
+  --check) mode=check ;;
+  --json) mode=json ;;
+  -h|--help)
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+  '') ;;
+  *) printf 'usage: %s [--check|--json]\n' "$0" >&2; exit 64 ;;
+esac
+
+# 平台入口端口：共识明确允许开发机对外提供 SSH 与 HTTP(S)。
+PLATFORM_PORTS=" 22 80 443 "
+
+command -v ss >/dev/null 2>&1 || { printf 'ss is required\n' >&2; exit 69; }
+
+# 测试缝：允许用夹具替代真实监听表，避免测试依赖机器上正在跑什么。
+# 生产路径永远走 ss；这两个变量只由测试设置。
+SS_LISTEN_CMD=${DEV_SERVICE_INVENTORY_SS_LISTEN:-}
+SS_LISTENP_CMD=${DEV_SERVICE_INVENTORY_SS_LISTENP:-}
+
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+
+# 采集：每个 LISTEN socket 一行，字段为 地址|端口
+#
+# ss 的输出在不同 util-linux 版本间有差异，因此只用最稳定的列：
+# 第 4 列为 local address:port，`users:(("name",pid=N,...))` 在需要时解析。
+if [[ -n $SS_LISTEN_CMD ]]; then
+  eval "$SS_LISTEN_CMD" 2>/dev/null
+else
+  ss -tlnH 2>/dev/null
+fi | while read -r _ _ _ local _; do
+  [[ -n $local ]] || continue
+  port=${local##*:}
+  [[ $port =~ ^[0-9]+$ ]] || continue
+  printf '%s|%s\n' "$local" "$port"
+done >"$tmp_dir/listen"
+
+# 归因：用 sudo ss -p 拿进程名（本机 sshd/nginx 之外多为用户级服务，
+# 不便逐条 sudo 时退化为 unknown —— 明确标 unknown，不静默当成安全）。
+# 注意 `sudo` 只影响它自己那条命令，不影响重定向，所以这里用 tee 落盘。
+if [[ -n $SS_LISTENP_CMD ]]; then
+  eval "$SS_LISTENP_CMD" 2>/dev/null | tee "$tmp_dir/listenp" >/dev/null
+  attributed=yes
+elif sudo -n ss -tlnp 2>/dev/null | tee "$tmp_dir/listenp" >/dev/null; then
+  attributed=yes
+else
+  : >"$tmp_dir/listenp"
+  attributed=no
+fi
+
+violations=0
+unknown=0
+rows=0
+
+emit_row() {
+  rows=$((rows + 1))
+}
+
+# 判断一个监听地址是否"非环回"。
+# 只比较地址部分（调用方已剥掉端口），因此这里不需要处理 ":::port" 之类形态。
+is_non_loopback() {
+  local addr=$1
+  case $addr in
+    127.*) return 1 ;;
+    "::1"|"[::1]") return 1 ;;
+    localhost*) return 1 ;;
+  esac
+  return 0
+}
+
+# 某些监听属于"网络平面本身"，不是业务服务：VPN/覆盖网络自己绑的接口地址。
+# 把它们算成"应迁往 service host"是错的——把 tailscaled 搬走没有意义。
+# 判据是进程名，不是地址（地址会随节点变化）。
+is_network_plane() {
+  local owner=$1
+  case $owner in
+    tailscaled|tailscale) return 0 ;;
+    wireguard*|wg-quick*) return 0 ;;
+  esac
+  return 1
+}
+
+result_lines="$tmp_dir/result"
+: >"$result_lines"
+
+while IFS='|' read -r local port; do
+  addr=${local%:*}
+  [[ -n $addr ]] || addr=$local
+
+  if ! is_non_loopback "$addr"; then
+    continue   # 环回监听：不算违规
+  fi
+
+  # 先归因再判性质：网络平面（VPN/覆盖网络）不算业务服务。
+  owner=unknown
+  if [[ $attributed == yes ]]; then
+    name=$(grep -F ":$port " "$tmp_dir/listenp" 2>/dev/null |
+           grep -oP 'users:\(\("\K[^"]+' | head -1)
+    [[ -n $name ]] && owner=$name
+  fi
+
+  if is_network_plane "$owner"; then
+    verdict=plane
+  elif [[ $PLATFORM_PORTS == *" $port "* ]]; then
+    verdict=platform
+  else
+    verdict=violation
+    violations=$((violations + 1))
+  fi
+
+  [[ $owner == unknown ]] && unknown=$((unknown + 1))
+
+  emit_row
+  printf '%s\t%s\t%s\t%s\t\n' "$verdict" "$port" "$local" "$owner" >>"$result_lines"
+done <"$tmp_dir/listen"
+
+sorted="$tmp_dir/sorted"
+sort -t$'\t' -k2 -n "$result_lines" >"$sorted"
+
+if [[ $mode == json ]]; then
+  printf '{"violations":%d,"unknown_owner":%d,"listeners":[' "$violations" "$unknown"
+  first=1
+  while IFS=$'\t' read -r verdict port local owner _; do
+    [[ $first -eq 1 ]] || printf ','
+    first=0
+    printf '{"port":%s,"address":"%s","owner":"%s","verdict":"%s"}' \
+      "$port" "$local" "$owner" "$verdict"
+  done <"$sorted"
+  printf ']}\n'
+elif [[ $mode == check ]]; then
+  # --check 供审计/钩子调用：只在有问题时出声，不打印整张表。
+  if [[ $violations -gt 0 ]]; then
+    while IFS=$'\t' read -r verdict port local owner _; do
+      [[ $verdict == violation ]] || continue
+      printf 'FAIL dev host serves %s on %s (owner=%s) — move it to a service host\n' \
+        "$port" "$local" "$owner" >&2
+    done <"$sorted"
+  fi
+  if [[ $unknown -gt 0 ]]; then
+    printf 'note: %d listener(s) could not be attributed (needs sudo ss -p)\n' \
+      "$unknown" >&2
+  fi
+else
+  if [[ $rows -eq 0 ]]; then
+    printf 'dev-service-inventory: 本机没有非环回监听（除平台入口）\n'
+  else
+    printf '%-10s %-6s %-24s %-16s %s\n' VERDICT PORT ADDRESS OWNER NOTE
+    while IFS=$'\t' read -r verdict port local owner _; do
+      note=-
+      [[ $verdict == violation ]] && note='应迁往 service host'
+      [[ $verdict == platform ]] && note='平台入口，允许'
+      [[ $verdict == plane ]] && note='网络平面自身，跳过'
+      printf '%-10s %-6s %-24s %-16s %s\n' "$verdict" "$port" "$local" "$owner" "$note"
+    done <"$sorted"
+  fi
+  printf '\n本机非环回监听：%d（其中违规 %d，属主未知 %d）\n' \
+    "$rows" "$violations" "$unknown"
+  if [[ $unknown -gt 0 ]]; then
+    printf '注意：有 %d 项无法归因（需要 sudo ss -p）。未知不等于安全。\n' "$unknown"
+  fi
+fi
+
+if [[ $mode == check ]]; then
+  if [[ $violations -gt 0 ]]; then
+    printf 'FAIL %d service(s) on the development host bind a non-loopback address\n' \
+      "$violations" >&2
+    exit 1
+  fi
+  exit 0
+fi

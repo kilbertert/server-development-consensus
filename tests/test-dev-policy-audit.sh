@@ -26,6 +26,13 @@ cp "$base_dir/bin/dev-worktree" "$HOME/.local/bin/dev-worktree"
 chmod +x "$HOME/.local/bin/dev-worktree"
 cp "$base_dir/bin/update-codex-config" "$HOME/.local/bin/update-codex-config"
 chmod +x "$HOME/.local/bin/update-codex-config"
+cp "$base_dir/bin/dev-service-inventory" "$HOME/.local/bin/dev-service-inventory"
+chmod +x "$HOME/.local/bin/dev-service-inventory"
+
+# 服务落点检查读真实 socket；测试里注入空夹具，让结果与宿主机状态无关。
+: >"$tmp/empty-listen"
+export DEV_SERVICE_INVENTORY_SS_LISTEN="cat $tmp/empty-listen"
+export DEV_SERVICE_INVENTORY_SS_LISTENP="cat $tmp/empty-listen"
 cp "$base_dir/SERVER-DEVELOPMENT-CONSENSUS.md" "$policy_dir/SERVER-DEVELOPMENT-CONSENSUS.md"
 cp "$base_dir/CODEX-DEVELOPER-INSTRUCTIONS.md" "$policy_dir/CODEX-DEVELOPER-INSTRUCTIONS.md"
 cp "$base_dir/DEVELOPMENT-PORT-REGISTRY.md" "$policy_dir/DEVELOPMENT-PORT-REGISTRY.md"

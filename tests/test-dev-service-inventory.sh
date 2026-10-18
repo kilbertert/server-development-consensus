@@ -173,6 +173,58 @@ out=$(run "$tmp/degraded-listen" "$tmp/degraded")
 grep -q 'unknown' <<<"$out" && printf 'ok degraded attribution stays unknown\n' ||
   { printf 'FAIL degraded attribution looked resolved\n%s\n' "$out" >&2; failures=$((failures + 1)); }
 
+# --- 14. 归属必须按整列匹配地址，不能被别的字段里的数字骗到 ---------------
+# 真实事故（2026-10-19）：`grep -F ":22 "` 命中了 `sk:22` 所在的 2281 那一行，
+# 于是 0.0.0.0:22 的归属被读成 dockerd。同端口不同地址必须各归各位。
+cat >"$tmp/multi-listen" <<'EOF'
+LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*
+LISTEN 0 4096 0.0.0.0:2281 0.0.0.0:*
+EOF
+cat >"$tmp/multi-listenp" <<'EOF'
+LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* ino:1 sk:400d cgroup:/system.slice/ssh.service <-> 
+LISTEN 0 4096 0.0.0.0:2281 0.0.0.0:* ino:2 sk:22 cgroup:/system.slice/docker.service <-> 
+EOF
+out=$(run "$tmp/multi-listen" "$tmp/multi-listenp")
+grep -qE 'platform +22 +0\.0\.0\.0:22 +ssh' <<<"$out" && printf 'ok exact address match wins\n' ||
+  { printf 'FAIL port 22 attributed to the wrong listener\n%s\n' "$out" >&2; failures=$((failures + 1)); }
+
+# --- 15. socket-activated 的 unit 也能归因 ----------------------------------
+# ssh.socket 没有 MainPID；不识别 .socket 会让 sshd 退化成 unknown。
+cat >"$tmp/sock-listen" <<'EOF'
+LISTEN 0 4096 0.0.0.0:9403 0.0.0.0:*
+EOF
+cat >"$tmp/sock-listenp" <<'EOF'
+LISTEN 0 4096 0.0.0.0:9403 0.0.0.0:* ino:3 sk:3 cgroup:/system.slice/some-svc.socket <-> 
+EOF
+out=$(run "$tmp/sock-listen" "$tmp/sock-listenp")
+grep -qE 'violation +9403 +0\.0\.0\.0:9403 +some-svc' <<<"$out" && printf 'ok socket unit attributed\n' ||
+  { printf 'FAIL socket unit not attributed\n%s\n' "$out" >&2; failures=$((failures + 1)); }
+
+# --- 16. 绑在覆盖网地址上不算对外服务 ---------------------------------------
+# 判据必须是地址，不是程序名：同一个 frps 绑 0.0.0.0 违规、绑 tailnet 地址
+# 只是开发平面内部通信。这样既不用维护程序白名单，也不会放宽判据。
+cat >"$tmp/overlay-listen" <<'EOF'
+LISTEN 0 4096 100.96.121.55:7000 0.0.0.0:*
+LISTEN 0 4096 [fd7a:115c:a1e0::1438:b619]:52420 [::]:*
+EOF
+cat >"$tmp/overlay-listenp" <<'EOF'
+LISTEN 0 4096 100.96.121.55:7000 0.0.0.0:* ino:1 sk:1 cgroup:/user.slice/user-1000.slice/user@1000.service/app.slice/frps.service <-> 
+LISTEN 0 4096 [fd7a:115c:a1e0::1438:b619]:52420 [::]:* ino:2 sk:2 cgroup:/system.slice/tailscaled.service <-> 
+EOF
+run_rc "$tmp/overlay-listen" "$tmp/overlay-listenp" --check
+check "overlay-address binds are not violations" "0" "$RUN_RC"
+
+# --- 17. 同一个程序绑 0.0.0.0 仍然违规 --------------------------------------
+# 这条保证上一条不是"给 frps 开后门"：放宽的是地址，不是程序。
+cat >"$tmp/wildcard-listen" <<'EOF'
+LISTEN 0 4096 0.0.0.0:7000 0.0.0.0:*
+EOF
+cat >"$tmp/wildcard-listenp" <<'EOF'
+LISTEN 0 4096 0.0.0.0:7000 0.0.0.0:* ino:3 sk:3 cgroup:/user.slice/user-1000.slice/user@1000.service/app.slice/frps.service <-> 
+EOF
+run_rc "$tmp/wildcard-listen" "$tmp/wildcard-listenp" --check
+check "same program on 0.0.0.0 still violates" "1" "$RUN_RC"
+
 # --- 10. 未知参数应拒绝 -------------------------------------------------------
 "$tool" --bogus >/dev/null 2>&1 && status=0 || status=$?
 check "unknown flag rejected" "64" "$status"

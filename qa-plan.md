@@ -202,7 +202,9 @@ Passed locally on `2026-09-18T20:38:01+08:00` on the `claude` development host. 
 CI check set was run on this branch: `tests/test-ai-review-policy.py`,
 `test-afk-contract.sh`, `test-dev-worktree.sh`, `test-pre-push.sh`,
 `test-commit-msg.sh`, `test-dev-policy-audit.sh`, `test-install.sh`, and the
-Review Sentinel unit and installer tests. `test-install.sh` and
+Review Sentinel unit and installer tests. *The last two were removed
+2026-10-18 with Review Sentinel itself; the rest of this record stands.*
+`test-install.sh` and
 `test-update-codex-config.sh` assert the 872000/700000 defaults and that
 unrelated settings survive. The authoritative result is this change's
 `Governance release unit` CI run.

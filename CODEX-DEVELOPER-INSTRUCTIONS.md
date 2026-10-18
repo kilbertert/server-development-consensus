@@ -103,10 +103,9 @@ the public App alone is insufficient. It may receive only an explicitly allowed
 PR/repository context, never TEAM-MEMORY, host configuration, logs, or
 credentials; public comments need human approval after redaction. Devin Review
 may not be a required merge check. OpenCodeReview is retired and must not be
-reinstalled, invoked, or re-enabled.
-The self-hosted `review-sentinel/` service remains disabled until it has a
-dedicated Codex executable/home and separately managed App credentials; never
-point it at the interactive `~/.codex` home.
+reinstalled, invoked, or re-enabled. Review Sentinel is retired with it: the
+governance repository no longer ships a self-hosted review backend, so do not
+restore its tree or re-create its Codex home.
 
 Creating a local task branch is normal preparation. Commit, push, PR, merge,
 release, and deployment actions still require authorization from the current

@@ -6,7 +6,7 @@ The shared vocabulary for server governance and AFK execution lives in
 
 This repository is the canonical source of the server development governance
 release unit: the consensus policy, the installer, the managed commands, the
-audit units, and the review-sentinel reference implementation. Deploy it only
+audit units, and the managed commands. Deploy it only
 through `install.sh` from a clean checkout of this repository's default branch.
 
 It was extracted on 2026-08-18 from
@@ -185,12 +185,10 @@ read TEAM-MEMORY, host configuration, logs, or credentials. For a public
 repository, the generated report is a redacted candidate that needs human
 approval before a public GitHub comment is published.
 
-The first review-only implementation is `review-sentinel/`. It provides a
-GitHub App webhook, an SQLite exact-head queue, a read-only structured Codex
-worker, and a marker-backed publisher. Its installer deliberately leaves the
-user service disabled until an owner creates a separate private GitHub App and
-fills the allowlist and secret files. It does not copy ClawSweeper's worker
-fleet, Cloudflare state, repair, push, close, or automerge infrastructure.
+Review Sentinel is retired: the server's self-hosted review implementation was
+removed on 2026-10-18, and ADR 0008 records what was measured beforehand. Any
+future self-hosted review layer is a separate decision that brings its own
+acceptance evidence.
 
 The retired OpenCodeReview workflow is not part of this architecture and must
 not be re-enabled. One automatic Devin Review and at most one

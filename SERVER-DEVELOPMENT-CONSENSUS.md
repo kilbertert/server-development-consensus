@@ -577,14 +577,11 @@ reactivated with `dev-worktree activate PATH`.
     repository and PR context, never TEAM-MEMORY, host configuration, logs, or
     credentials. A public-repository report is a redacted candidate that needs
     human approval before publication.
-  - The governance repository's minimal self-hosted implementation is
-    `review-sentinel/`. It is review-only, exact-head deduplicated, and
-    disabled until a separately created GitHub App and a dedicated Codex home
-    are configured. It must not reuse the interactive `~/.codex` home or a
-    credential-embedding wrapper; its App permissions exclude contents write,
-    workflows, administration, merge, push, and autofix operations. With Devin
-    Review holding the automatic review layer it stays disabled rather than
-    being brought into service.
+- Review Sentinel is retired and must not be restored from its removed tree: the
+  governance repository no longer ships a self-hosted review backend. ADR 0008
+  records what was measured before removing it. Reintroducing a self-hosted
+  review layer is a separate decision that has to bring its own acceptance
+  evidence; it starts from this policy, not from the deleted implementation.
 - OpenCodeReview is retired and must not be reinstalled, invoked, or triggered:
   no CLI, no delegated skill, and no GitHub Action. Its GitHub Action stays out
   of the server architecture, and the `review-ready` label must not trigger it.

@@ -62,9 +62,3 @@ jobs:
       - name: Server development installer tests
         shell: sh
         run: sh tests/test-install.sh
-      - name: Review Sentinel unit tests
-        shell: bash
-        run: PYTHONPATH=review-sentinel python -m unittest discover -s review-sentinel/tests
-      - name: Review Sentinel installer test
-        shell: sh
-        run: sh review-sentinel/tests/test-install.sh

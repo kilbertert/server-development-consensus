@@ -78,18 +78,63 @@ fi | while read -r _ _ _ local _; do
   printf '%s|%s\n' "$local" "$port"
 done >"$tmp_dir/listen"
 
-# 归因：用 sudo ss -p 拿进程名（本机 sshd/nginx 之外多为用户级服务，
-# 不便逐条 sudo 时退化为 unknown —— 明确标 unknown，不静默当成安全）。
-# 注意 `sudo` 只影响它自己那条命令，不影响重定向，所以这里用 tee 落盘。
+# 归因：完全不依赖 root。
+#
+# 曾用 `sudo -n ss -tlnp`，但审计 unit 带 NoNewPrivileges=true —— 那里 sudo
+# 必然失败，于是每个监听都退化成 unknown：网络平面（tailscaled）被误判成违规，
+# 已评估例外（dinotty）也永远匹配不上。归因必须能在无特权下完成。
+#
+# 无特权也能拿到归属，来自 ss -e 的扩展字段：
+#   - 自己用户的 socket：`users:(("name",pid=N))` 直接给名字
+#   - 别人的 socket（如 root 的 tailscaled）：不给名字，但给
+#     `cgroup:/system.slice/tailscaled.service`，可反查 unit 的主进程名
+# 两条路都拿不到时才标 unknown —— 未知不等于安全。
+# 注意 ss -e 的 cgroup 字段需要 AF_NETLINK；审计 unit 的
+# RestrictAddressFamilies 因此必须带上 AF_NETLINK，否则这里只剩 sk:0。
 if [[ -n $SS_LISTENP_CMD ]]; then
   eval "$SS_LISTENP_CMD" 2>/dev/null | tee "$tmp_dir/listenp" >/dev/null
   attributed=yes
-elif sudo -n ss -tlnp 2>/dev/null | tee "$tmp_dir/listenp" >/dev/null; then
+elif ss -tlnpe 2>/dev/null | tee "$tmp_dir/listenp" >/dev/null; then
   attributed=yes
 else
   : >"$tmp_dir/listenp"
   attributed=no
 fi
+
+# 从一个 ss 行里解出监听者名字。
+#
+# 顺序即优先级：users:() 的名字最准（它就是进程名）；拿不到（别人的 socket）
+# 就退回 cgroup 对应的 unit —— 先问 systemd 要主进程名，再退回 unit 名本身
+# （unit 名去掉 .service/.scope 后缀，通常与程序同名）。
+# 反查全程非特权：systemctl show 可读、/proc/<pid>/comm 世界可读。
+owner_of_listener() {
+  local line=$1 name unit pid
+  name=$(printf '%s\n' "$line" | grep -oP 'users:\(\("\K[^"]+' | head -1)
+  if [[ -n $name ]]; then
+    printf '%s\n' "$name"
+    return 0
+  fi
+  unit=$(printf '%s\n' "$line" | grep -oE 'cgroup:[^ ]+' | head -1)
+  unit=${unit#cgroup:}
+  unit=${unit##*/}
+  case $unit in
+    *.service|*.scope)
+      pid=$(systemctl show -p MainPID --value "$unit" 2>/dev/null)
+      [[ $pid =~ ^[0-9]+$ && $pid -ne 0 ]] ||
+        pid=$(systemctl --user show -p MainPID --value "$unit" 2>/dev/null)
+      if [[ $pid =~ ^[0-9]+$ && $pid -ne 0 ]]; then
+        name=$(ps -o comm= -p "$pid" 2>/dev/null | head -1)
+        if [[ -n $name ]]; then
+          printf '%s\n' "$name"
+          return 0
+        fi
+      fi
+      printf '%s\n' "${unit%.*}"
+      return 0
+      ;;
+  esac
+  return 1
+}
 
 violations=0
 unknown=0
@@ -138,9 +183,10 @@ while IFS='|' read -r local port; do
   # 先归因再判性质：网络平面（VPN/覆盖网络）不算业务服务。
   owner=unknown
   if [[ $attributed == yes ]]; then
-    name=$(grep -F ":$port " "$tmp_dir/listenp" 2>/dev/null |
-           grep -oP 'users:\(\("\K[^"]+' | head -1)
-    [[ -n $name ]] && owner=$name
+    line=$(grep -F ":$port " "$tmp_dir/listenp" 2>/dev/null | head -1)
+    # 解不出名字时保持 unknown：宁可报告"未知"，也不把它当成安全。
+    owner=$(owner_of_listener "$line") || owner=unknown
+    [[ -n $owner ]] || owner=unknown
   fi
 
   if is_network_plane "$owner"; then
@@ -185,7 +231,7 @@ elif [[ $mode == check ]]; then
     done <"$sorted"
   fi
   if [[ $unknown -gt 0 ]]; then
-    printf 'note: %d listener(s) could not be attributed (needs sudo ss -p)\n' \
+    printf 'note: %d listener(s) could not be attributed (no users:/cgroup field)\n' \
       "$unknown" >&2
   fi
 else

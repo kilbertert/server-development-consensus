@@ -10,6 +10,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
 ProtectSystem=strict
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 RestrictRealtime=true
 RestrictSUIDSGID=true

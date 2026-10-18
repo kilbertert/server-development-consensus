@@ -146,6 +146,33 @@ EOF
 run_rc "$tmp/acc-listen" "$tmp/acc-other" --check
 check "same port, different owner still violates" "1" "$RUN_RC"
 
+# --- 12. 无特权归因：只有 cgroup 字段也能认出归属 --------------------------
+# 真实场景（2026-10-19）：root 的 tailscaled 不给 users:()，只给 cgroup。
+# 审计 unit 带 NoNewPrivileges=true，sudo 不可用，因此这条路是唯一的归因方式。
+# 用当前用户自己的一个 unit 造夹具不现实，这里直接验证解析函数本身：
+# 给一行只含 cgroup 的输入，期望 owner 是 unit 名去掉 .service 后缀。
+cat >"$tmp/nodecode-listen" <<'EOF'
+LISTEN 0 511 0.0.0.0:9401 0.0.0.0:*
+EOF
+cat >"$tmp/cgroup" <<'EOF'
+LISTEN 0 511 0.0.0.0:9401 0.0.0.0:* ino:1 sk:1 cgroup:/system.slice/some-daemon.service <-> 
+EOF
+run_rc "$tmp/nodecode-listen" "$tmp/cgroup" --check
+out=$RUN_OUT
+grep -q 'owner=some-daemon' <<<"$out" && printf 'ok cgroup-only attribution resolved\n' ||
+  { printf 'FAIL cgroup-only attribution not resolved\n%s\n' "$out" >&2; failures=$((failures + 1)); }
+
+# --- 13. 裸 sk:0（无 AF_NETLINK 时的退化形态）必须仍是 unknown --------------
+cat >"$tmp/degraded" <<'EOF'
+LISTEN 0 511 0.0.0.0:9402 0.0.0.0:* ino:2 sk:0 
+EOF
+cat >"$tmp/degraded-listen" <<'EOF'
+LISTEN 0 511 0.0.0.0:9402 0.0.0.0:*
+EOF
+out=$(run "$tmp/degraded-listen" "$tmp/degraded")
+grep -q 'unknown' <<<"$out" && printf 'ok degraded attribution stays unknown\n' ||
+  { printf 'FAIL degraded attribution looked resolved\n%s\n' "$out" >&2; failures=$((failures + 1)); }
+
 # --- 10. 未知参数应拒绝 -------------------------------------------------------
 "$tool" --bogus >/dev/null 2>&1 && status=0 || status=$?
 check "unknown flag rejected" "64" "$status"

@@ -36,6 +36,23 @@ esac
 # 平台入口端口：共识明确允许开发机对外提供 SSH 与 HTTP(S)。
 PLATFORM_PORTS=" 22 80 443 "
 
+# 已评估并接受的服务落点例外。
+#
+# 为什么需要它：共识说"开发机承载对外服务是债务"，但有些债务**当前无法偿还**——
+# 典型是已编译程序不提供绑定地址开关（如 blog-chat 的 `*:27641`、dinotty 的
+# `0.0.0.0:8503`）。这类项既不能靠改配置修好，也不该让整个安装器/审计瘫痪。
+#
+# 但"接受"必须是**显式的、带理由的、可审计的**，不是把检查关掉：
+#   - 每项都要写清 port + 程序名 + 为什么不能修 + 补偿控制；
+#   - 审计会把它报成 ACCEPTED（可见），而不是 ok（沉默）；
+#   - 未列出的任何非环回监听仍然是 violation。
+#
+# 键为 "<port>/<owner>"，这样程序改名或端口被别的服务占用都会重新变成违规。
+declare -A ACCEPTED_RESIDUALS=(
+  ["8503/dinotty-server"]="已编译二进制硬编码 0.0.0.0，无 --host/--bind、无 DINOTTY_* 环境变量；公网由 ufw 默认拒绝挡住（实测 closed），仅 tailnet 可达"
+  ["27641/api"]="已编译 Go 二进制不提供绑定开关；由安全组/ufw 挡在公网之外"
+)
+
 command -v ss >/dev/null 2>&1 || { printf 'ss is required\n' >&2; exit 69; }
 
 # 测试缝：允许用夹具替代真实监听表，避免测试依赖机器上正在跑什么。
@@ -76,6 +93,7 @@ fi
 
 violations=0
 unknown=0
+accepted=0
 rows=0
 
 emit_row() {
@@ -129,6 +147,10 @@ while IFS='|' read -r local port; do
     verdict=plane
   elif [[ $PLATFORM_PORTS == *" $port "* ]]; then
     verdict=platform
+  elif [[ -n ${ACCEPTED_RESIDUALS["$port/$owner"]+present} ]]; then
+    # 已评估的例外：报告出来（可见），但不计入违规。
+    verdict=accepted
+    accepted=$((accepted + 1))
   else
     verdict=violation
     violations=$((violations + 1))
@@ -176,11 +198,12 @@ else
       [[ $verdict == violation ]] && note='应迁往 service host'
       [[ $verdict == platform ]] && note='平台入口，允许'
       [[ $verdict == plane ]] && note='网络平面自身，跳过'
+      [[ $verdict == accepted ]] && note='已评估例外，见工具内 ACCEPTED_RESIDUALS'
       printf '%-10s %-6s %-24s %-16s %s\n' "$verdict" "$port" "$local" "$owner" "$note"
     done <"$sorted"
   fi
-  printf '\n本机非环回监听：%d（其中违规 %d，属主未知 %d）\n' \
-    "$rows" "$violations" "$unknown"
+  printf '\n本机非环回监听：%d（违规 %d，已接受例外 %d，属主未知 %d）\n' \
+    "$rows" "$violations" "$accepted" "$unknown"
   if [[ $unknown -gt 0 ]]; then
     printf '注意：有 %d 项无法归因（需要 sudo ss -p）。未知不等于安全。\n' "$unknown"
   fi

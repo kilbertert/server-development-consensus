@@ -229,6 +229,19 @@ check "same program on 0.0.0.0 still violates" "1" "$RUN_RC"
 "$tool" --bogus >/dev/null 2>&1 && status=0 || status=$?
 check "unknown flag rejected" "64" "$status"
 
+# --- 11. 已退役的例外必须不再生效 ---------------------------------------------
+# `27641/api`（blog-chat 的 Go 二进制）曾在 ACCEPTED_RESIDUALS 里。服务迁往
+# service host 后开发机上已无该监听，键随之失效并被删除。这条断言防它被顺手加回：
+# 开发机上若真的出现 27641，必须是 violation，而不是一个"早就批过"的 accepted。
+cat >"$tmp/retired-listen" <<'EOF'
+LISTEN 0 4096 *:27641 *:*
+EOF
+cat >"$tmp/retired-listenp" <<'EOF'
+LISTEN 0 4096 *:27641 *:* users:(("api",pid=11,fd=3))
+EOF
+run_rc "$tmp/retired-listen" "$tmp/retired-listenp" --check
+check "retired 27641 residual no longer exempts" "1" "$RUN_RC"
+
 if [[ $failures -gt 0 ]]; then
   printf 'dev-service-inventory tests failed: %d\n' "$failures" >&2
   exit 1

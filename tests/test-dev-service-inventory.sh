@@ -125,26 +125,41 @@ grep -q 'unknown' <<<"$out" && printf 'ok unattributed marked unknown\n' ||
   { printf 'FAIL unattributed listeners looked safe\n%s\n' "$out" >&2; failures=$((failures + 1)); }
 
 # --- 10. 已评估例外：可见但不阻塞 ---------------------------------------------
-# 夹具使用真实的 8503/dinotty-server 组合，应命中 ACCEPTED_RESIDUALS。
+# 例外表在生产上是**空的**（开发机已无任何非环回业务监听），所以夹具不能绑死
+# 某条真实条目 —— 那会让这些测试在债务还清后失效，而它们验证的是**机制**。
+# 用测试缝注入一条临时例外。
+INJECT=9999/test-app
 cat >"$tmp/acc-listen" <<'EOF'
-LISTEN 0 511 0.0.0.0:8503 0.0.0.0:*
+LISTEN 0 511 0.0.0.0:9999 0.0.0.0:*
 EOF
 cat >"$tmp/acc-listenp" <<'EOF'
-LISTEN 0 511 0.0.0.0:8503 0.0.0.0:* users:(("dinotty-server",pid=9,fd=3))
+LISTEN 0 511 0.0.0.0:9999 0.0.0.0:* users:(("test-app",pid=9,fd=3))
 EOF
-run_rc "$tmp/acc-listen" "$tmp/acc-listenp" --check
+RUN_RC=0
+RUN_OUT=$(DEV_SERVICE_INVENTORY_ACCEPTED="$INJECT" \
+          DEV_SERVICE_INVENTORY_SS_LISTEN="cat $tmp/acc-listen" \
+          DEV_SERVICE_INVENTORY_SS_LISTENP="cat $tmp/acc-listenp" \
+            "$tool" --check 2>&1) || RUN_RC=$?
 check "accepted residual does not fail check" "0" "$RUN_RC"
-out=$(run "$tmp/acc-listen" "$tmp/acc-listenp")
-grep -q 'accepted.*8503' <<<"$out" && printf 'ok accepted residual is visible\n' ||
-  { printf 'FAIL accepted residual hidden\n%s\n' "$out" >&2; failures=$((failures + 1)); }
+RUN_OUT=$(DEV_SERVICE_INVENTORY_ACCEPTED="$INJECT" \
+          DEV_SERVICE_INVENTORY_SS_LISTEN="cat $tmp/acc-listen" \
+          DEV_SERVICE_INVENTORY_SS_LISTENP="cat $tmp/acc-listenp" \
+            "$tool" 2>&1)
+grep -q 'accepted.*9999' <<<"$RUN_OUT" && printf 'ok accepted residual is visible\n' ||
+  { printf 'FAIL accepted residual hidden\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
 
 # --- 11. 例外不能变成后门：同端口不同程序仍是违规 ------------------------------
-# 这是关键判据——如果 8503 换成别的程序，例外必须失效。
+# 这是关键判据 —— 例外绑定的是 port+owner，换了程序就必须失效。
 cat >"$tmp/acc-other" <<'EOF'
-LISTEN 0 511 0.0.0.0:8503 0.0.0.0:* users:(("some-other-service",pid=10,fd=3))
+LISTEN 0 511 0.0.0.0:9999 0.0.0.0:* users:(("some-other-service",pid=10,fd=3))
 EOF
-run_rc "$tmp/acc-listen" "$tmp/acc-other" --check
+RUN_RC=0
+RUN_OUT=$(DEV_SERVICE_INVENTORY_ACCEPTED="$INJECT" \
+          DEV_SERVICE_INVENTORY_SS_LISTEN="cat $tmp/acc-listen" \
+          DEV_SERVICE_INVENTORY_SS_LISTENP="cat $tmp/acc-other" \
+            "$tool" --check 2>&1) || RUN_RC=$?
 check "same port, different owner still violates" "1" "$RUN_RC"
+
 
 # --- 12. 无特权归因：只有 cgroup 字段也能认出归属 --------------------------
 # 真实场景（2026-10-19）：root 的 tailscaled 不给 users:()，只给 cgroup。

@@ -132,16 +132,19 @@ probe_target() {
   local name=$1 alias=$2 auth=$3 out
   case $auth in
     linux-sshd)
+      # ★ `</dev/null` 是必须的，不是风格问题：本函数在 `while read ... done <plan`
+      # 循环里被调用，ssh 会读走循环的标准输入，导致循环提前结束 ——
+      # 表现为"只检查了前几台就报告 checked=2"，而不是报错。
       out=$("$SSH_TOOL" exec "$alias" --project "$PROJECT_DECL" --allow-service-exec \
         --timeout "$SSH_TIMEOUT" \
-        -- "sshd -T 2>/dev/null | grep -i '^passwordauthentication '" 2>/dev/null)
+        -- "sshd -T 2>/dev/null | grep -i '^passwordauthentication '" </dev/null 2>/dev/null)
       ;;
     windows-sshd)
       # Windows 的 OpenSSH 没有 `sshd -T`。这里按 sshd 的规则取**第一处出现**
       # 的 PasswordAuthentication（Windows OpenSSH 与 Linux 一样，先读到的胜出），
       # 找不到就返回空 —— 空 = unknown，不默认成 no。
       out=$("$SSH_TOOL" exec "$alias" --project "$PROJECT_DECL" --timeout "$SSH_TIMEOUT" -- \
-        "powershell -NoProfile -Command \"(Get-Content C:\\ProgramData\\ssh\\sshd_config | Select-String -Pattern '^\\s*PasswordAuthentication\\s+' | Select-Object -First 1).Line\"" 2>/dev/null)
+        "powershell -NoProfile -Command \"(Get-Content C:\\ProgramData\\ssh\\sshd_config | Select-String -Pattern '^\\s*PasswordAuthentication\\s+' | Select-Object -First 1).Line\"" </dev/null 2>/dev/null)
       ;;
     *)
       printf 'unknown:unknown auth_type=%s\n' "$auth"

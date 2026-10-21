@@ -84,6 +84,11 @@ cat >"$tmp/fake-dev-host" <<'SH'
 #!/usr/bin/env bash
 set -u
 [ "${1:-}" = exec ] || { echo "fake: expected exec" >&2; exit 64; }
+# 模拟真实 ssh：它会读 stdin。如果调用方没有 </dev/null，这里的 read
+# 会吃掉外层 while 循环的输入 —— 正是要回归的那个 bug。
+if [ -n "${FAKE_STEAL_STDIN:-}" ]; then
+  read -r _stolen || true
+fi
 target=$2
 mode=${FAKE_MODE:-ok}
 case "$target" in
@@ -155,6 +160,14 @@ run --check linux-known
 [ "$RUN_RC" -eq 0 ] || { printf 'FAIL known exception must not fail the check\n' >&2; failures=$((failures + 1)); }
 [[ $RUN_OUT == *"linux-known"* ]] || { printf 'FAIL known exception must still be reported\n' >&2; failures=$((failures + 1)); }
 [[ $RUN_OUT == *"recorded exception"* ]] || { printf 'FAIL known exception wording missing\n' >&2; failures=$((failures + 1)); }
+
+# ---------- 4c. 不能吃掉外层循环的标准输入 ----------
+# 曾经漏了 `</dev/null`：ssh 读走 `while read ... done <plan` 的输入，
+# 表现为只检查了前几台就报 checked=N（不是报错，是最难发现的那种）。
+FAKE_STEAL_STDIN=1 run
+# 假 dev-host 会在每次 exec 时吃掉一行 plan；正常的实现不会。
+[[ $RUN_OUT == *"checked=4"* ]] || {
+  printf 'FAIL probe consumed loop stdin (expect checked=4)\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
 
 # ---------- 5. json 形状 ----------
 run --json

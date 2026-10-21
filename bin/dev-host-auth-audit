@@ -100,8 +100,15 @@ for name, h in sorted(hosts.items()):
     # service host 全是 Linux；Windows 主机必须显式声明，否则会被用错的
     # 命令去查，然后以"查不到"告终——那是噪音，不是覆盖。
     auth = h.get('auth_type') or 'linux-sshd'
-    rows.append('%s\t%s\t%s\t%s\t%s' % (
-        name, access, status, auth, h.get('ssh_alias') or name))
+    # known_exception：已评估、已记录、短期内不打算处置的放开。
+    # 它仍然出现在报告里（可见），但不让整条审计变红 —— 否则一个已知状态
+    # 会永久堵住安装器，最终导致整个发布单元无法更新。与
+    # dev-service-inventory 的 ACCEPTED_RESIDUALS 同一原则：例外要可见，
+    # 且它只对"该主机确实仍为 weakened"生效；变成 no 或其他主机新出现
+    # 放开时，它不会替它们挡枪。
+    rows.append('%s\t%s\t%s\t%s\t%s\t%s' % (
+        name, access, status, auth, h.get('ssh_alias') or name,
+        (h.get('known_exception') or '').replace('\t', ' ')))
 
 for r in rows:
     print(r)
@@ -155,9 +162,9 @@ probe_target() {
   fi
 }
 
-ok=0; weakened=0; unknown=0; skipped=0
+ok=0; weakened=0; unknown=0; skipped=0; exception=0
 : >"$tmp/results"
-while IFS=$'\t' read -r name access status auth alias; do
+while IFS=$'\t' read -r name access status auth alias known_exception; do
   [ -n "$name" ] || continue
   if [ "$access" != ssh ] || [ "$status" != active ]; then
     printf '%s\tskipped\t%s\n' "$name" "access=$access status=$status" >>"$tmp/results"
@@ -167,15 +174,22 @@ while IFS=$'\t' read -r name access status auth alias; do
   verdict=$(probe_target "$name" "$alias" "$auth")
   case $verdict in
     ok:*)        ok=$((ok + 1)) ;;
-    weakened:*)  weakened=$((weakened + 1)) ;;
+    weakened:*)
+      if [ -n "$known_exception" ]; then
+        # 已记录的放开：仍然列出来，但不算失败。
+        exception=$((exception + 1))
+        verdict="exception:$known_exception"
+      else
+        weakened=$((weakened + 1))
+      fi ;;
     *)           unknown=$((unknown + 1)) ;;
   esac
   printf '%s\t%s\t%s\n' "$name" "${verdict%%:*}" "${verdict#*:}" >>"$tmp/results"
 done <"$tmp/plan"
 
 if [ "$MODE" = json ]; then
-  printf '{"checked":%d,"ok":%d,"weakened":%d,"unknown":%d,"skipped":%d,' \
-    "$((ok + weakened + unknown))" "$ok" "$weakened" "$unknown" "$skipped"
+  printf '{"checked":%d,"ok":%d,"weakened":%d,"unknown":%d,"skipped":%d,"exception":%d,' \
+    "$((ok + weakened + unknown + exception))" "$ok" "$weakened" "$unknown" "$skipped" "$exception"
   printf '"hosts":['
   first=1
   while IFS=$'\t' read -r name verdict detail; do
@@ -196,6 +210,10 @@ elif [ "$MODE" = check ]; then
         # 并说明它没有计入通过。
         printf 'WARN sshd password authentication could not be verified on %s (%s)\n' \
           "$name" "$detail" >&2 ;;
+      exception)
+        # 已记录的放开：仍然出声（不能静默），但不是失败。
+        printf 'WARN sshd password authentication is ENABLED on %s, recorded exception: %s\n' \
+          "$name" "$detail" >&2 ;;
     esac
   done <"$tmp/results"
 else
@@ -203,12 +221,15 @@ else
   while IFS=$'\t' read -r name verdict detail; do
     printf '%-10s %-9s %s\n' "$name" "$verdict" "$detail"
   done <"$tmp/results"
-  printf '\nchecked=%d ok=%d weakened=%d unknown=%d skipped=%d\n' \
-    "$((ok + weakened + unknown))" "$ok" "$weakened" "$unknown" "$skipped"
+  printf '\nchecked=%d ok=%d weakened=%d unknown=%d skipped=%d exception=%d\n' \
+    "$((ok + weakened + unknown + exception))" "$ok" "$weakened" "$unknown" "$skipped" "$exception"
   [ "$unknown" -gt 0 ] && \
     printf '注意：%d 台查不到（离线/未声明 auth_type），不计入通过。\n' "$unknown"
 fi
 
-# --check：weakened 是失败；unknown 也让退出码非零，理由与 service-inventory
-# 里"未知不等于安全"一致 —— 但 report 模式会把两者分开写，读者能分辨。
-[ "$weakened" -eq 0 ] && [ "$unknown" -eq 0 ]
+# --check 的退出码只由 weakened 决定：
+# - unknown（离线/解不出）不判红 —— 编队里设备睡眠是常态，离线即判红会让
+#   这条检查在一周内被无视；它仍然逐台打印 WARN，不会被误读成通过。
+# - exception（已记录的放开）不判红，但同样逐台打印 —— 例外要可见。
+# 这与 policy audit 的聚合方式一致：只有在"新出现的放开"时才让整条线变红。
+[ "$weakened" -eq 0 ]

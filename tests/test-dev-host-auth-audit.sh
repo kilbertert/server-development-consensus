@@ -58,6 +58,13 @@ role = "project-production-host"
 owner = "claude"
 access = "rdp"
 
+[hosts.linux-known]
+role = "service-host"
+owner = "claude"
+access = "ssh"
+known_exception = "公司主机,非本账号可改;已报告权属方"
+hostkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
 [hosts.retired-one]
 role = "service-host"
 owner = "claude"
@@ -87,6 +94,8 @@ case "$target" in
       offline)   exit 255 ;;
       garbage)   echo "some other output" ;;
     esac ;;
+  linux-known)
+    echo "passwordauthentication yes" ;;
   linux-open)
     case $mode in
       weakened) echo "passwordauthentication yes" ;;
@@ -120,14 +129,17 @@ check "all-good exit 0" 0 "$RUN_RC"
   printf 'FAIL rdp target not shown as skipped\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
 
 # ---------- 2. 口令被放开 -> 非零 ----------
-FAKE_MODE=weakened run --check
+# 注意：这一组必须排除 linux-known（它带 known_exception，不该判红），
+# 所以显式只查 linux-open。
+FAKE_MODE=weakened run --check linux-open
 [ "$RUN_RC" -ne 0 ] || { printf 'FAIL weakened should exit non-zero\n' >&2; failures=$((failures + 1)); }
 [[ $RUN_OUT == *"FAIL sshd password authentication is ENABLED on linux-open"* ]] || {
   printf 'FAIL weakened not reported\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
 
 # ---------- 3. 连不上 -> unknown，非零，且措辞是 WARN 不是 FAIL ----------
 FAKE_MODE=offline run --check
-[ "$RUN_RC" -ne 0 ] || { printf 'FAIL offline should exit non-zero\n' >&2; failures=$((failures + 1)); }
+# unknown 不判红（离线是常态），但必须出声
+check "offline exit 0" 0 "$RUN_RC"
 [[ $RUN_OUT == *WARN*linux-good* ]] || {
   printf 'FAIL offline not reported as WARN\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
 [[ $RUN_OUT != *"FAIL sshd password authentication is ENABLED"* ]] || {
@@ -135,7 +147,14 @@ FAKE_MODE=offline run --check
 
 # ---------- 4. 输出解不出 -> unknown，不默认成通过 ----------
 FAKE_MODE=garbage run --check
-[ "$RUN_RC" -ne 0 ] || { printf 'FAIL unparsable should exit non-zero\n' >&2; failures=$((failures + 1)); }
+check "unparsable exit 0" 0 "$RUN_RC"
+[[ $RUN_OUT == *WARN* ]] || { printf 'FAIL unparsable must still warn\n' >&2; failures=$((failures + 1)); }
+
+# ---------- 4b. 已记录的放开：不判红，但必须出声 ----------
+run --check linux-known
+[ "$RUN_RC" -eq 0 ] || { printf 'FAIL known exception must not fail the check\n' >&2; failures=$((failures + 1)); }
+[[ $RUN_OUT == *"linux-known"* ]] || { printf 'FAIL known exception must still be reported\n' >&2; failures=$((failures + 1)); }
+[[ $RUN_OUT == *"recorded exception"* ]] || { printf 'FAIL known exception wording missing\n' >&2; failures=$((failures + 1)); }
 
 # ---------- 5. json 形状 ----------
 run --json

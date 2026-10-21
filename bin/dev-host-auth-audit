@@ -143,8 +143,19 @@ probe_target() {
       # Windows 的 OpenSSH 没有 `sshd -T`。这里按 sshd 的规则取**第一处出现**
       # 的 PasswordAuthentication（Windows OpenSSH 与 Linux 一样，先读到的胜出），
       # 找不到就返回空 —— 空 = unknown，不默认成 no。
+      # Windows 的 sshd_config 出厂时全是注释行（`#PasswordAuthentication yes`），
+      # 所以「找不到显式行」不等于「不知道」—— 它意味着走默认值。Windows OpenSSH
+      # 的默认是 yes。这里显式区分三种情形：
+      #   显式 no  -> no
+      #   显式 yes / 无显式行（默认 yes） -> yes
+      #   读取失败 -> 空 -> unknown
+      # PowerShell 命令用 -EncodedCommand 传：经 ssh → 远端 shell 重新解析时，
+      # 引号会被吃掉（实测 "\$m.Trim()" 这类引号在途中消失，命令被拆散）。
+      # base64(UTF-16LE) 不含任何 shell 元字符，是唯一稳的传法。
+      _ps='$f = "C:\ProgramData\ssh\sshd_config"; if (-not (Test-Path $f)) { exit 3 }; $m = Get-Content $f | Where-Object { $_ -match "^\s*PasswordAuthentication\s+" } | Select-Object -First 1; if ($m) { $m.Trim() } else { "PasswordAuthentication yes (default)" }'
+      _enc=$(printf '%s' "$_ps" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)
       out=$("$SSH_TOOL" exec "$alias" --project "$PROJECT_DECL" --timeout "$SSH_TIMEOUT" -- \
-        "powershell -NoProfile -Command \"(Get-Content C:\\ProgramData\\ssh\\sshd_config | Select-String -Pattern '^\\s*PasswordAuthentication\\s+' | Select-Object -First 1).Line\"" </dev/null 2>/dev/null)
+        "powershell -NoProfile -EncodedCommand $_enc" </dev/null 2>/dev/null)
       ;;
     *)
       printf 'unknown:unknown auth_type=%s\n' "$auth"
@@ -154,7 +165,7 @@ probe_target() {
 
   # dev-host 在"连不上"时退出码非零但 stdout 可能为空；这里不依赖其退出码，
   # 只看能不能拿到一个明确的值。
-  if printf '%s' "$out" | grep -qiE '^[[:space:]]*passwordauthentication[[:space:]]+(yes|no)[[:space:]]*$'; then
+  if printf '%s' "$out" | grep -qiE '^[[:space:]]*passwordauthentication[[:space:]]+(yes|no)'; then
     if printf '%s' "$out" | grep -qiE '[[:space:]]no[[:space:]]*$'; then
       printf 'ok:no\n'
     else

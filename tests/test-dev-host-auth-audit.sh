@@ -111,8 +111,9 @@ case "$target" in
   win-box)
     # Windows 分支走 powershell，真实输出是整行配置
     case $mode in
-      offline) exit 255 ;;
-      *)       echo "PasswordAuthentication no" ;;
+      offline)  exit 255 ;;
+      weakened) echo "PasswordAuthentication yes (default)" ;;
+      *)        echo "PasswordAuthentication no" ;;
     esac ;;
   *) exit 255 ;;
 esac
@@ -168,6 +169,13 @@ FAKE_STEAL_STDIN=1 run
 # 假 dev-host 会在每次 exec 时吃掉一行 plan；正常的实现不会。
 [[ $RUN_OUT == *"checked=4"* ]] || {
   printf 'FAIL probe consumed loop stdin (expect checked=4)\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
+
+# ---------- 4d. Windows 的默认值必须读成 yes，不是 unknown ----------
+# Windows OpenSSH 出厂 sshd_config 全是注释行；"没有显式行" = 走默认 = yes。
+# 曾把它读成 unknown，等于把一个真问题静默成了"看不见"。
+FAKE_MODE=weakened run --check win-box
+[[ $RUN_OUT == *"FAIL sshd password authentication is ENABLED on win-box"* ]] || {
+  printf 'FAIL windows default not treated as enabled\n%s\n' "$RUN_OUT" >&2; failures=$((failures + 1)); }
 
 # ---------- 5. json 形状 ----------
 run --json

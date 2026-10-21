@@ -34,7 +34,7 @@ usage() {
         dev-host exec box -- "sh -c 'echo OUT; echo ERR >&2'"
 
 usage:
-  dev-host exec  TARGET [--allow-service-exec] [--timeout SEC] -- CMD [ARG...]
+  dev-host exec  TARGET [--project DECL] [--allow-service-exec] [--timeout SEC] -- CMD [ARG...]
   dev-host read  TARGET PATH
   dev-host write TARGET PATH [--if-sha256 HEX] [--artifact-sha256 HEX]   # 内容取自 stdin
   dev-host ls    TARGET [PATH]
@@ -80,6 +80,11 @@ def load(path):
 
 def project_path():
     p = os.environ.get('DEV_HOST_PROJECT')
+    if p:
+        return p if os.path.exists(p) else None
+    # --project 显式给声明。跨主机批处理（如 dev-host-auth-audit）没有"当前项目"，
+    # 向上查找会找不到任何声明 —— 那种情况下必须能把声明路径明确传进来。
+    p = os.environ.get('DEV_HOST_PROJECT_FILE')
     if p:
         return p if os.path.exists(p) else None
     d = os.getcwd()
@@ -296,6 +301,7 @@ cmd_exec() {
   while [ $# -gt 0 ]; do
     case $1 in
       --allow-service-exec) allow_service=1; shift ;;
+      --project) [ $# -ge 2 ] || usage_err "--project 需要参数"; export DEV_HOST_PROJECT_FILE=$2; shift 2 ;;
       --timeout) [ $# -ge 2 ] || usage_err "--timeout 需要参数"; timeout_sec=$2; shift 2 ;;
       --) shift; break ;;
       *) usage_err "exec 的未知参数:$1" ;;

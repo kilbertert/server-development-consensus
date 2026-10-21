@@ -35,6 +35,7 @@ codex_updater=$policy_home/.local/bin/update-codex-config
 worktree_tool=$policy_home/.local/bin/dev-worktree
 changelog_tool=$policy_home/.local/bin/dev-changelog
 service_inventory_tool=$policy_home/.local/bin/dev-service-inventory
+auth_audit_tool=$policy_home/.local/bin/dev-host-auth-audit
 failures=0
 repaired=0
 stale_branches=0
@@ -726,6 +727,37 @@ if [[ -x $service_inventory_tool ]]; then
 else
   printf 'FAIL service placement cannot be verified: %s is not installed\n' \
     "$service_inventory_tool"
+  failures=$((failures + 1))
+fi
+
+# 服务机上的"口令认证已关"是一个脆弱的组合：hardening drop-in 必须一直压住
+# cloud-init 生成的 50-cloud-init.conf，否则口令登录会静默回来。把它做成每天
+# 都重跑的一条检查，而不是记录里的一句话。工具缺失同样算失败 —— 缺检查本身
+# 就是问题（与上面的 service placement 同一条原则）。
+if [[ -x $auth_audit_tool ]]; then
+  auth_audit_output=$("$auth_audit_tool" --check 2>&1) || true
+  auth_audit_hits=0
+  while IFS= read -r line; do
+    [[ -n $line ]] || continue
+    case $line in
+      FAIL\ sshd\ password\ authentication\ is\ ENABLED*)
+        # 口令登录被放开 —— 这是真问题，计入失败。
+        printf '%s\n' "$line"
+        auth_audit_hits=$((auth_audit_hits + 1)) ;;
+      WARN\ sshd*)
+        # 查不到（离线/未声明 auth_type）。离线设备是常态，不能让它天天把
+        # 整轮审计判红；但也不能静默 —— 打印出来，且措辞是 WARN。
+        printf '%s\n' "$line" ;;
+      *)
+        printf '%s\n' "$line" ;;
+    esac
+  done <<<"$auth_audit_output"
+  if [[ $auth_audit_hits -gt 0 ]]; then
+    failures=$((failures + 1))
+  fi
+else
+  printf 'FAIL sshd password authentication cannot be verified: %s is not installed\n' \
+    "$auth_audit_tool"
   failures=$((failures + 1))
 fi
 

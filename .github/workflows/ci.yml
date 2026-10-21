@@ -56,6 +56,9 @@ jobs:
       - name: Server development service inventory tests
         shell: bash
         run: bash tests/test-dev-service-inventory.sh
+      - name: Server development dev-host-auth-audit tests
+        shell: bash
+        run: bash tests/test-dev-host-auth-audit.sh
       - name: Server development changelog tests
         shell: sh
         run: sh tests/test-dev-changelog.sh

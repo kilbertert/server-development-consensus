@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+# dev-host-auth-audit — 检查已登记主机上的 SSH 口令认证是否仍然关闭。
+#
+# 为什么需要它：svc-gz-117 上「口令认证已关」靠的是一个脆弱的组合 ——
+# /etc/ssh/sshd_config.d/10-hardening.conf 先于 cloud-init 生成的
+# 50-cloud-init.conf（PasswordAuthentication yes）被读到。cloud-init 重跑
+# 会重写后者，那时口令登录会**静默回来**：没有任何报错，只有一次
+# sshd 重载，而记录里仍然写着"已关闭"。这条检查把"记录说的"和
+# "机器现在的"对齐成一条每次都能重跑的命令。
+#
+# 判据只有一条：`sshd -T` 的有效值必须为 passwordauthentication no。
+# 读生效值而非配置文件 —— 配置文件可能有多份、顺序会变、include 会生效，
+# 只有 sshd 自己算出来的值才是真的。
+#
+# ★ 两种结果必须分开：**weakened（放开了）** 与 **unknown（查不到）**。
+#   把"查不到"报成"通过"是本仓库明令禁止的假绿（见 FLEET.md §7.13）；
+#   把"查不到"报成"失败"则会让离线设备天天误报，最终没人再看这份报告。
+#
+# 用法：
+#   dev-host-auth-audit              人类可读报告（默认）
+#   dev-host-auth-audit --check      任一主机 weakened/unknown 即非零退出
+#   dev-host-auth-audit --json       机器可读
+#   dev-host-auth-audit TARGET...    只查指定主机（逻辑名）
+#
+# 覆盖范围：registry 里 access=ssh 且 status=active 的主机，分两种类型：
+#   linux-sshd    -> `sshd -T` 取生效值
+#   windows-sshd  -> 解析 C:\ProgramData\ssh\sshd_config 的有效指令
+#                    （Windows OpenSSH 没有 `sshd -T`；见下面 windows 分支里的说明）
+# 其余角色（如非 ssh 访问）不参与，也不被当成通过 —— 它们被列在 skipped 里。
+
+set -u
+
+PROG=${0##*/}
+REGISTRY=${DEV_HOST_REGISTRY:-${XDG_CONFIG_HOME:-$HOME/.config}/dev-host/hosts.toml}
+SSH_TOOL=${DEV_HOST_AUTH_SSH_TOOL:-$(command -v dev-host || true)}
+MODE=report
+TARGETS=()
+EXPLICIT_TARGETS=0
+SSH_TIMEOUT=${DEV_HOST_AUTH_SSH_TIMEOUT:-25}
+
+usage_err() {
+  printf '%s: %s\n' "$PROG" "$1" >&2
+  printf 'usage: %s [--check|--json] [TARGET...]\n' "$PROG" >&2
+  exit 64
+}
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --check) MODE=check; shift ;;
+    --json) MODE=json; shift ;;
+    -h|--help)
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    -*) usage_err "未知参数:$1" ;;
+    *) TARGETS+=("$1"); EXPLICIT_TARGETS=1; shift ;;
+  esac
+done
+
+[ -r "$REGISTRY" ] || {
+  printf 'FAIL sshd auth cannot be verified: registry unreadable: %s\n' "$REGISTRY" >&2
+  exit 65
+}
+[ -n "$SSH_TOOL" ] && [ -x "$SSH_TOOL" ] || {
+  printf 'FAIL sshd auth cannot be verified: dev-host is not installed\n' >&2
+  exit 65
+}
+
+# 主机侧清单决定"查谁、按什么类型查"。主机名与 auth_type 都从库外清单读，
+# 本工具的默认值不假设任何一台具体机器。
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+python3 - "$REGISTRY" "${TARGETS[@]+"${TARGETS[@]}"}" >"$tmp/plan" <<'PY'
+import os, sys, tomllib
+
+reg_path, wanted = sys.argv[1], sys.argv[2:]
+try:
+    with open(reg_path, 'rb') as f:
+        hosts = (tomllib.load(f).get('hosts') or {})
+except Exception as exc:                       # noqa: BLE001 - 任何解析失败都是声明问题
+    sys.stderr.write('registry parse failed: %s\n' % exc)
+    raise SystemExit(65)
+
+wanted = set(wanted)
+rows = []
+for name, h in sorted(hosts.items()):
+    h = h or {}
+    if wanted and name not in wanted:
+        continue
+    access = h.get('access') or 'ssh'
+    status = h.get('status') or 'active'
+    owner = h.get('owner') or ''
+    # 只查编队内（owner=claude）的主机。公司环境（owner=qushiyun 等）
+    # 不是本账号可改的对象：在别人的机器上发现口令登录开着，我们能做的是
+    # 报告给权属方，而不是把它变成我们这条审计线上的红。用 owner 过滤
+    # 而不是主机名白名单 —— 白名单会漂移，owner 是登记时就有的字段。
+    if owner != 'claude' and not os.environ.get('DEV_HOST_AUTH_ALL_OWNERS'):
+        continue
+    # auth_type 是可选字段：没有声明时按 linux-sshd 处理，因为编队里的
+    # service host 全是 Linux；Windows 主机必须显式声明，否则会被用错的
+    # 命令去查，然后以"查不到"告终——那是噪音，不是覆盖。
+    auth = h.get('auth_type') or 'linux-sshd'
+    rows.append('%s\t%s\t%s\t%s\t%s' % (
+        name, access, status, auth, h.get('ssh_alias') or name))
+
+for r in rows:
+    print(r)
+PY
+plan_rc=$?
+[ $plan_rc -eq 0 ] || exit $plan_rc
+
+if [ "$EXPLICIT_TARGETS" -eq 1 ] && [ ! -s "$tmp/plan" ]; then
+  printf 'FAIL none of the requested targets is registered: %s\n' "${TARGETS[*]}" >&2
+  exit 65
+fi
+
+# dev-host 要求"从当前目录向上找 .dev-host.toml"，即它原本是按项目作用域调用
+# 的。本工具跨主机运行、没有"当前项目"，所以显式给一份项目声明：只含逻辑名，
+# 不含地址/指纹/凭据，可以进版本库（与各项目自己的 .dev-host.toml 同形）。
+PROJECT_DECL=${DEV_HOST_AUTH_PROJECT_DECL:-$HOME/.config/dev-host/auth-audit-targets.toml}
+
+# 在目标上取"生效值"。输出必须是一行 `passwordauthentication yes|no`；
+# 别的形态一律视为 unknown，不猜。
+probe_target() {
+  local name=$1 alias=$2 auth=$3 out
+  case $auth in
+    linux-sshd)
+      out=$("$SSH_TOOL" exec "$alias" --project "$PROJECT_DECL" --allow-service-exec \
+        --timeout "$SSH_TIMEOUT" \
+        -- "sshd -T 2>/dev/null | grep -i '^passwordauthentication '" 2>/dev/null)
+      ;;
+    windows-sshd)
+      # Windows 的 OpenSSH 没有 `sshd -T`。这里按 sshd 的规则取**第一处出现**
+      # 的 PasswordAuthentication（Windows OpenSSH 与 Linux 一样，先读到的胜出），
+      # 找不到就返回空 —— 空 = unknown，不默认成 no。
+      out=$("$SSH_TOOL" exec "$alias" --project "$PROJECT_DECL" --timeout "$SSH_TIMEOUT" -- \
+        "powershell -NoProfile -Command \"(Get-Content C:\\ProgramData\\ssh\\sshd_config | Select-String -Pattern '^\\s*PasswordAuthentication\\s+' | Select-Object -First 1).Line\"" 2>/dev/null)
+      ;;
+    *)
+      printf 'unknown:unknown auth_type=%s\n' "$auth"
+      return 0
+      ;;
+  esac
+
+  # dev-host 在"连不上"时退出码非零但 stdout 可能为空；这里不依赖其退出码，
+  # 只看能不能拿到一个明确的值。
+  if printf '%s' "$out" | grep -qiE '^[[:space:]]*passwordauthentication[[:space:]]+(yes|no)[[:space:]]*$'; then
+    if printf '%s' "$out" | grep -qiE '[[:space:]]no[[:space:]]*$'; then
+      printf 'ok:no\n'
+    else
+      printf 'weakened:yes\n'
+    fi
+  else
+    printf 'unknown:unreachable-or-unparsable\n'
+  fi
+}
+
+ok=0; weakened=0; unknown=0; skipped=0
+: >"$tmp/results"
+while IFS=$'\t' read -r name access status auth alias; do
+  [ -n "$name" ] || continue
+  if [ "$access" != ssh ] || [ "$status" != active ]; then
+    printf '%s\tskipped\t%s\n' "$name" "access=$access status=$status" >>"$tmp/results"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  verdict=$(probe_target "$name" "$alias" "$auth")
+  case $verdict in
+    ok:*)        ok=$((ok + 1)) ;;
+    weakened:*)  weakened=$((weakened + 1)) ;;
+    *)           unknown=$((unknown + 1)) ;;
+  esac
+  printf '%s\t%s\t%s\n' "$name" "${verdict%%:*}" "${verdict#*:}" >>"$tmp/results"
+done <"$tmp/plan"
+
+if [ "$MODE" = json ]; then
+  printf '{"checked":%d,"ok":%d,"weakened":%d,"unknown":%d,"skipped":%d,' \
+    "$((ok + weakened + unknown))" "$ok" "$weakened" "$unknown" "$skipped"
+  printf '"hosts":['
+  first=1
+  while IFS=$'\t' read -r name verdict detail; do
+    [ $first -eq 1 ] || printf ','
+    first=0
+    printf '{"host":"%s","verdict":"%s","detail":"%s"}' "$name" "$verdict" "$detail"
+  done <"$tmp/results"
+  printf ']}\n'
+elif [ "$MODE" = check ]; then
+  # --check 供定时审计调用：只在有问题时出声。
+  while IFS=$'\t' read -r name verdict detail; do
+    case $verdict in
+      weakened)
+        printf 'FAIL sshd password authentication is ENABLED on %s — 口令登录被放开\n' \
+          "$name" >&2 ;;
+      unknown)
+        # 查不到不等于安全，也不等于故障；用 WARN 明确区分，
+        # 并说明它没有计入通过。
+        printf 'WARN sshd password authentication could not be verified on %s (%s)\n' \
+          "$name" "$detail" >&2 ;;
+    esac
+  done <"$tmp/results"
+else
+  printf '%-10s %-9s %s\n' HOST VERDICT DETAIL
+  while IFS=$'\t' read -r name verdict detail; do
+    printf '%-10s %-9s %s\n' "$name" "$verdict" "$detail"
+  done <"$tmp/results"
+  printf '\nchecked=%d ok=%d weakened=%d unknown=%d skipped=%d\n' \
+    "$((ok + weakened + unknown))" "$ok" "$weakened" "$unknown" "$skipped"
+  [ "$unknown" -gt 0 ] && \
+    printf '注意：%d 台查不到（离线/未声明 auth_type），不计入通过。\n' "$unknown"
+fi
+
+# --check：weakened 是失败；unknown 也让退出码非零，理由与 service-inventory
+# 里"未知不等于安全"一致 —— 但 report 模式会把两者分开写，读者能分辨。
+[ "$weakened" -eq 0 ] && [ "$unknown" -eq 0 ]

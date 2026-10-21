@@ -28,6 +28,17 @@ cp "$base_dir/bin/update-codex-config" "$HOME/.local/bin/update-codex-config"
 chmod +x "$HOME/.local/bin/update-codex-config"
 cp "$base_dir/bin/dev-service-inventory" "$HOME/.local/bin/dev-service-inventory"
 chmod +x "$HOME/.local/bin/dev-service-inventory"
+# 口令认证检查同理：测试环境必须能注入"全绿"的替身，否则这条检查会
+# 去连真实主机（慢且结果依赖谁在线），测试就不再是确定性的。
+cp "$base_dir/bin/dev-host-auth-audit" "$HOME/.local/bin/dev-host-auth-audit"
+chmod +x "$HOME/.local/bin/dev-host-auth-audit"
+export DEV_HOST_REGISTRY="$tmp/auth-audit-registry.toml"
+export DEV_HOST_AUTH_PROJECT_DECL="$tmp/auth-audit-project.toml"
+export DEV_HOST_AUTH_SSH_TOOL="$tmp/auth-audit-fake-dev-host"
+: >"$DEV_HOST_REGISTRY"
+: >"$DEV_HOST_AUTH_PROJECT_DECL"
+printf '#!/bin/sh\nexit 255\n' >"$DEV_HOST_AUTH_SSH_TOOL"
+chmod +x "$DEV_HOST_AUTH_SSH_TOOL"
 
 # 服务落点检查读真实 socket；测试里注入空夹具，让结果与宿主机状态无关。
 : >"$tmp/empty-listen"

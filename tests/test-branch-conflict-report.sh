@@ -94,6 +94,21 @@ git update-ref refs/remotes/origin/feat/d "$(git rev-parse feat/d)"
 out=$("$tool" report-branch-conflicts --tip feat/d --default origin/main 2>&1) && status=0 || status=$?
 [ "$status" -eq 0 ] || fail "a branch was compared against branch tips instead of its own change (status=$status): $out"
 
+# 推送的是哪个分支必须由调用方给，不能猜。
+#
+# `for-each-ref --points-at <sha>` 会列出指向该对象的所有 ref——两个本地分支共用一个
+# tip 时就有多个，取第一个是任意选择，随后的同名排除会压掉**另一个**分支的真实冲突。
+# 评审用「在 feat/a 的 tip 上加一个 feat/0，再让 origin/feat/0 指向冲突的 feat/b」
+# 复现了它：报表漏掉 feat/0，同时仍把 feat/a 报成与自己冲突。
+git branch feat/0 feat/a
+git update-ref refs/remotes/origin/feat/0 "$(git rev-parse feat/b)"
+
+sha=$(git rev-parse feat/a)
+out=$("$tool" report-branch-conflicts --tip "$sha" --branch feat/a --default origin/main 2>&1) && status=0 || status=$?
+printf '%s\n' "$out" | grep -q 'other=feat/a' && fail "reported a conflict against the pushed branch itself"
+printf '%s\n' "$out" | grep -q 'other=feat/0 path=shared.txt' ||
+  fail "the other branch sharing the same tip was suppressed: $out"
+
 printf 'branch conflict report passed\n'
 
 # 已知盲区（如实记录，不假装覆盖）：把 `ref_base`（对方 fork 点）换成

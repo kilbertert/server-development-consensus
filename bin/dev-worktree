@@ -472,11 +472,13 @@ report_branch_conflicts() {
   local tip=''
   local default_ref=''
   local current=''
+  local branch_name=''
   while [[ $# -gt 0 ]]; do
     case $1 in
       --tip) [[ $# -ge 2 ]] || usage; tip=$2; shift 2 ;;
       --default) [[ $# -ge 2 ]] || usage; default_ref=$2; shift 2 ;;
       --current) [[ $# -ge 2 ]] || usage; current=$2; shift 2 ;;
+      --branch) [[ $# -ge 2 ]] || usage; branch_name=$2; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -484,8 +486,20 @@ report_branch_conflicts() {
   require_repository
   git cat-file -e "$tip^{commit}" 2>/dev/null || die "tip is not a commit: $tip"
 
-  local tip_branch base
-  tip_branch=$(git rev-parse --abbrev-ref "$tip" 2>/dev/null || true)
+  # Which branch is being pushed comes from the CALLER, never from guessing.
+  #
+  # `rev-parse --abbrev-ref <sha>` answers "HEAD" for a SHA; `for-each-ref
+  # --points-at <sha>` lists every ref at that object, which is several when two
+  # local branches share a tip. Picking the first (`head -1`) is an arbitrary
+  # choice, and the self-exclusion below then suppresses some *other* branch's
+  # real conflict. Review reproduced exactly that on 2026-10-23 by adding a local
+  # `feat/0` at `feat/a`'s tip: the report omitted `feat/0` and still reported
+  # `feat/a` against itself.
+  local tip_branch=$branch_name base
+  if [[ -z $tip_branch ]]; then
+    tip_branch=$(git rev-parse --abbrev-ref "$tip" 2>/dev/null || true)
+    [[ $tip_branch != HEAD ]] || tip_branch=''
+  fi
   base=$(git merge-base "$tip" "$default_ref" 2>/dev/null || true)
   [[ -n $base ]] || { printf 'no merge base for %s\n' "$tip" >&2; return 2; }
 

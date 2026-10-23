@@ -145,6 +145,7 @@ set +e
 conflict_report=$(
   "$worktree_tool" report-branch-conflicts \
     --tip "$(git rev-parse HEAD)" \
+    --branch "$(git rev-parse --abbrev-ref HEAD)" \
     --default "$default_ref" 2>&1
 )
 conflict_status=$?

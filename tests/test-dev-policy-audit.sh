@@ -524,6 +524,19 @@ if grep -q 'publishesVersions but has no CHANGELOG.md' "$tmp/changelog-false.out
   printf '%s\n' 'FAIL an undeclared/false publishing flag produced a changelog finding' >&2
   exit 1
 fi
+# A repository may generate its changelog at release time instead of committing
+# it. The declaration is explicit because "absent" and "forgotten" are the same
+# bytes on disk — a default would make every forgotten changelog look deliberate.
+git -C "$publishing_repo" config serverPolicy.publishesVersions true
+git -C "$publishing_repo" config serverPolicy.changelogAtRelease true
+"$audit" "$projects" >"$tmp/changelog-at-release.out" 2>&1 || true
+if grep -q 'publishesVersions but has no CHANGELOG.md' "$tmp/changelog-at-release.out"; then
+  cat "$tmp/changelog-at-release.out" >&2
+  printf '%s\n' 'FAIL a release-time changelog was reported as missing' >&2
+  exit 1
+fi
+git -C "$publishing_repo" config --unset serverPolicy.changelogAtRelease
+
 # An invalid value is a finding, never an implicit exemption.
 git -C "$publishing_repo" config serverPolicy.publishesVersions yes
 if "$audit" "$projects" >"$tmp/changelog-invalid.out" 2>&1; then

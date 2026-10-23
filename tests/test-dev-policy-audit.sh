@@ -148,8 +148,11 @@ if HOME=$tmp/other-home "$audit" "$projects" >/dev/null 2>&1; then
   exit 1
 fi
 printf '%s\n' "$repair_output" | grep -q 'failures=0'
-git -C "$projects/repo" switch -c feat/audit >/dev/null
-git -C "$projects/repo" commit --allow-empty -m 'chore: test chained hook' >/dev/null
+# Commit from a linked worktree: the pre-commit guard refuses commits in the
+# canonical checkout (2026-10-23), and this case is about the chained hook.
+git -C "$projects/repo" worktree add -q "$tmp/audit-wt" -b feat/audit >/dev/null
+git -C "$tmp/audit-wt" commit --allow-empty -m 'chore: test chained hook' >/dev/null
+git -C "$projects/repo" worktree remove --force "$tmp/audit-wt" >/dev/null
 [ "$(cat "$tmp/commit-msg-ran")" = executed ]
 
 second_repair_output=$("$audit" --repair "$projects")
@@ -185,6 +188,10 @@ audit_output=$("$audit" "$projects")
 printf '%s\n' "$audit_output" | grep -q "repo $projects/repo "
 printf '%s\n' "$audit_output" | grep -q "repo $projects/linked "
 printf '%s\n' pending >"$projects/linked/pending.txt"
+# The canonical checkout holds `main`, and git allows a branch in one worktree
+# only. This case needs a second worktree on `main`, so the canonical one steps
+# off it for the duration.
+git -C "$projects/repo" -c core.hooksPath=/dev/null switch --detach >/dev/null
 git -C "$projects/repo" -c core.hooksPath=/dev/null \
   worktree add "$projects/default-main" main >/dev/null
 printf '%s\n' advanced >"$projects/default-main/main-advance.txt"
@@ -192,6 +199,7 @@ git -C "$projects/default-main" add main-advance.txt
 git -C "$projects/default-main" -c core.hooksPath=/dev/null commit -m advance-main >/dev/null
 git -C "$projects/repo" -c core.hooksPath=/dev/null \
   worktree remove "$projects/default-main"
+git -C "$projects/repo" -c core.hooksPath=/dev/null switch main >/dev/null
 if "$audit" "$projects" >"$tmp/worktree-lifecycle.out" 2>&1; then
   printf '%s\n' 'FAIL uncommitted-only-behind worktree passed policy audit' >&2
   exit 1

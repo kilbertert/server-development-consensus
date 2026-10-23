@@ -170,8 +170,10 @@ cmp "$HOME/custom-hooks/commit-msg" "$combined_chain/commit-msg"
 custom_chain=$combined_chain
 cmp "$base_dir/git-hooks/pre-commit" "$HOME/.config/git/hooks/pre-commit"
 cmp "$base_dir/git-hooks/pre-push" "$HOME/.config/git/hooks/pre-push"
-git -C "$HOME/Projects/repo" switch -c feat/custom-hook-migration >/dev/null
-(cd "$HOME/Projects/repo" && "$HOME/.config/git/hooks/pre-commit")
+# The guard refuses commits in the canonical checkout, so the chain is
+# exercised from a linked worktree — the place a commit is allowed (2026-10-23).
+git -C "$HOME/Projects/repo" worktree add -q "$HOME/Projects/repo-wt" -b feat/custom-hook-migration >/dev/null
+(cd "$HOME/Projects/repo-wt" && "$HOME/.config/git/hooks/pre-commit")
 [ "$(cat "$CUSTOM_HOOK_MARKER")" = pre-commit ]
 "$installer" >/dev/null
 [ "$(git config --global --path --get serverPolicy.globalChainedHooksPath)" = "$custom_chain" ]

@@ -130,6 +130,38 @@ while [ "$bootstrap" -eq 0 ] && read -r local_ref local_oid remote_ref remote_oi
   esac
 done <"$input_file"
 
+# Report (never block) which other pushed branches change the same files.
+#
+# This is a different question from the overlap guard above: that one looks at
+# *uncommitted* edits in sibling worktrees, this one at branches someone has
+# already pushed. Measured 2026-10-23 on this host: 10 live branches, 5 pairs
+# sharing files once frozen/generated paths are excluded, and one pair
+# (`inside-token-finding` × `m3-delivery-app`) conflicting for real.
+#
+# It does not block because blocking needs an ordering the operator has not
+# given us. A push that stops here cannot be resolved by the person pushing it;
+# a push that says "you will conflict with feat/x on docs/y.md" can.
+set +e
+conflict_report=$(
+  "$worktree_tool" report-branch-conflicts \
+    --tip "$(git rev-parse HEAD)" \
+    --default "$default_ref" 2>&1
+)
+conflict_status=$?
+set -e
+case $conflict_status in
+  0) ;;
+  4)
+    printf '%s\n' "$conflict_report" >&2
+    ;;
+  *)
+    # A report that cannot run is not a reason to refuse a push: the guard above
+    # already covers the case where a push would actually lose work.
+    printf '%s\n' 'SERVER POLICY: branch conflict report could not complete (push continues).' >&2
+    printf '%s\n' "$conflict_report" >&2
+    ;;
+esac
+
 if chained_hook=$(chained_hook_for pre-push); then
   if paths_identify_same_file "$0" "$chained_hook"; then
     printf '%s\n' 'SERVER POLICY: chained pre-push hook resolves to the managed hook; push stopped safely.' >&2

@@ -79,7 +79,7 @@ if [ "$blocked" -eq 1 ]; then
   printf '\n%s\n' 'SERVER POLICY: direct pushes to the default branch are prohibited.' >&2
   printf 'Remote: %s  Default branch: %s\n' "$remote" "$default_branch" >&2
   printf '%s\n' 'Create a task branch, push it, and merge through a PR after required CI and human review pass.' >&2
-  printf '%s\n' 'Use: dev-start TYPE DESCRIPTION' >&2
+  printf '%s\n' 'Use: dev-worktree start TYPE DESCRIPTION (in an isolated worktree)' >&2
   exit 1
 fi
 

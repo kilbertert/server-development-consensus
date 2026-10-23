@@ -17,6 +17,9 @@ repository_class_value=$(repository_class) || {
 }
 if [ "$repository_class_value" = managed ]; then
   enforce_default_branch_commit_policy || exit 1
+  # Checked after the default-branch rule, so a commit on `main` keeps the
+  # message that names the more specific mistake.
+  enforce_canonical_worktree_policy || exit 1
 fi
 
 if chained_hook=$(chained_hook_for pre-commit); then

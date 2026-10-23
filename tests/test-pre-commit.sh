@@ -48,17 +48,22 @@ if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
 fi
 git -C "$tmp/work" config serverPolicy.defaultBranch main
 
-git -C "$tmp/work" switch -c feat/test >/dev/null
+# Task work happens in a linked worktree, never in the canonical checkout:
+# the pre-commit guard refuses commits made in the shared one (2026-10-23).
+git -C "$tmp/work" worktree add -q "$tmp/wt" -b feat/test >/dev/null
+mkdir -p "$tmp/wt/.project-hooks"
+printf '#!/bin/sh\nprintf chained >"%s"\n' "$tmp/chained-marker" >"$tmp/wt/.project-hooks/pre-commit"
+chmod +x "$tmp/wt/.project-hooks/pre-commit"
 rm -f "$tmp/chained-marker"
-(cd "$tmp/work" && "$hook")
+(cd "$tmp/wt" && "$hook")
 [ "$(cat "$tmp/chained-marker")" = chained ] || {
   printf '%s\n' 'FAIL project pre-commit hook was not chained' >&2
   exit 1
 }
 
-printf '#!/bin/sh\nexit 42\n' >"$tmp/work/.project-hooks/pre-commit"
+printf '#!/bin/sh\nexit 42\n' >"$tmp/wt/.project-hooks/pre-commit"
 set +e
-(cd "$tmp/work" && "$hook") >/dev/null 2>&1
+(cd "$tmp/wt" && "$hook") >/dev/null 2>&1
 hook_status=$?
 set -e
 [ "$hook_status" -eq 42 ] || {
@@ -67,22 +72,22 @@ set -e
 }
 
 git -C "$tmp/work" config serverPolicy.defaultBranch '@{-1}'
-if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+if (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
   printf '%s\n' 'FAIL non-canonical default-branch metadata was accepted' >&2
   exit 1
 fi
 git -C "$tmp/work" config serverPolicy.defaultBranch main
 
-mkdir -p "$tmp/work/.hardlink-hooks"
-ln "$hook" "$tmp/work/.hardlink-hooks/pre-commit"
+mkdir -p "$tmp/wt/.hardlink-hooks"
+ln "$hook" "$tmp/wt/.hardlink-hooks/pre-commit"
 git -C "$tmp/work" config serverPolicy.chainedHooksPath .hardlink-hooks
-if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+if (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
   printf '%s\n' 'FAIL hard-linked managed pre-commit hook was accepted as a chain' >&2
   exit 1
 fi
 
 git -C "$tmp/work" config serverPolicy.chainedHooksPath "$base_dir/git-hooks"
-if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+if (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
   printf '%s\n' 'FAIL self-referential pre-commit chain was accepted' >&2
   exit 1
 fi
@@ -93,11 +98,11 @@ fi
 git -C "$tmp/work" switch main >/dev/null
 git -C "$tmp/work" config serverPolicy.chainedHooksPath .project-hooks
 printf '#!/bin/sh\nprintf chained >"%s"\n' "$tmp/chained-marker" \
-  >"$tmp/work/.project-hooks/pre-commit"
-chmod +x "$tmp/work/.project-hooks/pre-commit"
+  >"$tmp/wt/.project-hooks/pre-commit"
+chmod +x "$tmp/wt/.project-hooks/pre-commit"
 git -C "$tmp/work" config serverPolicy.repositoryClass external
 rm -f "$tmp/chained-marker"
-if ! (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+if ! (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
   printf '%s\n' 'FAIL default-branch commit was blocked in an externally governed repository' >&2
   exit 1
 fi
@@ -106,7 +111,7 @@ fi
   exit 1
 }
 git -C "$tmp/work" config serverPolicy.repositoryClass project
-if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+if (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
   printf '%s\n' 'FAIL invalid repository class was silently exempted' >&2
   exit 1
 fi

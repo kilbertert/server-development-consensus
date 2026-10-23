@@ -216,6 +216,45 @@ default_branch_for_url() (
   printf '%s\n' "$remote_default"
 )
 
+# Whether this checkout is the repository's canonical one, as opposed to a
+# linked worktree. `git rev-parse --git-dir` resolves to the shared `.git`
+# for the canonical checkout and to `.git/worktrees/<name>` for a linked one,
+# so comparing it with `--git-common-dir` is exact and needs no path list.
+is_canonical_checkout() (
+  git_dir=$(git rev-parse --git-dir 2>/dev/null) || return 2
+  common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 2
+  [ "$git_dir" = "$common_dir" ]
+)
+
+# Commits made in the canonical checkout are the failure this guard exists for.
+# Several agent sessions share one canonical checkout; when two of them switch
+# branches there, each one's `git status` changes under the other, and the only
+# reliable outcome is that somebody's work gets moved or lost. A linked worktree
+# gives each session its own HEAD, so the task branch belongs there.
+#
+# This deliberately does not try to stop `git switch -b` itself. Measured
+# 2026-10-23: `reference-transaction` sees `git worktree add -b` and an
+# in-canonical `switch -b` as the same event (both create `refs/heads/<name>`
+# with the canonical git dir), so a hook there would either miss the real case
+# or block `dev-worktree start` along with it. The commit is the act that
+# actually disturbs the other sessions, and it is the one that can be told apart
+# exactly.
+enforce_canonical_worktree_policy() {
+  is_canonical_checkout
+  case $? in
+    0) ;;
+    1) return 0 ;;  # linked worktree: the intended place to commit
+    *) printf '%s\n' 'SERVER POLICY: cannot determine whether this is the canonical checkout; commit stopped safely.' >&2
+       return 1 ;;
+  esac
+  printf '\n%s\n' 'SERVER POLICY: the canonical checkout is for reading and syncing, not for task work.' >&2
+  printf '%s\n' 'Several sessions share it; a branch switched here moves under all of them.' >&2
+  printf '%s\n' 'Create an isolated worktree instead:' >&2
+  printf '  dev-worktree start TYPE DESCRIPTION\n' >&2
+  printf '%s\n' 'then commit there. Read-only work in this checkout needs no branch.' >&2
+  return 1
+}
+
 enforce_default_branch_commit_policy() {
   current_branch=$(git branch --show-current) || {
     printf '%s\n' 'SERVER POLICY: cannot determine the current branch; commit stopped safely.' >&2
@@ -235,8 +274,9 @@ enforce_default_branch_commit_policy() {
   if [ "$current_branch" = "$default_branch" ]; then
     printf '\n%s\n' 'SERVER POLICY: commits on the default branch are prohibited.' >&2
     printf 'Current branch: %s\n' "$current_branch" >&2
-    printf '%s\n' 'Preserve the work on a task branch before committing.' >&2
-    printf '%s\n' 'Use: dev-start TYPE DESCRIPTION' >&2
+    printf '%s\n' 'Task work belongs in an isolated worktree, not in this checkout.' >&2
+    printf '  dev-worktree start TYPE DESCRIPTION\n' >&2
+    printf '%s\n' '(dev-start switches branches in place, which the next session then finds moved.)' >&2
     return 1
   fi
 }

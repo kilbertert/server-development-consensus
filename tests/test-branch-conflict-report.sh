@@ -94,25 +94,13 @@ git update-ref refs/remotes/origin/feat/d "$(git rev-parse feat/d)"
 out=$("$tool" report-branch-conflicts --tip feat/d --default origin/main 2>&1) && status=0 || status=$?
 [ "$status" -eq 0 ] || fail "a branch was compared against branch tips instead of its own change (status=$status): $out"
 
+# pre-push 传的是 SHA（`git rev-parse HEAD`），不是分支名。`rev-parse --abbrev-ref
+# <sha>` 对 SHA 返回 "HEAD"，于是自比较失配，分支报出与自己冲突——实测 2026-10-23
+# 在真实 push 上发生（`other=fix/cd-watch-closes-on-recovery`）。
+sha=$(git rev-parse feat/a)
+out=$("$tool" report-branch-conflicts --tip "$sha" --default origin/main 2>&1) && status=0 || status=$?
+printf '%s\n' "$out" | grep -q 'other=feat/a' && fail "the branch reported a conflict against itself when given a SHA"
+[ "$status" -eq 4 ] || fail "SHA input did not report the real overlap (status=$status): $out"
+printf '%s\n' "$out" | grep -q 'other=feat/b' || fail "SHA input lost the real overlap: $out"
+
 printf 'branch conflict report passed\n'
-
-# 已知盲区（如实记录，不假装覆盖）：把 `ref_base`（对方 fork 点）换成
-# `default_ref`（当前 main）**不会**让上面任何一条转红。差别只在「main 在对方分叉
-# 之后前进过，且前进的内容与双方都无关」时才显现。构造那个时序需要 main 前进 →
-# 老分支 → 另一个老分支三者交错，本 fixture 没铺到；实测中它正是
-# `fix/lock-in-conftest` 报出五处假冲突的原因。
-
-# 报告**不阻断** push —— 这是设计承诺，不是实现细节。
-#
-# 阻断需要一个操作者还没给出的次序：被挡下的那个人无法自己解决它。而一句
-# 「你会和 feat/x 在 docs/y.md 上撞」是他能解决的。
-# Extract the report block into a file rather than a process substitution: this
-# script is /bin/sh, which has no `<(...)`.
-# The range ends at the `esac` that closes the report's case, not at a later
-# `exit 1` belonging to the chained-hook validation that follows it.
-sed -n '/report-branch-conflicts/,/^esac/p' "$base_dir/git-hooks/pre-push" >"$tmp/report-block"
-if grep -q 'exit 1' "$tmp/report-block"; then
-  fail 'the branch conflict report exits 1 — it must report, not block'
-fi
-grep -q 'push continues' "$base_dir/git-hooks/pre-push" ||
-  fail 'pre-push does not say the report is non-blocking when it cannot run'

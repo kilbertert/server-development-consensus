@@ -485,7 +485,16 @@ report_branch_conflicts() {
   git cat-file -e "$tip^{commit}" 2>/dev/null || die "tip is not a commit: $tip"
 
   local tip_branch base
+  # Which branch is being pushed. The hook passes a SHA (`git rev-parse HEAD`), and
+  # `rev-parse --abbrev-ref <sha>` answers "HEAD" for a SHA — not the branch name —
+  # so the self-comparison below would not match and a branch would report a
+  # conflict against itself. Measured 2026-10-23 on a real push. Resolve the SHA
+  # to the branch that points at it, falling back to the abbreviated name for a
+  # ref input.
   tip_branch=$(git rev-parse --abbrev-ref "$tip" 2>/dev/null || true)
+  if [[ -z $tip_branch || $tip_branch == HEAD ]]; then
+    tip_branch=$(git for-each-ref --points-at "$tip" --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null | head -1)
+  fi
   base=$(git merge-base "$tip" "$default_ref" 2>/dev/null || true)
   [[ -n $base ]] || { printf 'no merge base for %s\n' "$tip" >&2; return 2; }
 

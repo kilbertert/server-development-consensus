@@ -29,6 +29,7 @@ Add one row in ascending port order before starting a new fixed service.
 | 12107 | TCP | 127.0.0.1 | healthcare verification instance / cache | claude | Cache for the healthcare verification instance | active |
 | 12108 | TCP | 127.0.0.1 | healthcare verification instance / configuration service | claude | Configuration service for the healthcare verification instance | active |
 | 12110 | TCP | 127.0.0.1 | x-following-gallery / OAuth2 callback receiver | claude | Fixed endpoint, started on demand: `ops/wire-tunnel.sh` brings the `xauth.ranlei.work` receiver up for an X OAuth2 `authorization_code` exchange and stops it afterwards; nothing listens at rest | active |
+| 12111 | TCP | 127.0.0.1 | devin-2api / model proxy | claude | Local OpenAI- and Anthropic-compatible proxy in front of a personal Devin subscription; `systemctl --user devin-2api.service`, downstream `/v1` tokens gated by the panel token store | active |
 
 ## Existing Exceptions
 

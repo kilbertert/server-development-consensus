@@ -186,6 +186,49 @@ restore_file_conditionally() {
   fi
 }
 
+# Rollback is a claim about the host, not a best effort: after it runs, every
+# path the installer manages is back in the state it had before the run.
+#
+# The per-file restore cannot guarantee that on its own, and the gap was live.
+# `restore_file_conditionally` treats a missing ".installed.present" marker as
+# "nothing to undo" and returns silently, so a snapshot name that was never
+# written is indistinguishable from "this file was never ours" - the install
+# then removes a managed tool and reports a clean rollback. That happened twice
+# here: `dev-host-auth-audit` and `dev-service-inventory` had their pre-install
+# snapshot recorded under the post-install name, so both tools were deleted on
+# any later failure.
+#
+# Each argument is "<managed path>:<post-install snapshot>". For every one:
+# either the file did not exist before this run (no ".present" marker for the
+# snapshot) and must still not exist, or it existed and must be present and
+# executable again. A violation names the file, because "the installer rolled
+# back" followed by a host missing its tools is the exact failure this catches.
+verify_rollback_invariant() {
+  invariant_failures=0
+  for pair in "$@"; do
+    managed_path=${pair%:*}
+    snapshot=${pair##*:}
+    [ -n "$managed_path" ] || continue
+    if [ ! -e "$managed_path" ] && [ ! -L "$managed_path" ]; then
+      if [ -e "$backup_dir/$snapshot.present" ]; then
+        printf 'FAIL rollback lost a managed file: %s\n' "$managed_path" >&2
+        invariant_failures=$((invariant_failures + 1))
+      fi
+      continue
+    fi
+    case $managed_path in
+      */bin/*)
+        if [ -f "$managed_path" ] && [ ! -x "$managed_path" ]; then
+          printf 'FAIL rollback left a managed tool not executable: %s\n' \
+            "$managed_path" >&2
+          invariant_failures=$((invariant_failures + 1))
+        fi
+        ;;
+    esac
+  done
+  [ "$invariant_failures" -eq 0 ]
+}
+
 restore_managed_hook() {
   hook_name=$1
   target_path=$hooks_dir/$hook_name
@@ -378,6 +421,28 @@ EOF
   restore_directory_state "$hooks_dir" hooks-dir
   restore_directory_state "$policy_dir" policy-dir
   restore_directory_state "$HOME/Projects" projects-dir
+  # Prove the rollback actually restored the host instead of assuming each
+  # per-file call did what it looked like. The failure this catches is silent:
+  # `restore_file_conditionally` treats a missing ".installed.present" marker
+  # as "nothing to undo" and returns, so a snapshot name that was never written
+  # reads exactly like a file that was never ours - and the install proceeds to
+  # remove a managed tool while reporting a clean rollback.
+  verify_rollback_invariant \
+    "$HOME/.local/bin/dev-start:installed-dev-start.installed" \
+    "$HOME/.local/bin/dev-pr:installed-dev-pr.installed" \
+    "$HOME/.local/bin/dev-pr-review:installed-dev-pr-review.installed" \
+    "$HOME/.local/bin/dev-worktree:installed-dev-worktree.installed" \
+    "$HOME/.local/bin/dev-policy-audit:installed-dev-policy-audit.installed" \
+    "$HOME/.local/bin/dev-reap-sandbox:installed-dev-reap-sandbox.installed" \
+    "$HOME/.local/bin/dev-changelog:installed-dev-changelog.installed" \
+    "$HOME/.local/bin/dev-host:installed-dev-host.installed" \
+    "$HOME/.local/bin/dev-service-inventory:installed-dev-service-inventory.installed" \
+    "$HOME/.local/bin/dev-host-auth-audit:installed-dev-host-auth-audit.installed" \
+    "$HOME/.local/bin/hash-tree.sh:installed-hash-tree.installed" \
+    "$HOME/.local/bin/update-codex-config:installed-update-codex-config.installed" \
+    "$HOME/.local/bin/sync-privileged-policy:installed-privileged-sync.installed" \
+    "$HOME/.local/lib/server-development-consensus/dev-git-common.sh:installed-common.installed" ||
+    printf 'error: rollback did not restore every managed file (see above)\n' >&2
 }
 
 cleanup() {
@@ -686,7 +751,13 @@ backup_file "$HOME/.local/bin/dev-policy-audit" installed-dev-policy-audit
 backup_file "$HOME/.local/bin/dev-reap-sandbox" installed-dev-reap-sandbox
 backup_file "$HOME/.local/bin/dev-changelog" installed-dev-changelog
 backup_file "$HOME/.local/bin/dev-host" installed-dev-host
-backup_file "$HOME/.local/bin/dev-host-auth-audit" installed-dev-host-auth-audit.installed
+# The pre-install snapshot name carries no ".installed" suffix - that suffix
+# belongs to the post-install snapshot taken beside each write, which records
+# what this run produced for the concurrent-change guard. Reusing the suffixed
+# name here left the rollback with no pre-install state to restore and removed
+# both tools on any later failure.
+backup_file "$HOME/.local/bin/dev-host-auth-audit" installed-dev-host-auth-audit
+backup_file "$HOME/.local/bin/dev-service-inventory" installed-dev-service-inventory
 backup_file "$HOME/.local/bin/hash-tree.sh" installed-hash-tree
 backup_file "$HOME/.local/bin/update-codex-config" installed-update-codex-config
 backup_file "$HOME/.local/bin/sync-privileged-policy" installed-privileged-sync
@@ -801,6 +872,10 @@ for global_agent_file in \
   if [ ! -e "$global_agent_file" ] || [ -w "$global_agent_file" ]; then
     write_always_on_excerpt "$global_agent_file"
     chmod 600 "$global_agent_file"
+    # Two snapshots, two jobs: "<name>.md" (taken earlier) is the pre-install
+    # state a rollback restores, while "<name>.installed" records what this run
+    # wrote so the rollback can tell its own output from a concurrent edit.
+    # This one therefore MUST follow the write.
     case $global_agent_file in
       "$HOME/.codex/AGENTS.md")
         backup_file "$global_agent_file" codex-AGENTS.installed

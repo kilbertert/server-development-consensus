@@ -79,6 +79,18 @@ git_hook_names() {
 # `git` nor this scan, which would fail closed on a path that was never a
 # managed repository and stop the installer. Pruning the class, not the one
 # directory, is what keeps that from recurring under another name.
+# The scan also drops a checkout that the repository containing it ignores. A
+# vendored dependency is a git clone at a path this host's delivery flow never
+# created and cannot retire, so holding it to the managed-repository lifecycle
+# is wrong twice over: it reports a permanent finding nobody can clear without
+# deleting someone's dependency tree, and it buries the real findings.
+#
+# The rule is the enclosing repository's own ignore rules, not a list of
+# directory names: a name list goes stale the moment a vendor tree lands
+# somewhere new, which is exactly what happened here (`vendor` was pruned, but
+# `deploy/dify-36/web-patches/work` was not). A path whose ignore state cannot
+# be determined stays in the scan, so an unreadable condition still fails
+# closed.
 find_project_git_entries() (
   projects_root=$1
   find "$projects_root" \
@@ -88,8 +100,40 @@ find_project_git_entries() (
          -name .tox -o -name .nox -o -name __pycache__ -o \
          -name .pytest_cache -o -name .agent-private -o -name .scratch -o \
          -path '*/docker/volumes' \) \) -prune -o \
-    -name .git -prune -print0
+    -name .git -prune -print0 |
+    while IFS= read -r -d '' git_entry; do
+      enclosing=${git_entry%/.git}
+      if enclosing_is_gitignored "$enclosing"; then
+        continue
+      fi
+      printf '%s\0' "$git_entry"
+    done
 )
+
+# enclosing_is_gitignored <checkout>: true when the nearest repository above
+# <checkout> ignores it. Walks up rather than asking the checkout itself:
+# `git -C <checkout> rev-parse --show-toplevel` answers with the checkout's own
+# root, so the enclosing repository is only reachable from a directory above it.
+enclosing_is_gitignored() {
+  local checkout=$1 dir enclosing
+  [ -d "$checkout" ] || return 1
+  dir=$checkout
+  while [ "$dir" != / ] && [ -n "$dir" ]; do
+    dir=$(dirname "$dir")
+    enclosing=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || continue
+    [ -n "$enclosing" ] || continue
+    [ "$(realpath -m -- "$checkout")" != "$(realpath -m -- "$enclosing")" ] || continue
+    # A linked worktree shares the enclosing repository's common dir: it is
+    # that repository's own work surface, not a vendor tree.
+    [ "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != \
+      "$(git -C "$enclosing" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ] ||
+      continue
+    if git -C "$enclosing" check-ignore -q -- "$checkout" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 find_project_git_configs() (
   projects_root=$1

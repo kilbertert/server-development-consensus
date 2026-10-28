@@ -203,6 +203,20 @@ branch_has_verified_merged_pr() {
 # `runner_checkout_path`, which decides whether a path is a runner working
 # directory, lives in the shared library so the policy audit applies the same
 # definition to delivery metadata.
+#
+# `vendor_checkout_path` decides whether a checkout is a pinned dependency
+# rather than a delivery surface: the enclosing repository ignores its path, so
+# this host's delivery flow never created it and cannot retire it. Consulting
+# the enclosing repository's ignore rules - rather than a list of directory
+# names - is what makes the rule survive the next vendor tree landing somewhere
+# new. A repository outside any work tree, or one whose ignore rules cannot be
+# read, is not a vendor checkout: the audit fails closed on it as before.
+# `vendor_checkout_path` is the shared-library definition, so the policy audit
+# that discovers repositories and the audit that walks a repository's worktrees
+# cannot disagree about what a vendored dependency is.
+vendor_checkout_path() {
+  enclosing_is_gitignored "$1"
+}
 worktree_location_note() {
   local path=$1
   runner_checkout_path "$(absolute_path "$path")" && return 0
@@ -216,11 +230,20 @@ worktree_location_note() {
 audit_worktrees() {
   local default_branch=$1
   local default_ref
-  default_ref=$(default_ref_for "$default_branch") ||
-    die "default branch reference is unavailable: $default_branch"
+  # A repository pinned to a tag or a commit has no default branch to compare
+  # against: a vendored dependency, a release checkout, a partial clone with no
+  # fetched heads. That is a property of the repository, not a defect in it, so
+  # it must not abort the audit - `die` here would blind the audit to every
+  # worktree the repository does have. Only a branch that needs the comparison
+  # reports the missing reference, and it reports it per worktree.
+  default_ref=$(default_ref_for "$default_branch") || default_ref=
   load_worktrees
 
   local issues=0
+  local missing_default_ref=false
+  if [[ -z $default_ref ]]; then
+    missing_default_ref=true
+  fi
   local repository_class_value counts_lifecycle_issues=true
   repository_class_value=$(repository_class) || repository_class_value=managed
   if [[ $repository_class_value == external ]]; then
@@ -237,8 +260,26 @@ audit_worktrees() {
         printf 'ok worktree path=%q branch=detached state=runner-checkout\n' "$path"
         continue
       fi
+      # A detached HEAD inside a vendor-pruned subtree is a pinned dependency,
+      # not a delivery surface: it has no branch to retire and no default to
+      # diverge from. Report it so it cannot hide, but do not count it as a
+      # lifecycle issue the operator is expected to clear.
+      if vendor_checkout_path "$(absolute_path "$path")"; then
+        printf 'ok worktree path=%q branch=detached state=vendor-checkout%s\n' \
+          "$path" "$(worktree_location_note "$path")"
+        continue
+      fi
       printf 'worktree path=%q branch=detached state=detached%s\n' \
         "$path" "$(worktree_location_note "$path")"
+      if $counts_lifecycle_issues; then
+        issues=$((issues + 1))
+      fi
+      continue
+    fi
+
+    if $missing_default_ref; then
+      printf 'worktree path=%q branch=%q state=no-default-ref' "$path" "$branch"
+      printf ' error=%q\n' "default branch reference is unavailable: $default_branch"
       if $counts_lifecycle_issues; then
         issues=$((issues + 1))
       fi

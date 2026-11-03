@@ -24,6 +24,8 @@ Add one row in ascending port order before starting a new fixed service.
 
 | Port | Protocol | Bind address | Project/service | Owner | Purpose | Lifecycle |
 | ---: | --- | --- | --- | --- | --- | --- |
+| 11178 | TCP | 127.0.0.1 | Monolith evaluation / Wrangler dev worker (Hono API) | claude | Throwaway local trial of `one-ea/Monolith` in `/home/claude/Projects/Monolith`: `npx wrangler dev` against the local D1 under `server/.wrangler/state`; reachable only through 11313's proxy | temporary |
+| 11313 | TCP | 127.0.0.1 | Monolith evaluation / `vite preview` + Tailscale Funnel entry | claude | Built SPA from `client/dist` plus `/api` proxy to 11178. **This is the one recorded public entry for the evaluation**: Tailscale Funnel `https://rainyun-us-oilbjice.tail5df4d7.ts.net/` (TLS at the Funnel edge, host `127.0.0.1` bind unchanged). Retire with `sudo tailscale funnel --https=443 off` | temporary |
 | 12101 | TCP | 127.0.0.1 | healthcare verification instance / application | claude | Baseline verification instance for the healthcare project (HTTP) | active |
 | 12106 | TCP | 127.0.0.1 | healthcare verification instance / relational database | claude | Desensitized copy of the production health database | active |
 | 12107 | TCP | 127.0.0.1 | healthcare verification instance / cache | claude | Cache for the healthcare verification instance | active |

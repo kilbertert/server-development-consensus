@@ -113,7 +113,10 @@ repository — the default — owns its delivery process here, so the full polic
 applies. An externally governed repository belongs to another organization's
 review, merge, and release process: it keeps its own commit convention,
 hooks, and workflow, and the managed hooks forward to them instead of
-enforcing the server delivery contract. The class is a local marker on the
+enforcing the server delivery contract. A local repository has no delivery
+consumers — no remotes, no CI, nothing downstream — so the delivery contract
+does not apply to it; the class is self-revoking and a configured remote
+turns it back into a finding. The class is a local marker on the
 checkout, never committed and never part of the repository; the host owner
 records the classification and its owning organization in the private
 operations inventory. The account boundary, secret isolation, workspace

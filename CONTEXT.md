@@ -47,7 +47,7 @@ A condition that must hold across every execution plane, such as account boundar
 _Avoid_: best practice, suggestion
 
 **Repository class**:
-The declared owner of a repository's delivery process: `server-managed` when this host's workspace owns the task branch, pull request, and merge flow, or `externally governed` when another organization does. It decides which parts of the policy apply and never waives the account boundary or secret isolation.
+The declared owner of a repository's delivery process: `server-managed` when this host's workspace owns the task branch, pull request, and merge flow, `externally governed` when another organization does, or `local` when the repository has no delivery consumers at all (no remotes). It decides which parts of the policy apply and never waives the account boundary or secret isolation.
 _Avoid_: repo type, trust level
 
 **Server-managed repository**:

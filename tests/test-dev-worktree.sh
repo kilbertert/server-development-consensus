@@ -196,6 +196,32 @@ fi
 grep -q 'externally governed' "$tmp/external-retire.out"
 git -C "$HOME/Projects/repo" config --unset serverPolicy.repositoryClass
 
+# A local repository has no delivery process: the task lifecycle refuses to
+# act on it and the delivery audit reports without failing it.
+git init --initial-branch=main "$HOME/Projects/localrepo" >/dev/null
+git -C "$HOME/Projects/localrepo" config user.name test
+git -C "$HOME/Projects/localrepo" config user.email test@example.com
+git -C "$HOME/Projects/localrepo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m init >/dev/null
+git -C "$HOME/Projects/localrepo" config serverPolicy.repositoryClass local
+if (cd "$HOME/Projects/localrepo" &&
+    "$HOME/.local/bin/dev-worktree" start feat local) >"$tmp/local-start.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-worktree start ran in a local repository' >&2
+  exit 1
+fi
+grep -q 'local repositories' "$tmp/local-start.out"
+(cd "$HOME/Projects/localrepo" && "$HOME/.local/bin/dev-worktree" audit) \
+  >"$tmp/local-audit.out" 2>&1
+git -C "$HOME/Projects/localrepo" remote add origin "$tmp/nowhere.git"
+if (cd "$HOME/Projects/localrepo" &&
+    "$HOME/.local/bin/dev-worktree" start feat revoked) >"$tmp/local-revoked.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-worktree start accepted a local repository with remotes' >&2
+  exit 1
+fi
+grep -q 'cannot determine the repository class' "$tmp/local-revoked.out"
+git -C "$HOME/Projects/localrepo" remote remove origin
+git -C "$HOME/Projects/localrepo" config --unset serverPolicy.repositoryClass
+
 
 # A self-hosted runner checks code out detached under its own `_work` directory
 # for the duration of a job. That must audit as a runner checkout, not as a

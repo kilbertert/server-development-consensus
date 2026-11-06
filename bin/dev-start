@@ -30,10 +30,16 @@ repository_class_value=$(repository_class) || {
   printf '%s\n' 'error: cannot determine the repository class' >&2
   exit 2
 }
-if [ "$repository_class_value" = external ]; then
-  printf '%s\n' 'error: externally governed repositories keep their own workflow; the server task lifecycle does not apply' >&2
-  exit 2
-fi
+case $repository_class_value in
+  external)
+    printf '%s\n' 'error: externally governed repositories keep their own workflow; the server task lifecycle does not apply' >&2
+    exit 2
+    ;;
+  local)
+    printf '%s\n' 'error: local repositories have no delivery process; the server task lifecycle does not apply' >&2
+    exit 2
+    ;;
+esac
 remote=origin
 default_branch=$(default_branch_for_remote "$remote") || {
   printf '%s\n' 'error: could not determine the origin default branch' >&2

@@ -104,4 +104,19 @@ if run_check 'legacy message without type'; then
   exit 1
 fi
 
+# A local repository is exempt from the shared commit convention; a configured
+# remote revokes the class and the check fails closed.
+git -C "$tmp/work" config serverPolicy.repositoryClass local
+run_check 'legacy message without type' || {
+  printf '%s\n' 'FAIL local repository enforced Conventional Commits' >&2
+  exit 1
+}
+git -C "$tmp/work" remote add origin "$tmp/nowhere.git"
+if run_check 'feat: add login'; then
+  printf '%s\n' 'FAIL local repository with a remote was silently exempted' >&2
+  exit 1
+fi
+git -C "$tmp/work" remote remove origin
+git -C "$tmp/work" config --unset serverPolicy.repositoryClass
+
 printf '%s\n' 'commit-msg policy tests passed'

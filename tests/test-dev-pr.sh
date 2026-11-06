@@ -219,4 +219,20 @@ grep -q 'externally governed' "$tmp/external-pr.out"
 assert_no_gh_calls
 git -C "$tmp/valid" config --unset serverPolicy.repositoryClass
 
+# A local repository has no delivery process; dev-pr refuses before it
+# touches the network.
+: >"$GH_CALLS"
+git init --initial-branch=main "$tmp/localonly" >/dev/null
+git -C "$tmp/localonly" config user.name test
+git -C "$tmp/localonly" config user.email test@example.com
+git -C "$tmp/localonly" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m init >/dev/null
+git -C "$tmp/localonly" config serverPolicy.repositoryClass local
+if (cd "$tmp/localonly" && "$HOME/.local/bin/dev-pr") >"$tmp/local-pr.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-pr ran in a local repository' >&2
+  exit 1
+fi
+grep -q 'local repositories' "$tmp/local-pr.out"
+assert_no_gh_calls
+
 printf '%s\n' 'dev-pr workflow tests passed'

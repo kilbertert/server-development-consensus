@@ -57,6 +57,13 @@ PLATFORM_PORTS=" 22 80 443 "
 #
 # 当前为空是**正确状态**：开发机上没有任何非环回业务监听。
 declare -A ACCEPTED_RESIDUALS=(
+  # rakazo-relay.service 的 socat：把 rakazo_app 网桥网关 (172.22.0.1) 的 8317
+  # 转进 host loopback 的 cliproxyapi。只有挂在该网桥上的本机容器可达——
+  # 等价于把 loopback 延伸给自己的容器，不是对外暴露。不能改回 loopback：
+  # 容器只能经网桥网关地址到达宿主。真正的清偿是把 relay 换成同网桥上的
+  # 容器（rakazo 组网重构），在那之前按例外记账。
+  # 补偿控制：转发目标写死 127.0.0.1，socat 只做 loopback 的桥接放大。
+  ["8317/socat"]="rakazo-relay：rakazo_app 网桥内容器到 host loopback cliproxyapi 的转发，仅本机容器可达"
 )
 
 # 测试缝：让测试可以验证"例外机制"本身（可见 / 不放行违规 / 同端口换程序即失效），

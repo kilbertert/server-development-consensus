@@ -116,4 +116,30 @@ if (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
   exit 1
 fi
 
+# A local repository has no delivery consumers, so the delivery guards are
+# skipped — commits on the default branch and in the canonical checkout are
+# allowed — while the project hook still runs. Configuring a remote revokes
+# the class: the check fails closed rather than silently exempting it.
+git -C "$tmp/work" config serverPolicy.repositoryClass local
+rm -f "$tmp/chained-marker"
+if ! (cd "$tmp/wt" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL task-branch commit was blocked in a local repository' >&2
+  exit 1
+fi
+if ! (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL default-branch commit was blocked in a local repository' >&2
+  exit 1
+fi
+[ "$(cat "$tmp/chained-marker")" = chained ] || {
+  printf '%s\n' 'FAIL project pre-commit hook did not run for a local repository' >&2
+  exit 1
+}
+git -C "$tmp/work" remote add origin "$tmp/nowhere.git"
+if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL local repository with a remote was silently exempted' >&2
+  exit 1
+fi
+git -C "$tmp/work" remote remove origin
+git -C "$tmp/work" config --unset serverPolicy.repositoryClass
+
 printf '%s\n' 'pre-commit policy tests passed'

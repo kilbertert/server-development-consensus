@@ -482,6 +482,39 @@ if grep -q "FAIL $external_repo " "$tmp/external-class-repair.out"; then
 fi
 [ "$(git -C "$external_repo" config --get core.hooksPath)" = "$external_hooks" ]
 [ "$(git -C "$external_repo" config --get serverPolicy.defaultBranch)" = company-default ]
+
+# A local repository has no delivery consumers: the audit accepts the class
+# and reports it, while a configured remote contradicts it and is a finding.
+local_repo=$projects/sandbox-repo
+git init --initial-branch=main "$local_repo" >/dev/null
+git -C "$local_repo" config user.name test
+git -C "$local_repo" config user.email test@example.com
+git -C "$local_repo" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m sandbox >/dev/null
+git -C "$local_repo" config serverPolicy.repositoryClass local
+"$audit" "$projects" >"$tmp/local-class.out" 2>&1 || true
+grep -q "repo $local_repo branch=main .* class=local" "$tmp/local-class.out" || {
+  cat "$tmp/local-class.out" >&2
+  printf '%s\n' 'FAIL audit did not report the local repository class' >&2
+  exit 1
+}
+if grep -q "FAIL $local_repo " "$tmp/local-class.out"; then
+  cat "$tmp/local-class.out" >&2
+  printf '%s\n' 'FAIL audit reported a finding against a local repository' >&2
+  exit 1
+fi
+git -C "$local_repo" remote add origin "$tmp/nowhere.git"
+"$audit" "$projects" >"$tmp/local-remote.out" 2>&1 || true
+grep -q "FAIL $local_repo repository class is local but remotes are configured" \
+  "$tmp/local-remote.out" || {
+  cat "$tmp/local-remote.out" >&2
+  printf '%s\n' 'FAIL audit did not flag a local repository with remotes' >&2
+  exit 1
+}
+# The fixture leaves no trace: unmarked it would fail later scans as a managed
+# repository missing default-branch metadata.
+rm -rf "$local_repo"
+
 git -C "$external_repo" config serverPolicy.repositoryClass company-managed
 if "$audit" "$projects" >"$tmp/external-class-invalid.out" 2>&1; then
   printf '%s\n' 'FAIL invalid repository class was accepted' >&2

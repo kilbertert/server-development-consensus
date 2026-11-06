@@ -147,6 +147,11 @@ def require_managed_repository() -> None:
             "externally governed repositories keep their own review process; "
             "the server review loop does not apply"
         )
+    if completed.stdout.strip() == "local":
+        raise Refused(
+            "local repositories have no delivery process; "
+            "the server review loop does not apply"
+        )
 
 
 def fetch_threads(owner: str, name: str, number: str) -> list[dict]:

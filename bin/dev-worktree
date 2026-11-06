@@ -29,14 +29,20 @@ die() {
 
 # The server task lifecycle describes how this host delivers code. Repositories
 # whose delivery process is owned by another organization keep their own
-# workflow, so the lifecycle commands refuse to run in them.
+# workflow, and local repositories have no delivery process at all, so the
+# lifecycle commands refuse to run in either.
 require_managed_repository() {
   local class
   class=$(repository_class) ||
     die 'cannot determine the repository class; run dev-policy-audit --repair'
-  if [[ $class == external ]]; then
-    die 'externally governed repositories keep their own workflow; the server task lifecycle does not apply'
-  fi
+  case $class in
+    external)
+      die 'externally governed repositories keep their own workflow; the server task lifecycle does not apply'
+      ;;
+    local)
+      die 'local repositories have no delivery process; the server task lifecycle does not apply'
+      ;;
+  esac
 }
 
 absolute_path() {
@@ -246,7 +252,7 @@ audit_worktrees() {
   fi
   local repository_class_value counts_lifecycle_issues=true
   repository_class_value=$(repository_class) || repository_class_value=managed
-  if [[ $repository_class_value == external ]]; then
+  if [[ $repository_class_value != managed ]]; then
     counts_lifecycle_issues=false
   fi
   local index path head branch dirty upstream tracking behind ahead state

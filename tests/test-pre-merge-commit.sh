@@ -66,4 +66,24 @@ if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
   exit 1
 fi
 
+# A local repository keeps no merge gate; a configured remote revokes the
+# class and the check fails closed.
+git -C "$tmp/work" config serverPolicy.repositoryClass local
+rm -f "$tmp/chained-marker"
+if ! (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL default-branch merge was blocked in a local repository' >&2
+  exit 1
+fi
+[ "$(cat "$tmp/chained-marker")" = chained ] || {
+  printf '%s\n' 'FAIL project pre-merge-commit hook did not run for a local repository' >&2
+  exit 1
+}
+git -C "$tmp/work" remote add origin "$tmp/nowhere.git"
+if (cd "$tmp/work" && "$hook") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL local repository with a remote was silently exempted' >&2
+  exit 1
+fi
+git -C "$tmp/work" remote remove origin
+git -C "$tmp/work" config --unset serverPolicy.repositoryClass
+
 printf '%s\n' 'pre-merge-commit policy tests passed'

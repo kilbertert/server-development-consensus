@@ -210,6 +210,15 @@ fi
 [ ! -s "$GH_CALLS" ] || fail 'an externally governed repository reached gh'
 git -C "$tmp/repo" config --unset serverPolicy.repositoryClass
 
+# T11b — a local repository is untouched before any network call.
+git -C "$tmp/repo" config serverPolicy.repositoryClass local
+reset_calls
+if run "$tool" close-loop >"$tmp/t11b.out" 2>&1; then
+  fail 'close-loop ran in a local repository'
+fi
+[ ! -s "$GH_CALLS" ] || fail 'a local repository reached gh'
+git -C "$tmp/repo" config --unset serverPolicy.repositoryClass
+
 # T12 — a missing --body-file is a clean exit, not a traceback.
 reset_calls
 assert_exit_code 65 "$tool" reply PRRT_a --body-file "$tmp/does-not-exist"

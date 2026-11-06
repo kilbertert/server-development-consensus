@@ -11,9 +11,17 @@ is_valid_branch_name() (
 
 # Repository class. A repository whose delivery process is owned by another
 # organization is marked `external` in its own local configuration; the server
-# policy then keeps only the rules that describe this host. The marker lives in
-# the repository, so the policy needs no host list, and the default is
-# `managed` so an unreadable or unknown value can never widen an exemption.
+# policy then keeps only the rules that describe this host. A repository with
+# no delivery consumers at all — no remotes, nothing downstream of its default
+# branch — is marked `local`, and the delivery contract does not apply to it.
+# The marker lives in the repository, so the policy needs no host list, and
+# the default is `managed` so an unreadable or unknown value can never widen
+# an exemption.
+#
+# `local` is self-revoking: a repository that configures a remote has acquired
+# a consumer and is no longer local. The contradiction is reported as an
+# unreadable class rather than silently treated as either class, so the
+# exemption can never widen past the condition that justifies it.
 repository_class() (
   repository_class_value=managed
   if configured_class=$(git config --local --get serverPolicy.repositoryClass 2>/dev/null); then
@@ -24,6 +32,13 @@ repository_class() (
   fi
   case $repository_class_value in
     managed|external) printf '%s\n' "$repository_class_value" ;;
+    local)
+      if [ -n "$(git remote 2>/dev/null)" ]; then
+        printf '%s\n' 'SERVER POLICY: repository is marked local but configures remotes; reclassify it or remove the remotes.' >&2
+        return 2
+      fi
+      printf '%s\n' "$repository_class_value"
+      ;;
     *) return 2 ;;
   esac
 )

@@ -208,6 +208,11 @@ in the workspace has exactly one class:
   organization and purpose, in the private operations inventory. The
   classification is a local marker on that checkout; it is never committed and
   never travels with the repository.
+- **local repository** — a repository with no delivery consumers: no remotes,
+  no pull requests, no CI, and nothing downstream of its default branch.
+  Sandboxes and experiments live here. The host owner classifies it with the
+  same local configuration marker; the exemption is justified by the absence
+  of consumers, not by where the checkout sits.
 
 An externally governed repository is exempt from the rules that describe how
 *this host* delivers code:
@@ -222,6 +227,17 @@ The host stops maintaining its own delivery metadata in an externally governed
 repository, but it does not rewrite what is already present. Those keys can
 still point at the repository's own hook chain or at a paused worktree, and
 erasing them would break a process this host does not own.
+
+A local repository is exempt from the same delivery rules for the opposite
+reason: not because someone else's process owns them, but because there is no
+delivery process for them to describe. Commits on its default branch and in
+its only checkout are allowed, the Conventional Commits contract and the task
+lifecycle commands do not apply, and pushing is impossible in practice — the
+push guard requires a configured remote and the class forbids one. The class
+is self-revoking: a repository that configures a remote has acquired a
+consumer, the class check fails closed, and the delivery rules apply again
+until the marker is revisited. The audit reports the contradiction as a
+finding rather than letting it pass as either class.
 
 Exemption is not a security boundary moving. Everything that describes *this
 host*, *this account*, and *this workspace* still applies to every repository

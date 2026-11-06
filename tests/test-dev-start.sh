@@ -209,4 +209,26 @@ if (cd "$tmp/clean" && "$HOME/.local/bin/dev-start" feat invalid-class) \
 fi
 grep -q 'cannot determine the repository class' "$tmp/invalid-class.out"
 
+# A local repository has no delivery process, so the task lifecycle refuses to
+# start there, and a configured remote makes the class fail closed.
+git init --initial-branch=main "$tmp/localonly" >/dev/null
+git -C "$tmp/localonly" config user.name test
+git -C "$tmp/localonly" config user.email test@example.com
+git -C "$tmp/localonly" -c core.hooksPath=/dev/null \
+  commit --allow-empty -m init >/dev/null
+git -C "$tmp/localonly" config serverPolicy.repositoryClass local
+if (cd "$tmp/localonly" && "$HOME/.local/bin/dev-start" feat local-flow) \
+  >"$tmp/local.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-start ran in a local repository' >&2
+  exit 1
+fi
+grep -q 'local repositories' "$tmp/local.out"
+git -C "$tmp/localonly" remote add origin "$tmp/remote.git"
+if (cd "$tmp/localonly" && "$HOME/.local/bin/dev-start" feat revoked-flow) \
+  >"$tmp/local-revoked.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-start accepted a local repository with remotes' >&2
+  exit 1
+fi
+grep -q 'cannot determine the repository class' "$tmp/local-revoked.out"
+
 printf '%s\n' 'dev-start workflow tests passed'

@@ -465,10 +465,29 @@ while IFS= read -r -d '' git_path; do
       continue
     fi
   }
-  if [[ $repo_class != managed && $repo_class != external ]]; then
+  if [[ $repo_class != managed && $repo_class != external && $repo_class != local ]]; then
     printf 'FAIL %s repository class is invalid: %s\n' "$repo" "$repo_class"
     failures=$((failures + 1))
     continue
+  fi
+
+  # A local repository has no delivery consumers, so a configured remote
+  # contradicts the class. The same contradiction makes `repository_class`
+  # unreadable in the hooks, but the audit reports it as a finding with the
+  # evidence attached rather than leaving the operator to decode the refusal.
+  if [[ $repo_class == local ]]; then
+    if repo_remotes=$(git -C "$repo" remote 2>/dev/null); then
+      if [[ -n $repo_remotes ]]; then
+        printf 'FAIL %s repository class is local but remotes are configured: %s\n' \
+          "$repo" "$(printf '%s' "$repo_remotes" | tr '\n' ' ')"
+        failures=$((failures + 1))
+        continue
+      fi
+    else
+      printf 'FAIL %s cannot inspect remotes for local repository\n' "$repo"
+      failures=$((failures + 1))
+      continue
+    fi
   fi
 
   # A publishing repository opts in to maintaining CHANGELOG.md by declaring

@@ -369,6 +369,16 @@ documentation change:
    each commit small and focused; as a guardrail, a single commit is normally
    under 300 changed lines and a PR under 500-800 lines. Never commit secrets,
    local credentials, `.env` contents, or unrelated generated artifacts.
+   The final hosting-generated squash commit follows the same contract: a
+   local hook does not run on GitHub. Use a Conventional Commit PR title and
+   validate it in deterministic CI, including the `edited` PR event. The
+   portable `dev-commit-message TITLE` check shares the hook's parser and does
+   not inherit local class or migration exemptions. Pass titles as quoted data,
+   never interpolate PR text into shell code. Before merging, verify the final
+   title and body, preserve `!` / `BREAKING CHANGE` and migration instructions,
+   and retain the PR reference. Configure squash defaults to PR title and body
+   where supported; CI on the PR title does not prevent a human from editing
+   the merge message, so final-message verification remains required.
 4. Run the repository's formatter, static checks, tests, and build in
    proportion to the change. Add or update tests for regressions and non-trivial
    behavior. Record any check that cannot be run.
@@ -452,6 +462,95 @@ If existing uncommitted work is found on a default branch, preserve it by
 creating a task branch in place before continuing. Never discard it merely to
 make the worktree clean. Read-only investigation and analysis tasks do not
 require a branch.
+
+### Delivery quick reference
+
+Use this index after establishing the repository class and canonical checkout.
+The linked sections define the requirements; the table is an execution aid.
+
+| Situation | Route | Completion evidence |
+|---|---|---|
+| Daily task | Inspect worktrees → `dev-worktree start TYPE DESCRIPTION` → focused commits → PR → checks and review → GitHub merge | [Verified remote paths, local fast-forward, separate cleanup results](#git-and-worktree-delivery-invariants) |
+| Main moved | Fetch with pruning → integrate the current default into the task branch without rewriting published history → rerun checks | Current base is an ancestor; CI passed on the updated branch |
+| Urgent defect | `hotfix/*` → same PR/check/review route | [Production baseline identified and regression verified](#rollback-and-production-hotfix) |
+| Deploy | Select a merged revision's immutable artifact → acceptance → authorized deployment | [Deployment record and runtime verification](#deployment-records) |
+| Roll back | Check data/config compatibility → restore prior artifact; independently revert code through a PR | [Two recorded outcomes](#rollback-and-production-hotfix) |
+| Dirty or divergent canonical checkout | Preserve user work; develop in a fresh task worktree | Report pending local reconciliation; never reset or rebase someone else's work |
+
+### Deployment records
+
+The default branch is the reviewed integration state; its current tip is not
+proof of what any environment runs. Each project with deployments keeps its
+deployment command and acceptance check in version control. Every deployment,
+including an artifact rollback, appends a record in the project's private
+operations record with these fields:
+
+```text
+environment: logical target name
+source_commit: full SHA of the merged revision used to build the artifact
+artifact: immutable digest or immutable version with retained content
+deployed_at: UTC timestamp (RFC 3339)
+acceptance: passed/failed/blocked, check identity, result reference and timestamp
+previous_artifact: immutable identity and source SHA, or none for first deployment
+operation: deploy/rollback, actor, authorization reference and outcome
+```
+
+Record failed attempts as failed; verification must check the running artifact
+identity and observable behavior, not just a successful deploy command. Promote
+the same accepted artifact between environments. If it is rebuilt, record the
+new identity and repeat acceptance before production. Keep environment-specific
+configuration separately identified without recording secret values. A branch
+name or mutable `latest` tag is insufficient as artifact identity.
+
+These are project deployment and evidence requirements, not a claim that the
+Git hooks inspect running services. Existing deployments acquire the record
+when next changed; do not invent historical evidence. Internal records remain
+private under the publication boundary. Official mappings: Git identifies
+source commits, [OCI digests](https://github.com/opencontainers/image-spec/blob/v1.1.1/descriptor.md#digests)
+identify container content, and [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)
+defines timestamps. Non-container artifacts use their platform's immutable
+identity; this rule does not require adopting containers.
+
+### Rollback and production hotfix
+
+**Artifact rollback** restores service independently of the source-code change:
+
+1. Identify the running and previous artifacts from deployment evidence. Verify
+   compatibility with the current database schema, data format and configuration.
+   If compatibility is unknown, stop that rollback and choose a verified forward
+   repair or recovery plan; a Git revert does not undo stored data.
+2. Use the project's authorized deployment command to restore the retained
+   artifact built from a merged revision. Preserve the displaced artifact and
+   recovery path. Do not hand-edit running code or rewrite tags.
+3. Verify runtime identity and acceptance, then append the deployment record.
+   An unsuccessful rollback is a failed attempt, not a restored service.
+
+**Code revert** prevents the faulty change from returning on the next deployment:
+
+1. Create a task worktree from the current `origin/<default>`. Identify the
+   faulty commit/PR, its dependencies and the intended observable result.
+2. Use `git revert --no-commit <commit>` and inspect the result. For a merge
+   commit, explicitly choose and explain the mainline parent (`-m`); squash
+   commits have one parent. Resolve conflicts and run the relevant regression
+   checks. Commit as `revert(scope): ...`, recording the original SHA and reason.
+3. Deliver that change through the normal PR, CI and review flow, verify the
+   merged paths, and record whether a new deployment is still pending.
+
+If production trails the current default branch, do not accidentally ship all
+unreleased work with a hotfix. Prefer a compatible retained-artifact rollback
+for immediate recovery and a forward fix on the default branch. When an older
+release must receive new code, first define a project-scoped maintenance plan:
+the deployed SHA, protected maintenance branch, PR/check gates, artifact source,
+and forward-port PR with regression evidence. That explicit plan is required
+before departing from the default-branch artifact rule; it creates no automatic
+server-wide `develop` or `release` branch. A hotfix is complete only when every
+affected supported line has the fix or a recorded not-applicable disposition.
+Emergency guard changes still require the [break-glass contract](#emergency-changes).
+
+[Git revert](https://git-scm.com/docs/git-revert) preserves history by creating
+inverse commits; reverting a merge also affects future merge behavior.
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+defines the title and breaking-change markers used by the delivery checks.
 
 ## Git And Worktree Delivery Invariants
 

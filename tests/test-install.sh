@@ -59,6 +59,9 @@ chmod 400 "$HOME/.codex/AGENTS.md"
 
 first_output=$("$installer" 2>&1)
 printf '%s\n' "$first_output" | grep -q 'server development consensus installed'
+first_backup=$(printf '%s\n' "$first_output" | sed -n 's/.*installed; backup=//p')
+# The inventory uses NUL-delimited read; dash previously skipped every config.
+tar -tzf "$first_backup/project-git-configs.tar.gz" | grep -q '/Projects/repo/.git/config$'
 [ "$(git config --global --path --get core.hooksPath)" = "$HOME/.config/git/hooks" ]
 [ "$(git config --global --path --get serverPolicy.globalChainedHooksPath)" = "$HOME/custom-hooks" ]
 # The workspace top level is a Project memory location, so it carries a pointer

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 if [ "${SERVER_POLICY_INSTALL_TESTING:-0}" = 1 ]; then
@@ -208,9 +208,12 @@ verify_rollback_invariant() {
   for pair in "$@"; do
     managed_path=${pair%:*}
     snapshot=${pair##*:}
+    before_snapshot=${snapshot%.installed}
+    # The common library's older pre-install snapshot keeps its .sh suffix.
+    [ "$before_snapshot" != installed-common ] || before_snapshot=installed-common.sh
     [ -n "$managed_path" ] || continue
     if [ ! -e "$managed_path" ] && [ ! -L "$managed_path" ]; then
-      if [ -e "$backup_dir/$snapshot.present" ]; then
+      if [ -e "$backup_dir/$before_snapshot.present" ]; then
         printf 'FAIL rollback lost a managed file: %s\n' "$managed_path" >&2
         invariant_failures=$((invariant_failures + 1))
       fi

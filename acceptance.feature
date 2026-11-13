@@ -1,5 +1,28 @@
 Feature: Layered consensus and AFK governance
 
+  Rule: The message that reaches the default branch describes the delivered change
+
+    Scenario: A squash title is checked without local hook exemptions
+      Given a proposed squash message and a repository with a legacy commit override
+      When the portable commit-message check runs
+      Then a Conventional Commit title passes, including a scoped breaking marker
+      And a blank, comment-only, multiline title or malformed prefix fails
+      And the local override cannot exempt the proposed squash title
+
+    Scenario: A changed PR title is checked again
+      Given a pull request whose code checks passed
+      When its title is edited to an invalid Conventional Commit title
+      Then the required governance workflow reruns and rejects the title
+
+  Rule: Deployment identity and rollback are explicit
+
+    Scenario: An operator follows the installed delivery guide
+      Given the canonical installer has published the complete release unit
+      When an operator prepares a deployment or rollback
+      Then the installed policy supplies a deployment record with immutable artifact identity
+      And code revert uses a task branch and PR independently of artifact rollback
+      And a production version behind the default branch requires an explicit maintenance plan
+
   Rule: The server baseline remains authoritative across AFK execution planes
 
     Scenario: An AFK adapter cannot weaken a server invariant

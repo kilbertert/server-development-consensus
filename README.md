@@ -9,6 +9,11 @@ release unit: the consensus policy, the installer, the managed commands, the
 audit units, and the managed commands. Deploy it only
 through `install.sh` from a clean checkout of this repository's default branch.
 
+For daily work, hotfix, deployment or rollback, start with the
+[delivery quick reference](SERVER-DEVELOPMENT-CONSENSUS.md#delivery-quick-reference).
+Deployment records and both rollback paths live in the same policy, so the
+installer publishes the guidance with the tools as one release unit.
+
 It was extracted on 2026-08-18 from
 `kilibtert/helixent-agent-workbench` (local path `~/Projects/praxis`), which is
 the Helixent product repository and no longer hosts server-level governance.
@@ -95,6 +100,7 @@ The local enforcement layer is installed at:
 - `~/.local/lib/server-development-consensus/dev-git-common.sh`
 - `~/.local/bin/dev-start`
 - `~/.local/bin/dev-pr`
+- `~/.local/bin/dev-commit-message`
 - `~/.local/bin/dev-pr-review`
 - `~/.local/bin/dev-worktree`
 - `~/.local/bin/dev-policy-audit`
@@ -131,6 +137,15 @@ scope) at commit time. It is fail-closed: a repository that opts out must set
 `serverPolicy.commitMessageOverride=default-branch-only` explicitly (which
 keeps the check on the default branch and allows legacy messages on task
 branches during migration).
+
+`dev-commit-message TITLE` validates a proposed PR/squash title with the same
+parser, independently of local exemptions. CI in this repository calls it on
+PR creation, updates and title edits. Other server-managed repositories adopt
+the check in their required CI when their delivery workflow is next changed;
+this installer does not edit their GitHub workflows or Rulesets. Configure
+squash defaults to PR title/body and verify the final message at merge time,
+including breaking-change information and the PR reference. A title check is
+not a remote guarantee about a manually edited squash message.
 
 AI review is deliberately separate from the deterministic merge gate. The
 server's two-layer architecture is explicit: **Devin Review** for automatic
@@ -288,10 +303,10 @@ the full canonical text — it is never loaded by a model and exists for
 auditors — while the three always-on mirrors carry the bounded excerpt
 described above.
 
-Rollback requires an explicit policy change. Restore the backed-up global Git
-configuration, remove the installed hook/tools, restore the prior global agent
-instruction files, and restore each repository's chained `core.hooksPath`.
-Remote Rulesets must be changed separately and must never be removed merely to
-work around a failed deterministic check. AI review policy may be changed by an
-explicit governance decision based on measured value, cost, latency, and false
-positives.
+The installer restores its snapshots if installation fails. Resolve the blocker
+and rerun the canonical installer; individual policy files and tools are not
+deployed manually. A deliberate governance rollback is a reviewed release-unit
+change delivered through the same installer. Remote Rulesets remain separate
+and must never be removed to work around a failed deterministic check. AI review
+policy changes require an explicit governance decision based on measured value,
+cost, latency, and false positives.

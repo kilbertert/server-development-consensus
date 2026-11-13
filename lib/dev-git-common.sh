@@ -1,5 +1,60 @@
 #!/bin/sh
 
+# Shared by the local hook and the portable PR/squash title check.
+validate_commit_subject() (
+  first_line=${1:-}
+  carriage_return=$(printf '\r')
+  case $first_line in
+    *'
+'*|*"$carriage_return"*) printf '%s\n' 'SERVER POLICY: commit title must be one line.' >&2; return 1 ;;
+  esac
+  # Peel the scope first: a shell wildcard would also accept `feat(a)b): x`.
+  first_line_type=${first_line%%[:(!]*}
+  after_type=${first_line#"$first_line_type"}
+  after_scope=$after_type
+  scope_ok=true
+  case $after_type in
+    \(*)
+      # Scope is everything up to the first `)`; it must be non-empty and must
+      # not contain a parenthesis of either kind.
+      scope_part=${after_type#\(}
+      scope_part=${scope_part%%\)*}
+      after_scope=${after_type#\(*\)}
+      case $scope_part in
+        ''|*\(*|*\)*) scope_ok=false ;;
+      esac
+      ;;
+  esac
+
+  reject_commit_message() {
+    printf '\n%s\n' 'SERVER POLICY: commit message must use Conventional Commits.' >&2
+    printf '%s\n' "$1" >&2
+    printf '%s\n' 'types: feat fix docs style refactor perf test chore build ci revert' >&2
+    printf '%s\n' 'For example: fix(api): fix timeout on order payment / feat(api)!: change the response shape' >&2
+    return 1
+  }
+
+  case $first_line_type in
+    feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert) ;;
+    *) reject_commit_message 'Expected first line: <type>(<scope>): <subject>'; return 1 ;;
+  esac
+  if [ "$scope_ok" = false ]; then
+    reject_commit_message 'The scope in <type>(<scope>): must be non-empty and contain no parentheses.'; return 1
+  fi
+  case $after_scope in
+    ': '*|'!: '*) ;;
+    *) reject_commit_message 'Expected first line: <type>(<scope>): <subject>, optionally with a bang breaking marker (type(scope)!:) before the colon.'; return 1 ;;
+  esac
+
+  subject=$(printf '%s\n' "$first_line" | sed -e 's/^[a-z]*//' -e 's/^(\([^)]*\))*//' -e 's/^!//' -e 's/^: *//')
+  if [ -z "$subject" ] || printf '%s' "$subject" | grep -q '^[[:space:]]*$'; then
+    printf '\n%s\n' 'SERVER POLICY: commit message is missing a subject after the type prefix.' >&2
+    return 1
+  fi
+
+  return 0
+)
+
 is_valid_branch_name() (
   [ -n "${1:-}" ] || return 1
   case $1 in

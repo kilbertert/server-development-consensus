@@ -9,6 +9,28 @@ repository scope that decides which of those rules a repository is subject to.
 
 ## Cases
 
+### Delivery traceability (GOV-D01–D03)
+
+- **GOV-D01 — portable message check:** In a temporary repository, run
+  `sh tests/test-commit-message.sh` and `sh tests/test-commit-msg.sh`.
+  Valid titles pass; blank/comment/malformed titles fail even with a local
+  override. Hook class exemptions and chaining retain their existing behavior.
+  Fixtures remove themselves; no host configuration changes.
+- **GOV-D02 — PR title changes:** Run the governance workflow on this PR;
+  inspect its `Validate PR title` step and the `edited` event subscription.
+  `python -m pytest tests/test-delivery-workflow.py` runs the workflow's exact
+  command: invalid titles fail and shell-looking subject text stays inert.
+  Record the workflow URL and head SHA.
+- **GOV-D03 — installed guidance:** Run `sh tests/test-install.sh` and the
+  installer snapshot/rollback tests, then install the merged release through
+  `install.sh`. Compare the installed policy, developer instructions, common
+  library and message checker with the merged source. Read the deployment
+  record and both rollback paths from the installed policy. Record the merge
+  SHA, environment, UTC time, command results and private log location.
+  No live service rollback or database migration is performed for this policy
+  change. Complexity/coverage and mutation analysis are not applicable to the
+  prose; the extracted message parser is exercised by focused boundary tests.
+
 | ID | Environment | Preconditions | Test data | Actions | Expected observable result | Cleanup |
 |---|---|---|---|---|---|---|
 | GOV-B01 | AFK consumer repository | Adapter and consensus metadata are present | A rule that weakens the baseline | Run the adapter preflight | Preflight fails and reports the conflicting invariant | Restore test metadata |

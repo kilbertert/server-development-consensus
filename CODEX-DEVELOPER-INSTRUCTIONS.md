@@ -32,6 +32,16 @@ published artifact or a deployed service — also keeps a Keep a Changelog
 inferred; `dev-changelog` renders it, and the policy audit reports a missing or
 drifted one.
 
+Before a squash merge, validate the PR title and final merge message with
+`dev-commit-message TITLE`; preserve breaking-change and migration information
+and the PR reference. PR CI also validates title edits; the local hook cannot
+check a message generated on GitHub. For deployment, artifact rollback, code
+revert, or a hotfix when production trails main, read `Deployment records` and
+`Rollback and production hotfix` in the full consensus policy. They define the
+immutable artifact record, acceptance evidence, compatibility check and
+separate source-code recovery path. The `Delivery quick reference` indexes
+these operations without replacing their requirements.
+
 The repository root is a delivery surface. Before editing and before handoff,
 report its path, current branch, `git status --short --branch`, `git worktree
 list`, and `git branch -vv`. A task worktree is not the canonical checkout

@@ -12,3 +12,4 @@
 - [ ] No secrets, local credentials, or `.env` contents are committed
 - [ ] No unrelated generated artifacts are included
 - [ ] Behavioral changes are reflected in the relevant policy/hook tests
+- [ ] Final squash title is conventional; breaking changes, migrations and PR reference are preserved

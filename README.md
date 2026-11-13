@@ -303,10 +303,10 @@ the full canonical text — it is never loaded by a model and exists for
 auditors — while the three always-on mirrors carry the bounded excerpt
 described above.
 
-Rollback requires an explicit policy change. Restore the backed-up global Git
-configuration, remove the installed hook/tools, restore the prior global agent
-instruction files, and restore each repository's chained `core.hooksPath`.
-Remote Rulesets must be changed separately and must never be removed merely to
-work around a failed deterministic check. AI review policy may be changed by an
-explicit governance decision based on measured value, cost, latency, and false
-positives.
+The installer restores its snapshots if installation fails. Resolve the blocker
+and rerun the canonical installer; individual policy files and tools are not
+deployed manually. A deliberate governance rollback is a reviewed release-unit
+change delivered through the same installer. Remote Rulesets remain separate
+and must never be removed to work around a failed deterministic check. AI review
+policy changes require an explicit governance decision based on measured value,
+cost, latency, and false positives.

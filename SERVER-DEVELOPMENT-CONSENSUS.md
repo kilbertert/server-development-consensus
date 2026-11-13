@@ -539,7 +539,8 @@ identity; this rule does not require adopting containers.
 If production trails the current default branch, do not accidentally ship all
 unreleased work with a hotfix. Prefer a compatible retained-artifact rollback
 for immediate recovery and a forward fix on the default branch. When an older
-release must receive new code, first define a project-scoped maintenance plan:
+release must receive new code, first obtain human approval for a project-scoped
+maintenance plan and its policy exception:
 the deployed SHA, protected maintenance branch, PR/check gates, artifact source,
 and forward-port PR with regression evidence. That explicit plan is required
 before departing from the default-branch artifact rule; it creates no automatic

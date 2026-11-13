@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+[ "$#" -eq 1 ] || {
+  printf '%s\n' 'usage: dev-commit-message TITLE' >&2
+  exit 2
+}
+base_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
+if [ -f "$base_dir/lib/dev-git-common.sh" ]; then
+  . "$base_dir/lib/dev-git-common.sh"
+else
+  . "$base_dir/lib/server-development-consensus/dev-git-common.sh"
+fi
+# A hosting-generated commit must not inherit a local migration exemption.
+validate_commit_subject "$1"

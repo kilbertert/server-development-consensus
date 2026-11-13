@@ -71,4 +71,7 @@ jobs:
         run: sh tests/test-dev-changelog.sh
       - name: Server development installer tests
         shell: sh
-        run: sh tests/test-install.sh
+        run: |
+          sh tests/test-install.sh
+          bash tests/test-installer-snapshot-pairs.sh
+          bash tests/test-installer-rollback-invariant.sh

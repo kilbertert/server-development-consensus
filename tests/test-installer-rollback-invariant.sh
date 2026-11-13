@@ -91,6 +91,14 @@ if ! verify_rollback_invariant "$tmp/home/.local/bin/never-existed:installed-nev
   exit 1
 fi
 
+# A newly introduced tool has a post-install snapshot but no pre-install one.
+# Removing it is the correct rollback, not a lost-file failure.
+: >"$backup_dir/installed-new-tool.installed.present"
+if ! verify_rollback_invariant "$tmp/home/.local/bin/new-tool:installed-new-tool.installed"; then
+  printf '%s\n' 'FAIL invariant rejected rollback of a newly introduced tool' >&2
+  exit 1
+fi
+
 # A managed tool left non-executable is present but unusable: existence alone
 # reads as success and hides it.
 noexec=$tmp/home/.local/bin/dev-tool-noexec

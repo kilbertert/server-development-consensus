@@ -35,7 +35,6 @@ Add one row in ascending port order before starting a new fixed service.
 | 12112 | TCP | 127.0.0.1 | Claude-Mem / shared coding context | claude | Local worker and memory viewer for Claude Code and Codex; user-managed service, no public entry point | active |
 | 12113 | TCP | 127.0.0.1 | freebie-radar / development | claude | Existing local development instance; no public entry point | active |
 | 12121 | TCP | 127.0.0.1 | local research mirror | claude | Temporary local research server; remote access remains restricted to the development plane | temporary |
-| 12140 | TCP | 127.0.0.1 | antumi / desktop client (noVNC) | claude | Browser entry to the headless Antumi desktop workbench: Xvfb `:99` + x11vnc on loopback `5900`, served by `websockify` from `/usr/share/novnc`; `systemctl --user antumi.service`. Stays loopback-only; the public entry is nginx `antumi.ranlei.work` behind Cloudflare Access plus an RFB password (recorded in `fleet-ops/FLEET.md` §7.36) | active |
 
 ## Existing Exceptions
 

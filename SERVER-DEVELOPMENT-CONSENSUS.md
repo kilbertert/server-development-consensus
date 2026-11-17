@@ -341,6 +341,10 @@ a glance.
 > They still bind: read that file before any commit, push, pull request, merge,
 > release, or deployment.
 
+Before material or risky changes, or creating or updating engineering docs,
+read **Bounded Doc-first** in the full policy above; reuse the project's
+authoritative sources and size the documentation to the change.
+
 ## Mandatory Git Workflow
 
 The default branch (`main`, `master`, or the remote's configured default) is a
@@ -552,6 +556,56 @@ Emergency guard changes still require the [break-glass contract](#emergency-chan
 inverse commits; reverting a merge also affects future merge behavior.
 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
 defines the title and breaking-change markers used by the delivery checks.
+
+## Bounded Doc-first
+
+This delivery practice applies to server-managed repositories. Externally
+governed repositories keep their owner's process; local repositories remain
+exempt from delivery requirements. Host, secret and publication boundaries
+continue to apply to every class. Product content, such as articles, is not an
+engineering progress record and retains its own editorial lifecycle.
+
+- Before material or risky work, locate the authoritative requirement,
+  contract and operating guide. Record goals, constraints, the proposed delta
+  and observable acceptance in the existing task or document. Reuse required
+  Feature/QA artifacts; trivial reversible changes need no separate brief.
+- Give each claim one authoritative home. Approved requirements describe
+  intended behavior, code/schema describe implementation, ADRs explain choices,
+  and deployment evidence describes a specific revision and environment. A
+  conflict requires investigation; do not rewrite the contract merely to make
+  the current implementation appear correct. Generated summaries are navigation,
+  not new authority; derive enumerations from their machine-readable source.
+- Before creating a progress, plan or evidence file, check whether the existing
+  task or record can carry it. A new file needs a distinct audience, purpose or
+  lifecycle; explain that distinction and its authoritative source in the task
+  or PR. A second link or a repeated goal/status/next-step summary is not a
+  reason. Ordinary progress stays in the project's existing tracker or task
+  record; do not introduce a tracker solely to satisfy this rule.
+- Preserve one record per evidence event when durable evidence is needed.
+  Different deployments or verification events may need distinct records, each
+  with revision, environment, scope, result and evidence references. Several
+  tasks may link to the same event. Preserve past failures; corrections identify
+  what was wrong instead of silently converting a failed event into success.
+- Update affected current guidance in the same change. Replace obsolete
+  statements and link superseding decisions; keep proposals and historical
+  evidence distinguishable from current contracts. Select evidence by subject,
+  component, environment and revision, not by the largest filename or newest
+  timestamp alone. Merged, deployed, enabled and accepted are separate states.
+- At handoff, the task owner records which sources were updated or why no
+  update is needed, updates current pointers and closes or archives the plan.
+  Long-term ownership follows the responsible project/module. Read relevant
+  current sources first and expand history only for the question at hand;
+  keep raw logs, sessions and operational records private.
+
+Projects choose their directories, tools and useful level of detail. This rule
+does not install Trellis/OpenSpec/llmdoc, require a status dashboard or fixed
+line limits, or demand a sweep of old documents. Apply it to new work and repair
+related guidance when touched. Existing acceptance, review and privacy gates
+remain binding. Structure checks can catch broken links or generated drift;
+source changes and old verification dates only signal a need to review.
+Semantic conflict analysis stays bounded to the task and is not a mandatory
+model verdict. Evaluate adoption on real tasks; reduced document size alone is
+not evidence of better accuracy or lower delivery cost.
 
 ## Git And Worktree Delivery Invariants
 

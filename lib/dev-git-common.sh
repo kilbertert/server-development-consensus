@@ -244,6 +244,36 @@ runner_checkout_path() {
   return 1
 }
 
+# Whether this checkout is one whose delivery this host owns at all.
+#
+# The global hooks run in every repository on the machine, but the policy's
+# reach is narrower than that: it governs the workspace, and `dev-policy-audit`
+# scans only `$HOME/Projects` (see bin/dev-policy-audit). Before this predicate
+# existed, a `git init` followed by a commit anywhere — a test fixture under
+# `/tmp`, a scratch clone, any new repository that had not fetched yet — was
+# held to the managed-repository rules, and `enforce_default_branch_commit_policy`
+# refused it with "cannot determine the default branch". That is not a policy
+# violation; it is a repository the host has not been asked to deliver.
+#
+# The test is enrollment, not location. A checkout the tooling has taken over
+# carries `serverPolicy.*` configuration (the audit, `dev-worktree` and the
+# installer write it), and the workspace root is `$HOME/Projects`. Either one
+# marks a repository whose delivery this host owns, so a repository moved out of
+# the workspace keeps its protection and a fixture under `/tmp` never acquires
+# it. `SERVER_POLICY_IGNORE_CONFIG` does not bypass the workspace arm: the audit
+# asks this predicate through `default_branch_for_remote`, and it must still see
+# the same answer the hook sees.
+#
+# Fails open by design, but only where nothing is claimed: an unenrolled
+# repository has no `serverPolicy.*` key to misread, so there is no configuration
+# an exemption could widen past. Every enrolled repository keeps the full guard.
+host_delivers_repository() (
+  case "$(realpath -m -- "$(git rev-parse --show-toplevel 2>/dev/null || printf .)")/" in
+    "$(realpath -m -- "${HOME:-}/Projects")/"*) return 0 ;;
+  esac
+  git config --local --get-regexp '^serverPolicy\.' >/dev/null 2>&1
+)
+
 default_branch_for_remote() (
   remote_name=${1:-origin}
   configured_default=
@@ -354,6 +384,12 @@ is_canonical_checkout() (
 # actually disturbs the other sessions, and it is the one that can be told apart
 # exactly.
 enforce_canonical_worktree_policy() {
+  # Same scope as the default-branch rule beside it: this guard keeps a shared
+  # canonical checkout from being disturbed by task work, which only matters for
+  # a repository this host delivers. A fixture under `/tmp` is its own single
+  # checkout and disturbs nobody; see `host_delivers_repository`.
+  host_delivers_repository || return 0
+
   is_canonical_checkout
   case $? in
     0) ;;
@@ -370,6 +406,14 @@ enforce_canonical_worktree_policy() {
 }
 
 enforce_default_branch_commit_policy() {
+  # The guard exists to keep task work off the default branch of a repository
+  # this host delivers. A checkout the host was never asked to deliver — a test
+  # fixture under `/tmp`, a scratch clone — has no default branch to protect and
+  # frequently has not fetched one yet, so applying the rule there produces a
+  # refusal that blames the commit for the repository's provenance. Leave those
+  # alone; see `host_delivers_repository`.
+  host_delivers_repository || return 0
+
   current_branch=$(git branch --show-current) || {
     printf '%s\n' 'SERVER POLICY: cannot determine the current branch; commit stopped safely.' >&2
     return 1

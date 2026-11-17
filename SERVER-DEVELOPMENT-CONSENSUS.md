@@ -476,10 +476,58 @@ The linked sections define the requirements; the table is an execution aid.
 |---|---|---|
 | Daily task | Inspect worktrees → `dev-worktree start TYPE DESCRIPTION` → focused commits → PR → checks and review → GitHub merge | [Verified remote paths, local fast-forward, separate cleanup results](#git-and-worktree-delivery-invariants) |
 | Main moved | Fetch with pruning → integrate the current default into the task branch without rewriting published history → rerun checks | Current base is an ancestor; CI passed on the updated branch |
+| A large feature is unfinished | Apply [independently deployable increments](#independently-deployable-increments) before merging each slice | Existing behavior and unrelated delivery remain usable with the feature inactive |
 | Urgent defect | `hotfix/*` → same PR/check/review route | [Production baseline identified and regression verified](#rollback-and-production-hotfix) |
 | Deploy | Select a merged revision's immutable artifact → acceptance → authorized deployment | [Deployment record and runtime verification](#deployment-records) |
 | Roll back | Check data/config compatibility → restore prior artifact; independently revert code through a PR | [Two recorded outcomes](#rollback-and-production-hotfix) |
 | Dirty or divergent canonical checkout | Preserve user work; develop in a fresh task worktree | Report pending local reconciliation; never reset or rebase someone else's work |
+
+### Independently deployable increments
+
+A completed implementation stage is not necessarily a deployable increment.
+Before splitting material work and before merging each slice, use the existing
+task, acceptance plan and PR to state its current observable effect, inactive
+capabilities, dependencies, compatibility evidence and recovery path. Link the
+evidence rather than creating a second plan. A parent feature may remain
+unfinished while a compatible increment is merged; another task starts from
+the latest default branch and must not depend on that feature's future stages.
+
+- Inactive code may ship when the deployed configuration keeps existing paths
+  usable. Verify the inactive path, including startup, background work, shared
+  resources, permissions and persistent writes affected by the change. Hiding
+  a UI entry or declaring a flag off is not this evidence.
+- Changes to shared authentication, APIs, schemas or configuration are active
+  changes even when introduced for an unfinished feature. Verify affected
+  existing consumers independently. Record supported mixed component versions,
+  rollout order and recovery compatibility; prefer additive transitions before
+  removing old readers or formats. A code revert cannot reverse data changes.
+- Verify unrelated work against the actual candidate with unfinished features
+  inactive, using affected existing user paths and dependency boundaries. Reuse
+  existing checks; test meaningful interacting configurations, not every
+  theoretical flag combination. Evidence is scoped to revision, configuration,
+  environment and behavior, never proof of zero regressions everywhere.
+- Separate deployment from activation. Activation has its own acceptance and
+  authorization; where merge triggers deployment, the increment's compatibility
+  evidence is needed before merge. Missing required evidence blocks that slice,
+  not unrelated work whose independence is demonstrated. A deployment approval
+  alone cannot remove earlier feature code from a source snapshot.
+- Reuse an existing configuration boundary when sufficient. A temporary release
+  switch names its owner, intended default, activation conditions and removal
+  condition in the existing task. Revisit it at activation or cancellation;
+  remove obsolete paths after the recovery window. A release switch never
+  substitutes for authorization or a permanent product setting.
+
+If a slice requires unfinished follow-up work to preserve existing behavior,
+reslice it or add the smallest compatible transition before merging. A temporary
+feature integration branch requires a separately reviewed project plan naming
+its owner, lifetime, PR/check gates, main synchronization and final integration;
+it does not authorize production artifacts outside the default-branch rule or
+silently change `dev-worktree`'s baseline. No permanent `develop` is introduced.
+
+These semantic decisions belong to task planning and review, backed by focused
+executable evidence. Git hooks, PR checkboxes and a successful CI run do not
+establish business compatibility on their own. This clarifies the existing
+deployable-default requirement without adding a model-based merge gate.
 
 ### Deployment records
 

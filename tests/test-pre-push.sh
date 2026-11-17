@@ -175,4 +175,51 @@ if printf 'refs/heads/feature %s refs/heads/feature %s\n' "$bootstrap_head" "$ze
   exit 1
 fi
 
+# A repository the host was never asked to deliver carries no serverPolicy.*
+# configuration and sits outside the workspace root. The global hook still runs
+# there, but a fixture pushing to a fixture remote is ordinary git use. Measured
+# 2026-11-17: before this, such a push failed with "pushes must target a
+# configured remote", leaving 88 tests failing in an unrelated project after the
+# commit hooks were scoped.
+unmanaged="$tmp/unmanaged"
+git init --initial-branch=main "$unmanaged" >/dev/null
+git -C "$unmanaged" config user.name test
+git -C "$unmanaged" config user.email test@example.com
+git -C "$unmanaged" -c core.hooksPath=/dev/null commit --allow-empty -m 'initial' >/dev/null
+git init --bare --initial-branch=main "$tmp/unmanaged-origin.git" >/dev/null
+git -C "$unmanaged" remote add origin "$tmp/unmanaged-origin.git"
+unmanaged_head=$(git -C "$unmanaged" rev-parse HEAD)
+if ! printf 'refs/heads/main %s refs/heads/main %s\n' "$unmanaged_head" "$zero" |
+  (cd "$unmanaged" && "$hook" origin "$tmp/unmanaged-origin.git") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL unenrolled repository could not push to its own remote' >&2
+  exit 1
+fi
+
+# Enrollment turns the guard on and survives outside the workspace root: a
+# direct push to the default branch is then refused as it is anywhere else.
+git -C "$unmanaged" config serverPolicy.defaultBranch main
+git -C "$unmanaged" -c core.hooksPath=/dev/null push -q origin main >/dev/null 2>&1 || true
+if printf 'refs/heads/main %s refs/heads/main %s\n' "$unmanaged_head" "$zero" |
+   (cd "$unmanaged" && "$hook" origin "$tmp/unmanaged-origin.git") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL enrolled repository was exempted by its location' >&2
+  exit 1
+fi
+git -C "$unmanaged" config --unset serverPolicy.defaultBranch
+
+# The workspace arm: a checkout under $HOME/Projects is governed before any
+# serverPolicy.* key exists.
+mkdir -p "$HOME/Projects"
+git init --initial-branch=main "$HOME/Projects/fresh" >/dev/null
+git -C "$HOME/Projects/fresh" config user.name test
+git -C "$HOME/Projects/fresh" config user.email test@example.com
+git -C "$HOME/Projects/fresh" -c core.hooksPath=/dev/null commit --allow-empty -m 'initial' >/dev/null
+git init --bare --initial-branch=main "$tmp/fresh-origin.git" >/dev/null
+git -C "$HOME/Projects/fresh" remote add origin "$tmp/fresh-origin.git"
+fresh_head=$(git -C "$HOME/Projects/fresh" rev-parse HEAD)
+if printf 'refs/heads/main %s refs/heads/main %s\n' "$fresh_head" "$zero" |
+   (cd "$HOME/Projects/fresh" && "$hook" origin "$tmp/fresh-origin.git") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL unclassified checkout inside the workspace root was exempted' >&2
+  exit 1
+fi
+
 printf '%s\n' 'pre-push policy tests passed'

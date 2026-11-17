@@ -119,4 +119,40 @@ fi
 git -C "$tmp/work" remote remove origin
 git -C "$tmp/work" config --unset serverPolicy.repositoryClass
 
+# A repository the host was never asked to deliver carries no serverPolicy.*
+# configuration and sits outside the workspace root. The global hook still runs
+# there, but there is no delivery process for a commit convention to describe:
+# a test fixture under /tmp must be able to commit any message. Measured
+# 2026-11-17: before this, every such commit was refused with "commit message
+# must use Conventional Commits", which broke 230 tests in an unrelated project.
+unmanaged="$tmp/unmanaged"
+git init --initial-branch=main "$unmanaged" >/dev/null
+git -C "$unmanaged" config user.name test
+git -C "$unmanaged" config user.email test@example.com
+msg_file="$tmp/unmanaged-msg"
+printf 'initial\n' >"$msg_file"
+if ! (cd "$unmanaged" && "$hook" "$msg_file") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL unenrolled repository enforced the commit convention' >&2
+  exit 1
+fi
+
+# Enrollment turns it on and survives outside the workspace root.
+git -C "$unmanaged" config serverPolicy.defaultBranch main
+if (cd "$unmanaged" && "$hook" "$msg_file") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL enrolled repository was exempted by its location' >&2
+  exit 1
+fi
+git -C "$unmanaged" config --unset serverPolicy.defaultBranch
+
+# The workspace arm: a checkout under $HOME/Projects is governed before any
+# serverPolicy.* key exists.
+mkdir -p "$HOME/Projects"
+git init --initial-branch=main "$HOME/Projects/fresh" >/dev/null
+git -C "$HOME/Projects/fresh" config user.name test
+git -C "$HOME/Projects/fresh" config user.email test@example.com
+if (cd "$HOME/Projects/fresh" && "$hook" "$msg_file") >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL unclassified checkout inside the workspace root was exempted' >&2
+  exit 1
+fi
+
 printf '%s\n' 'commit-msg policy tests passed'

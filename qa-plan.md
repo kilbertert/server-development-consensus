@@ -9,6 +9,19 @@ repository scope that decides which of those rules a repository is subject to.
 
 ## Cases
 
+### Bounded documentation (GOV-D04)
+
+Run `sh tests/test-install.sh`: the installed full policy must contain the
+Bounded Doc-first section; both the bounded agent excerpt and Codex instructions
+must reach it without embedding the full section. Compare policy projections
+with canonical source after installation. Use a large, medium and small
+repository to walk three cases: trivial edit reuses the task; a distinct
+verification event keeps its own evidence; an extra progress link creates no
+new file. Existing product acceptance and repository-class exemptions must
+remain unchanged. Record actual changed paths, candidate SHA, UTC time and
+results in the PR/private evidence. No service operation, new framework or
+all-repository rewrite is part of this case; prose has no mutation-testing target.
+
 ### Delivery traceability (GOV-D01–D03)
 
 - **GOV-D01 — portable message check:** In a temporary repository, run

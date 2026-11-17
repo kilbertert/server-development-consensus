@@ -9,6 +9,11 @@ If on the default branch, create one short-lived task branch first; preserve
 existing uncommitted work on that branch and never discard it to clean the
 worktree. Read-only investigation does not require a branch.
 
+Before material/risky work or creating/updating engineering docs, read
+`Bounded Doc-first` in the full consensus policy. Reuse authoritative sources;
+a new file needs a distinct audience, purpose or lifecycle, not another link
+or repeated status summary. Preserve required acceptance and private evidence.
+
 Normal delivery is: establish the canonical checkout and inspect all worktrees
 -> one logical task -> one short-lived branch/worktree based on the latest
 origin default branch -> focused commits and relevant formatter/static

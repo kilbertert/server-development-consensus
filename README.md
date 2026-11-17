@@ -14,6 +14,10 @@ For daily work, hotfix, deployment or rollback, start with the
 Deployment records and both rollback paths live in the same policy, so the
 installer publishes the guidance with the tools as one release unit.
 
+For engineering documentation, use [Bounded Doc-first](SERVER-DEVELOPMENT-CONSENSUS.md#bounded-doc-first).
+It defines sources, updates and evidence reuse; projects retain their own
+directories and tools. The short agent pointer is installed with the full policy.
+
 It was extracted on 2026-08-18 from
 `kilibtert/helixent-agent-workbench` (local path `~/Projects/praxis`), which is
 the Helixent product repository and no longer hosts server-level governance.

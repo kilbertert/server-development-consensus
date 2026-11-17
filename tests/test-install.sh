@@ -85,6 +85,10 @@ python3 "$HOME/.local/bin/update-codex-config" --verify "$HOME/.codex/config.tom
 grep -q '^## Account Boundary$' "$HOME/.claude/CLAUDE.md"
 grep -q '^## Standards-Based Engineering$' "$HOME/.claude/CLAUDE.md"
 ! grep -q '^## Mandatory Git Workflow$' "$HOME/.claude/CLAUDE.md"
+grep -q 'read \*\*Bounded Doc-first\*\*' "$HOME/.claude/CLAUDE.md"
+! grep -q '^## Bounded Doc-first$' "$HOME/.claude/CLAUDE.md"
+grep -q '^## Bounded Doc-first$' "$HOME/.config/server-development-consensus/SERVER-DEVELOPMENT-CONSENSUS.md"
+grep -q 'Bounded Doc-first' "$HOME/.config/server-development-consensus/CODEX-DEVELOPER-INSTRUCTIONS.md"
 [ "$(wc -c <"$HOME/.claude/CLAUDE.md")" -lt 40000 ]
 python3 - "$HOME/.codex/config.toml" <<'PY'
 import sys

@@ -1,5 +1,30 @@
 Feature: Layered consensus and AFK governance
 
+  Rule: Documentation is scoped to the task and its authoritative sources
+
+    Scenario: A progress summary only links an existing event
+      Given the task already holds its progress and links a verification record
+      When an agent considers another Markdown progress file
+      Then the agent reuses those sources unless the audience, purpose or lifecycle is distinct
+      And a repeated status or another link is not a sufficient reason
+
+    Scenario: A small project uses the existing README and QA plan
+      Given a server-managed project has no specification framework
+      When a material change needs documentation
+      Then the existing task, behavior contract and QA plan carry the delta
+      And no new framework, fixed directory layout or line-count gate is required
+
+    Scenario: Document guidance is available after a full installation
+      When the canonical installer publishes the release unit
+      Then the bounded agent excerpt points to Bounded Doc-first
+      And the full policy contains its scope and evidence rules
+
+    Scenario: An external repository keeps its owner's process
+      Given an externally governed repository or a local repository
+      When the host evaluates documentation delivery requirements
+      Then repository-class exemptions remain intact
+      And host and private-record boundaries still apply
+
   Rule: The message that reaches the default branch describes the delivered change
 
     Scenario: A squash title is checked without local hook exemptions

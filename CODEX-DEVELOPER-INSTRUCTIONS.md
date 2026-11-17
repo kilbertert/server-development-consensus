@@ -14,6 +14,10 @@ Before material/risky work or creating/updating engineering docs, read
 a new file needs a distinct audience, purpose or lifecycle, not another link
 or repeated status summary. Preserve required acceptance and private evidence.
 
+When splitting a large feature or merging a stage, read `Independently
+deployable increments` in the full policy. Stage completion alone does not
+qualify it for main; verify inactive behavior and affected existing consumers.
+
 Normal delivery is: establish the canonical checkout and inspect all worktrees
 -> one logical task -> one short-lived branch/worktree based on the latest
 origin default branch -> focused commits and relevant formatter/static

@@ -66,12 +66,19 @@ enforce_commit_message_contract() {
 # Externally governed repositories keep their own commit convention; the server
 # contract applies only to server-managed repositories. An unreadable class
 # stops the commit instead of silently exempting it.
-repository_class_value=$(repository_class) || {
-  printf '\n%s\n' 'SERVER POLICY: cannot determine the repository class; commit stopped safely.' >&2
-  exit 1
-}
-if [ "$repository_class_value" = managed ]; then
-  enforce_commit_message_contract "$@" || exit 1
+#
+# A repository the host was not asked to deliver is not "managed" in the sense
+# the contract means, whatever the class default says: the global hook runs in
+# every repository on the machine, and a fixture under `/tmp` has no delivery
+# process for a commit convention to describe. See `host_delivers_repository`.
+if host_delivers_repository; then
+  repository_class_value=$(repository_class) || {
+    printf '\n%s\n' 'SERVER POLICY: cannot determine the repository class; commit stopped safely.' >&2
+    exit 1
+  }
+  if [ "$repository_class_value" = managed ]; then
+    enforce_commit_message_contract "$@" || exit 1
+  fi
 fi
 
 if chained_hook=$(chained_hook_for commit-msg); then

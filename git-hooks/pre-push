@@ -11,6 +11,23 @@ esac
 remote=${1:-origin}
 push_url=${2:-}
 
+# A repository the host was not asked to deliver has no delivery process to
+# guard: the global hook runs in every repository on the machine, and a test
+# fixture pushing to a fixture remote is ordinary git use. Everything below —
+# the default-branch resolution included — describes this host's delivery flow,
+# so none of it applies. Measured 2026-11-17: before this, such a push was
+# refused and left 88 tests failing in an unrelated project after the commit
+# hooks were scoped. See `host_delivers_repository`.
+#
+# Control still passes to a project hook if the repository declares one, since
+# that hook belongs to the repository rather than to this host.
+if ! host_delivers_repository; then
+  if chained_hook=$(chained_hook_for pre-push); then
+    exec "$chained_hook" "$remote" "$push_url"
+  fi
+  exit 0
+fi
+
 # Externally governed repositories keep their own delivery process, so the
 # server guard is skipped and control passes to their own hook with stdin
 # untouched. An unreadable class stops the push instead of silently exempting.

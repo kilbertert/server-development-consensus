@@ -24,8 +24,8 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 
-MODEL_CONTEXT_WINDOW = 872_000
-MODEL_AUTO_COMPACT_TOKEN_LIMIT = 700_000
+MODEL_CONTEXT_WINDOW = 1_000_000
+MODEL_AUTO_COMPACT_TOKEN_LIMIT = 850_000
 
 
 def desired_value(instructions: str) -> str:

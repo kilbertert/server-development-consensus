@@ -95,8 +95,8 @@ import sys
 import tomlkit
 
 config = tomlkit.parse(open(sys.argv[1], encoding="utf-8").read())
-assert config["model_context_window"] == 872000
-assert config["model_auto_compact_token_limit"] == 700000
+assert config["model_context_window"] == 1000000
+assert config["model_auto_compact_token_limit"] == 850000
 assert config["model"] == "gpt-test"
 PY
 cmp "$base_dir/bin/sync-privileged-policy" "$HOME/.local/bin/sync-privileged-policy"

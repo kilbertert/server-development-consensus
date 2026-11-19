@@ -62,8 +62,8 @@ or user-writable. Root-maintained immutable files are preserved. Codex also
 receives the core Git workflow through a TOML-validated update of the
 user-writable `developer_instructions` field in `~/.codex/config.toml`, while
 all unrelated model, provider, project, MCP, hook, and plugin settings remain
-unchanged. The managed Codex defaults are an 872000-token context window and a
-700000-token automatic-compaction threshold. Operators should verify the
+unchanged. The managed Codex defaults are a 1000000-token context window and
+an 850000-token automatic-compaction threshold. Operators should verify the
 selected model catalog advertises that window before installation. The updater
 uses `tomlkit`, an explicit installer prerequisite, to preserve unrelated TOML
 and comments safely.

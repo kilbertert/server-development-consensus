@@ -77,10 +77,10 @@ Feature: Layered consensus and AFK governance
       And AGENT_PAT and host delivery credentials remain outside the container
 
     Scenario: Codex uses the managed long-context defaults
-      Given the installed Codex model catalog advertises a maximum context of at least 872000 tokens
+      Given the installed Codex model catalog advertises a maximum context of at least 1000000 tokens
       When the server consensus installer updates the user's Codex configuration
-      Then the global context window is 872000 tokens
-      And automatic compaction is configured at 700000 tokens
+      Then the global context window is 1000000 tokens
+      And automatic compaction is configured at 850000 tokens
       And unrelated Codex settings remain unchanged
 
   Rule: Exceptions are bounded and auditable

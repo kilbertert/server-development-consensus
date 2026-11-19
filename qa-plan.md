@@ -50,7 +50,7 @@ all-repository rewrite is part of this case; prose has no mutation-testing targe
 | GOV-B02 | AFK consumer repository | CI has the compatibility validator | Current consensus outside the declared SemVer range | Run the implementation/delivery check | Check fails with both versions and no push is attempted | Restore test metadata |
 | GOV-B03 | Docker agent plus host runner | Container, host wrapper, and GitHub Ruleset are available | Attempted `git push origin main` | Execute the push path at each boundary | Container check, host wrapper, and Ruleset each reject the operation | Remove temporary branch |
 | GOV-B04 | AFK consumer repository | Exception validator is enabled | One valid and one expired structured exception | Run the exception check | Valid implementation exception is accepted; expired or security-boundary exception blocks delivery | Remove temporary exception records |
-| GOV-B05 | Installer test fixture home | `tomlkit` is installed and `~/.codex/config.toml` carries unrelated settings | A config with existing `model`, `projects`, and approval settings | Run the installer Codex config update, then its `--verify` path | `model_context_window` is 872000 and `model_auto_compact_token_limit` is 700000, while unrelated settings and comments survive | Remove the fixture home |
+| GOV-B05 | Installer test fixture home | `tomlkit` is installed and `~/.codex/config.toml` carries unrelated settings | A config with existing `model`, `projects`, and approval settings | Run the installer Codex config update, then its `--verify` path | `model_context_window` is 1000000 and `model_auto_compact_token_limit` is 850000, while unrelated settings and comments survive | Remove the fixture home |
 | GOV-B06 | Test fixture repository classified externally governed | The managed hooks are installed and the repository has its own chained hook | Non-conventional commit message; default-branch commit; default-branch push over the repository's own remote | Run `commit-msg`, `pre-commit`, `pre-merge-commit`, and `pre-push` in the fixture | Every managed contract is skipped, the repository's own hook still runs, and the pushed hook receives the original arguments and stdin | Remove the fixture repository |
 | GOV-B07 | Test fixture repository classified externally governed | A task worktree exists outside the workspace worktree location | A linked worktree placed outside the projects workspace | Run `dev-worktree audit` and `dev-policy-audit` | The worktree location violation is still reported, while server delivery lifecycle and bookkeeping findings are not raised for the external repository | Remove the fixture repository |
 | GOV-B08 | Test fixture repositories with an absent or invalid class value | The managed hooks are installed | One repository with no class recorded, one with an unsupported value | Run the managed hooks and `dev-start` in each fixture | The unset fixture keeps the server-managed rules in force; the invalid fixture stops every operation with a repository class error | Remove the fixture repositories |
@@ -81,7 +81,7 @@ all-repository rewrite is part of this case; prose has no mutation-testing targe
 | Compatibility blocking | An incompatible AFK template is blocked | GOV-B02 |
 | Three-layer default-branch protection | A container cannot deliver directly to the default branch | GOV-B03 |
 | Bounded exceptions | A legitimate AFK implementation difference is recorded | GOV-B04 |
-| Managed Codex long context | Codex receives 872K/700K while unrelated settings survive | GOV-B05 |
+| Managed Codex long context | Codex receives 1M/850K while unrelated settings survive | GOV-B05 |
 | External delivery scope | An externally governed repository keeps its own delivery process | GOV-B06 |
 | Host boundaries still apply | Host boundaries still apply to an externally governed repository | GOV-B07 |
 | Class fails closed | An unrecorded repository class stays server-managed; an unreadable or invalid repository class fails closed | GOV-B08 |
@@ -240,7 +240,7 @@ CI check set was run on this branch: `tests/test-ai-review-policy.py`,
 Review Sentinel unit and installer tests. *The last two were removed
 2026-10-18 with Review Sentinel itself; the rest of this record stands.*
 `test-install.sh` and
-`test-update-codex-config.sh` assert the 872000/700000 defaults and that
+`test-update-codex-config.sh` assert the 1000000/850000 defaults and that
 unrelated settings survive. The authoritative result is this change's
 `Governance release unit` CI run.
 

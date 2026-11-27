@@ -785,4 +785,15 @@ if "$audit" "$HOME/missing" >/dev/null 2>&1; then
   exit 1
 fi
 
+gc_repo=$projects/gc-warn-repo
+git init --initial-branch=main "$gc_repo" >/dev/null
+git -C "$gc_repo" config user.name test
+git -C "$gc_repo" config user.email test@example.com
+git -C "$gc_repo" -c core.hooksPath=/dev/null commit --allow-empty -m init >/dev/null
+printf '%s\n' 'warning: too many loose objects' >"$gc_repo/.git/gc.log"
+"$audit" "$projects" >"$tmp/gc-warn.out" 2>&1 || true
+grep -q "WARN repo=$gc_repo state=gc_log_present path=$gc_repo/.git/gc.log" "$tmp/gc-warn.out"
+grep -q 'gc_logs=1' "$tmp/gc-warn.out"
+rm -rf "$gc_repo"
+
 printf '%s\n' 'development policy audit tests passed'

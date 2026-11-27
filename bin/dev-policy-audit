@@ -39,6 +39,7 @@ auth_audit_tool=$policy_home/.local/bin/dev-host-auth-audit
 failures=0
 repaired=0
 stale_branches=0
+gc_logs=0
 scan_file=
 sorted_scan_file=
 trap 'rm -f "${scan_file:-}" "${sorted_scan_file:-}"' EXIT
@@ -710,6 +711,10 @@ while IFS= read -r -d '' git_path; do
   common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
   if [[ -n $common_dir && -z ${audited_worktree_roots[$common_dir]+present} ]]; then
     audited_worktree_roots[$common_dir]=true
+    if [[ -f $common_dir/gc.log ]]; then
+      printf 'WARN repo=%s state=gc_log_present path=%s\n' "$repo" "$common_dir/gc.log"
+      gc_logs=$((gc_logs + 1))
+    fi
     if [[ $default_status -eq 0 && -x $worktree_tool ]]; then
       worktree_output=$(
         "$worktree_tool" audit --repo "$repo" --default "$default_branch" 2>&1
@@ -790,6 +795,6 @@ else
   failures=$((failures + 1))
 fi
 
-printf 'audit complete: failures=%d repaired=%d stale_branches=%d\n' \
-  "$failures" "$repaired" "$stale_branches"
+printf 'audit complete: failures=%d repaired=%d stale_branches=%d gc_logs=%d\n' \
+  "$failures" "$repaired" "$stale_branches" "$gc_logs"
 [[ $failures -eq 0 ]]

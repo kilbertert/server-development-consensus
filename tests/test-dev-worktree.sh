@@ -255,4 +255,49 @@ if ! grep -q 'worktree audit passed' "$tmp/runner-checkout.out"; then
   exit 1
 fi
 
+# Test 1: dev-worktree start prunes all origin refs so an already-deleted remote branch
+# surfaces as upstream_gone instead of remaining invisible to start's preflight audit.
+git -C "$HOME/Projects/repo" worktree remove --force "$HOME/Projects/.worktrees/repo-tracks-default"
+git -C "$HOME/Projects/repo" worktree remove --force "$tmp/outside"
+git -C "$HOME/Projects/repo" branch -D fix/tracks-default >/dev/null
+(
+  cd "$HOME/Projects/repo"
+  "$HOME/.local/bin/dev-worktree" start feat gone-check >/dev/null
+)
+git -C "$HOME/Projects/.worktrees/repo-gone-check" push -u origin feat/gone-check >/dev/null 2>&1
+git -C "$HOME/Projects/repo" push origin --delete feat/gone-check >/dev/null 2>&1
+if (cd "$HOME/Projects/repo" && "$HOME/.local/bin/dev-worktree" start feat blocked-by-gone) \
+  >"$tmp/gone-start.out" 2>&1; then
+  printf '%s\n' 'FAIL dev-worktree start did not prune deleted remote branch into upstream_gone' >&2
+  exit 1
+fi
+grep -q 'resolve existing worktree lifecycle issues' "$tmp/gone-start.out"
+git -C "$HOME/Projects/repo" worktree remove --force "$HOME/Projects/.worktrees/repo-gone-check"
+git -C "$HOME/Projects/repo" branch -D feat/gone-check >/dev/null
+
+# Test 2: dev-worktree retire --delete-remote removes both local worktree/branch and origin/<branch>.
+(
+  cd "$HOME/Projects/repo"
+  "$HOME/.local/bin/dev-worktree" start feat retire-remote >/dev/null
+)
+printf '%s\n' remote-delete >"$HOME/Projects/.worktrees/repo-retire-remote/remote.txt"
+git -C "$HOME/Projects/.worktrees/repo-retire-remote" add remote.txt
+git -C "$HOME/Projects/.worktrees/repo-retire-remote" commit -m 'retire remote' >/dev/null
+git -C "$HOME/Projects/.worktrees/repo-retire-remote" push -u origin feat/retire-remote >/dev/null 2>&1
+retire_commit=$(git -C "$HOME/Projects/.worktrees/repo-retire-remote" rev-parse HEAD)
+git -C "$tmp/seed" fetch "$tmp/remote.git" main >/dev/null
+git -C "$tmp/seed" reset --hard FETCH_HEAD >/dev/null
+git -C "$tmp/seed" fetch "$tmp/remote.git" feat/retire-remote >/dev/null
+git -C "$tmp/seed" merge --no-ff -m "merge feat/retire-remote" FETCH_HEAD >/dev/null
+git -C "$tmp/seed" push "$tmp/remote.git" main >/dev/null
+retire_remote_out=$(
+  cd "$HOME/Projects/repo" &&
+    "$HOME/.local/bin/dev-worktree" retire --delete-remote "$HOME/Projects/.worktrees/repo-retire-remote"
+)
+grep -q 'remote_deleted=origin/feat/retire-remote' <<<"$retire_remote_out"
+if git ls-remote --exit-code --heads "$tmp/remote.git" refs/heads/feat/retire-remote >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL dev-worktree retire --delete-remote left remote branch behind' >&2
+  exit 1
+fi
+
 printf '%s\n' 'dev-worktree lifecycle tests passed'

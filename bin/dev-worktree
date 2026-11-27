@@ -11,7 +11,7 @@ usage:
   dev-worktree audit [--repo PATH] [--default BRANCH]
   dev-worktree preserve PATH REASON
   dev-worktree activate PATH
-  dev-worktree retire PATH
+  dev-worktree retire [--delete-remote] PATH
 
 Internal hook command:
   dev-worktree guard-overlap --tip OID --default REF [--current PATH]
@@ -383,8 +383,13 @@ start_worktree() {
 
   default_branch=$(default_branch_for_remote origin) ||
     die 'could not determine the origin default branch'
-  git fetch --prune origin \
-    "+refs/heads/$default_branch:refs/remotes/origin/$default_branch"
+  # Prune all remote-tracking refs (not just origin/<default>) so branches deleted on
+  # GitHub become `[gone]` before `audit_worktrees` runs.
+  git fetch --prune origin
+  if ! git show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
+    git fetch --prune origin \
+      "+refs/heads/$default_branch:refs/remotes/origin/$default_branch"
+  fi
   remote_default=$(git rev-parse "origin/$default_branch")
   audit_worktrees "$default_branch" >/dev/null ||
     die 'resolve existing worktree lifecycle issues before starting another task'
@@ -445,6 +450,25 @@ set_lifecycle_state() {
 }
 
 retire_worktree() {
+  local delete_remote=false
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --delete-remote)
+        delete_remote=true
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        usage
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
   [[ $# -eq 1 ]] || usage
   require_repository
   require_managed_repository
@@ -464,8 +488,11 @@ retire_worktree() {
   [[ $branch != "$default_branch" ]] || die 'the default-branch worktree cannot be retired'
   [[ -z $(git -C "$target" status --porcelain --untracked-files=all) ]] ||
     die 'worktree is dirty; audit and preserve its changes before retirement'
-  git fetch --prune origin \
-    "+refs/heads/$default_branch:refs/remotes/origin/$default_branch"
+  git fetch --prune origin
+  if ! git show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
+    git fetch --prune origin \
+      "+refs/heads/$default_branch:refs/remotes/origin/$default_branch"
+  fi
   default_ref="origin/$default_branch"
 
   local base_oid head integration_source
@@ -484,8 +511,14 @@ retire_worktree() {
   git worktree remove "$target"
   git branch -D "$branch"
   if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
-    printf 'retired local worktree and branch; verification=%s remote branch remains: origin/%s\n' \
-      "$integration_source" "$branch"
+    if $delete_remote; then
+      git push origin --delete "$branch"
+      printf 'retired worktree path=%s branch=%s verification=%s remote_deleted=origin/%s\n' \
+        "$target" "$branch" "$integration_source" "$branch"
+    else
+      printf 'retired local worktree and branch; verification=%s remote branch remains: origin/%s\n' \
+        "$integration_source" "$branch"
+    fi
   else
     printf 'retired worktree path=%s branch=%s verification=%s\n' \
       "$target" "$branch" "$integration_source"

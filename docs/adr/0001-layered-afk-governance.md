@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: superseded
+superseded_by: 0009-fleet-kit-deterministic-governance.md
 ---
 
 # Layered Governance for AFK Execution
+
+> **Superseded by [ADR 0009](0009-fleet-kit-deterministic-governance.md).** Heavyweight AFK sandbox execution (`@ai-hero/sandcastle`, Docker coding runners, and copy-pasted `.sandcastle/` scaffolds) has been retired; `afk-bootstrap` has been renamed and refocused as `kilbertert/fleet-kit`, a zero-copy deterministic repository governance and delivery suite.
 
 `server-development-consensus` is the single source of server-wide governance invariants. `afk-bootstrap` is a project-level execution adapter: it maps those invariants to Planner, label-driven Actions, Docker, repository checks, and pull-request orchestration without redefining or weakening the baseline.
 

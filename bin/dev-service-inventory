@@ -49,22 +49,15 @@ PLATFORM_PORTS=" 22 80 443 "
 #
 # 键为 "<port>/<owner>"，这样程序改名或端口被别的服务占用都会重新变成违规。
 #
-# ⚠️ 例外会失效，失效的例外必须删掉。已有两条这样走到终点：
+# ⚠️ 例外会失效，失效的例外必须删掉。已有三条这样走到终点：
 #   `27641/api`（2026-10-18，blog-chat 迁往 service host）
 #   `8503/dinotty-server`（2026-10-19，dinotty 整体退役，改由 SSH 接入）
-# 两次都是**债务还清了**，而不是被豁免掉了。留着死条目的代价不是"多一行"，而是让
+#   `8317/socat`（2026-11-28，cliproxyapi 与 rakazo-relay 退役，改走官方 Codex/Gemini 订阅）
+# 都是**债务还清了**，而不是被豁免掉了。留着死条目的代价不是"多一行"，而是让
 # 整张表看起来比实际更宽：后来的人会以为开发机上还有一个已获批的端口，从而不去查它。
 #
 # 当前为空是**正确状态**：开发机上没有任何非环回业务监听。
-declare -A ACCEPTED_RESIDUALS=(
-  # rakazo-relay.service 的 socat：把 rakazo_app 网桥网关 (172.22.0.1) 的 8317
-  # 转进 host loopback 的 cliproxyapi。只有挂在该网桥上的本机容器可达——
-  # 等价于把 loopback 延伸给自己的容器，不是对外暴露。不能改回 loopback：
-  # 容器只能经网桥网关地址到达宿主。真正的清偿是把 relay 换成同网桥上的
-  # 容器（rakazo 组网重构），在那之前按例外记账。
-  # 补偿控制：转发目标写死 127.0.0.1，socat 只做 loopback 的桥接放大。
-  ["8317/socat"]="rakazo-relay：rakazo_app 网桥内容器到 host loopback cliproxyapi 的转发，仅本机容器可达"
-)
+declare -A ACCEPTED_RESIDUALS=()
 
 # 测试缝：让测试可以验证"例外机制"本身（可见 / 不放行违规 / 同端口换程序即失效），
 # 而不必绑死一条真实条目 —— 表为空是常态，测试不该因为"今天没有残余"就失效。
